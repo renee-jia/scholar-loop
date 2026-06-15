@@ -4,19 +4,19 @@
 >
 > Scope: **broad ML research** (CV / NLP / RL, multiple datasets and metrics), on a **single-GPU to small-cluster (1–8 GPU)** budget.
 >
-> Kernel philosophy (inherited from Karpathy's `autoresearch`): every layer stays "single-file readable, diff-auditable, metric-comparable." Get the minimal loop working first, then add layers.
+> Kernel philosophy: every layer stays "single-file readable, diff-auditable, metric-comparable." Get the minimal loop working first, then add layers.
 
 ---
 
-## 0. What we distilled from the three reference projects
+## 0. What we distilled from prior work
 
-| | Karpathy `autoresearch` | AI-Researcher (HKUDS) | AutoResearchClaw |
+| | Minimal experiment kernel | AI-Researcher (HKUDS) | AutoResearchClaw |
 |---|---|---|---|
 | Strengths | Minimal experiment engine; fair 5-min comparison; single ground-truth metric | Paper+code dual grounding; smoke-then-scale; debiased dual review | Pluggable YAML domains; VerifiedRegistry anti-hallucination; failure→skill-library self-evolution |
 | Weaknesses | No memory; no literature; local hill-climbing; single domain | No external memory; regresses to conservative baselines; LLM-judge as optimization target is dangerous | 23 stages too heavy; brittle AST dedup; over-HITL hurts |
 
 **The 5 core patterns we take:**
-1. **Karpathy kernel** as the L1 experiment engine (fixed `prepare`, single editable `train`, fixed budget, single ground-truth metric).
+1. **A minimal experiment kernel** as the L1 engine (fixed `prepare`, single editable `train`, fixed budget, single ground-truth metric).
 2. **Pluggable domains = declarative YAML profiles** (AutoResearchClaw) → solves "broad ML." The orchestrator never understands CV/NLP/RL; all knowledge lives in the profile.
 3. **VerifiedRegistry + post-hoc number grounding** (AutoResearchClaw) → the #1 lever against hallucination / reward-hacking.
 4. **Smoke-gate + Advisor↔Coder loop + "kill after N tries"** (AI-Researcher) → saves GPU under a small budget.
@@ -33,7 +33,7 @@ L5  Writer + Reviewer       write paper → simulated review → revise   (reuse
 L4  Research Director        read ledger trends + literature hotspots → set direction, allocate budget, PROCEED/REFINE/PIVOT
 L3  Idea Engine              Lit Scout → Novelty Check → Hypothesis Gen (every hypothesis must cite a source)
 L2  Experiment Orchestrator  experiment matrix / multi-fidelity funnel / smoke-gate / VerifiedRegistry
-L1  Experiment Engine        = Karpathy kernel, but the train script & metric are injected by the domain profile
+L1  Experiment Engine        = the minimal kernel, but the train script & metric are injected by the domain profile
 L0  Memory & Ledger          per-experiment: diff + hypothesis + citation + metric + verdict;  Skill Library: failure → decaying skill
 ```
 
@@ -128,7 +128,7 @@ The **multi-fidelity funnel** is the survival strategy on a small cluster: a 120
 
 ## 4.5 Reasoning Layer (ReAct-light) — how each iteration gets smarter
 
-Karpathy's loop reasons implicitly and shallowly (guess → run → keep/discard), which yields
+A bare optimize-the-metric loop reasons implicitly and shallowly (guess → run → keep/discard), which yields
 local hill-climbing and search-space explosion. ScholarLoop makes reasoning an **explicit,
 auditable, measurable** artifact via three mechanisms layered on the loop. Structure:
 **ReAct-light** — one reason→act→observe chain per iteration. Cheap (one LLM call before a
@@ -258,7 +258,7 @@ dead idea can't loop forever); the Director sets the campaign's direction and re
 
 | Phase | Content | Output | Acceptance |
 |---|---|---|---|
-| **0** | Reuse Karpathy kernel + wrap with `ledger.jsonl` | An experiment engine that logs | Run one idea fully logged |
+| **0** | Reuse the minimal experiment kernel + wrap with `ledger.jsonl` | An experiment engine that logs | Run one idea fully logged |
 | **1** | L3 idea engine (reuse skills) + Reasoning Layer (§4.5): Reasoner emits search-space constraints, predict-verify scores vs registry, Reflector stub writes lessons | Cited ideas + a reasoning trace per run | 100% of ideas have a source; every run logs a prediction + calibration_error |
 | **2** | L2 multi-fidelity funnel + VerifiedRegistry + forbidden_edits guard | Anti-self-deception orchestration | An injected cheating idea gets blocked |
 | **3** | Profile-ize domains (one each for vision/nlp/rl) | Pluggable L1 | Add a new domain without touching orchestrator |
