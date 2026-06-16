@@ -20,7 +20,7 @@ from scholarloop.advisor import Advisor
 from scholarloop.debate import DebatePanel
 from scholarloop.director import Director
 from scholarloop.ledger import Ledger
-from scholarloop.litscout import ArxivClient, LitScout
+from scholarloop.litscout import ArxivClient, LitScout, OpenAlexClient
 from scholarloop.llm import AnthropicLLM
 from scholarloop.orchestrator import Orchestrator
 from scholarloop.paper import PaperPipeline
@@ -123,7 +123,7 @@ def main() -> int:
             ledger_path.unlink()                   # fresh run
         orch = Orchestrator(
             llm, profile,
-            lit_scout=LitScout(llm, ArxivClient()),
+            lit_scout=LitScout(llm, sources=[OpenAlexClient(), ArxivClient()]),  # impact-ranked, multi-source
             debate_panel=DebatePanel(llm, profile.debate_roles),
             reflector=Reflector(llm), advisor=Advisor(llm), director=Director(llm, profile),
             skill_library=skills, topic=topic,
