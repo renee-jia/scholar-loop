@@ -125,7 +125,7 @@ The gate itself is the more stringent of the frontier and the per-domain `baseli
 
 ## 4. L3 Idea Engine (the key to escaping "local hill-climbing")
 
-- **Lit Scout**: given a direction, search recent (last N months) arXiv / Semantic Scholar / OpenAlex and extract "what architecture change / optimizer / trick was proposed." **Ground on paper+code pairs** (the AI-Researcher pattern), not abstracts. Reuse the already-installed `literature-survey` / `gaps` / `deep-research` skills — do not rebuild.
+- **Lit Scout**: given a direction, search several sources and extract "what architecture change / optimizer / trick was proposed." **Implemented** as injectable per-source clients (`ArxivClient`, `OpenAlexClient`, `SemanticScholarClient`) that the scout queries in parallel, de-duplicates, and **ranks by citation count** so the highest-impact techniques surface first (impact grounding). Default sources are arXiv + OpenAlex (no key, carries citations); Semantic Scholar is opt-in (rate-limited without a key). Each source degrades independently — one being down doesn't kill the scout. Code-link grounding (paperswithcode-style paper↔repo pairs) is surfaced when a source provides it; broadening that coverage is future work.
 - **Novelty Check**: dedup a new idea against the ledger + already-read literature at the **result level** (config+metric hash, not code shape).
 - **Hypothesis Gen**: force the output `{claim, source_paper, predicted_effect, how_to_implement}`. A hypothesis with no source is not allowed into the queue → narrows the search prior to "directions others have already validated," fighting search-space explosion.
 - **Must-beat baseline injection**: pull the SOTA baseline from the profile into the prompt, to prevent regression to conservative methods seen in training data.
@@ -227,7 +227,7 @@ The system is multi-agent, but the *harness* matters more than the agent count. 
 
 ```
 Orchestrator (deterministic loop)
-  ├─► LitScout     arXiv HTTP → structured cited findings              [built]
+  ├─► LitScout     arXiv + OpenAlex → impact-ranked cited findings     [built]
   ├─► Reasoner     constraints + lit + skills → structured proposal    [built]
   ├─► DebatePanel  Innovator/Pragmatist/Contrarian vote run/reject     [built]
   ├─► Reflector    run outcome (esp. calibration_error) → skill lesson [built]

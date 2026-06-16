@@ -23,7 +23,7 @@ that keeps the agents honest and **impossible to reward-hack**.
 | Stage | What it does |
 |---|---|
 | 🎯 **Director** | reads ledger + literature trends → sets the next direction, topic & budget |
-| 🔭 **Lit Scout** | pulls real arXiv papers → structured, *cited* findings |
+| 🔭 **Lit Scout** | pulls real papers from arXiv + OpenAlex, citation-ranked → structured, *cited* findings |
 | 💡 **Reasoner** | constraints + literature + past lessons → the next experiment |
 | 🗳️ **Debate Panel** | three personas vote — *is this worth a GPU?* |
 | 🪜 **Funnel** | smoke → verify → full · a cheap screen kills most ideas |
@@ -39,7 +39,7 @@ that keeps the agents honest and **impossible to reward-hack**.
 |---|---|
 | 🧪 **Real, pluggable experiments** | Drives real PyTorch runs (CPU-fast, no download). Two domains ship today — **digit classification** (error %) and **diabetes regression** (RMSE) — and a new one is just a YAML profile + an engine pair, **zero orchestrator changes**. |
 | 🤖 **8 agents, one harness** | Director · Lit Scout · Reasoner · Debate · Reflector · Advisor · Writer · Reviewer — typed JSON-schema I/O, validate→retry, one shared audit trace. |
-| 🔭 **Literature-grounded** | The Lit Scout pulls real arXiv papers into *cited* techniques — so ideas aren't blind hill-climbing. |
+| 🔭 **Literature-grounded** | The Lit Scout pulls real papers from arXiv + OpenAlex, ranks them by citation impact, and distills *cited* techniques — so ideas aren't blind hill-climbing. |
 | 💸 **Budget-aware funnel** | One idea climbs **smoke → verify → full**, each tier gated. Bad ideas die after one cheap run; marginal ones never burn a full run. |
 | 🧠 **Self-improving** | Predicts each idea's effect, scores the prediction against reality, and distills failures into a **time-decaying skill library** re-injected next round. |
 | 🛡️ **Can't be reward-hacked** | Two-phase **frozen scoring** (`train.py` can't fake the metric or see the val set) + edit **allowlist** + **VerifiedRegistry** number-grounding — proven by a bundled `cheater` engine. |
