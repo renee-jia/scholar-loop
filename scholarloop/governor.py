@@ -49,6 +49,13 @@ class Governor:
     _best: float | None = None
     _alerted: set = field(default_factory=set)
 
+    def __post_init__(self) -> None:
+        if self.dry_patience is not None and self.dry_patience < 1:
+            raise ValueError("dry_patience must be >= 1 (rounds with no improvement before stopping)")
+        if self.max_cost is None and self.max_rounds is None and self.dry_patience is None:
+            raise ValueError("Governor needs at least one stop condition "
+                             "(max_cost / max_rounds / dry_patience) or the loop never ends")
+
     def update_frontier(self, score: float | None, direction: str) -> bool:
         """Fold a fresh result into the tracked frontier. Returns True iff it improved the best so far."""
         if score is None:

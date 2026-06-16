@@ -99,7 +99,7 @@ class Orchestrator:
         """The best-scoring entry in a batch by the metric direction (None scores ignored)."""
         scored = [e for e in entries if e.primary_score() is not None]
         if not scored:
-            return entries[-1] if entries else None
+            return None                                 # all killed/unscored — no result to reflect on
         return min(scored, key=lambda e: e.primary_score()) if self.profile.metric.direction == "minimize" \
             else max(scored, key=lambda e: e.primary_score())
 

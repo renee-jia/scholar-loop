@@ -1,6 +1,15 @@
 """The loop Governor: budget / round-cap / convergence stop conditions (pure, no LLM)."""
 
+import pytest
+
 from scholarloop.governor import Governor, cost_of
+
+
+def test_governor_rejects_unbounded_and_degenerate_configs():
+    with pytest.raises(ValueError):
+        Governor()                       # no stop condition at all -> would loop forever
+    with pytest.raises(ValueError):
+        Governor(dry_patience=0)         # 0 would stop before any round runs
 
 
 def test_cost_of_known_and_unknown_model():

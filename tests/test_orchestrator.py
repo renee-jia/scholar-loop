@@ -195,6 +195,15 @@ def test_run_with_governor_stops_on_round_cap(tmp_path):
     assert gov.rounds == 2                                   # stopped exactly at the cap
 
 
+def test_best_of_returns_none_for_an_all_killed_batch(tmp_path):
+    orch = Orchestrator(MockLLM(), PROFILE, ledger_path=tmp_path / "ledger.jsonl",
+                        registry_dir=tmp_path / "registry")
+    killed = LedgerEntry(id="exp_k", domain="image-classification",
+                         hypothesis=Hypothesis("c", "arXiv:1"), metric_name="val_top1_err",
+                         fidelity=["smoke"], metric={}, verdict="killed")   # no score
+    assert orch._best_of([killed]) is None                  # nothing to reflect on, not a killed entry
+
+
 def test_promote_gate_uses_statistical_significance(tmp_path):
     orch = Orchestrator(MockLLM(), PROFILE,            # promote_z=1.0 default
                         ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
