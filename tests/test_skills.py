@@ -44,3 +44,19 @@ def test_active_ranks_by_decayed_weight(tmp_path):
     rows = lib.active(now=10 * DAY, top_k=1)
     assert rows[0][0].mitigation == "recent strong"
     assert "recent strong" in lib.render(now=10 * DAY)
+
+
+def test_relevance_query_surfaces_on_topic_lessons(tmp_path):
+    lib = SkillLibrary(tmp_path)
+    now = 1000.0
+    # a heavy but off-topic lesson, and a lighter but on-topic one
+    lib.add(Skill.make("optimizer", 0.9, "use cosine learning rate schedules for stability", "exp_1", now))
+    lib.add(Skill.make("regularization", 0.4, "increase dropout to curb overfitting on small data", "exp_2", now))
+
+    # no query -> pure weight order: the heavier (off-topic) lesson leads
+    assert lib.active(now)[0][0].category == "optimizer"
+    # a query about overfitting/dropout lifts the lighter on-topic lesson to the top
+    ranked = lib.active(now, query="dropout overfitting small data regularization")
+    assert ranked[0][0].category == "regularization"
+    # render(query=...) reflects the same selection
+    assert "dropout" in lib.render(now, top_k=1, query="dropout overfitting regularization")

@@ -54,9 +54,10 @@ wrong.) Click a domain for the captured paper, run log, and raw ledger.
 | 🔭 **Literature-grounded** | The Lit Scout pulls real papers from arXiv + OpenAlex, ranks them by citation impact, and distills *cited* techniques — so ideas aren't blind hill-climbing. |
 | 💸 **Budget-aware funnel** | One idea climbs **smoke → verify → full**, each tier gated. Bad ideas die after one cheap run; marginal ones never burn a full run. |
 | ⚙️ **Engineered loop** | A **parallel population funnel** — propose N ideas, smoke-screen them all at once, climb only the survivors — under a **self-stopping governor** that halts on budget, round cap, or convergence (*loop-until-dry*). |
-| 🧠 **Self-improving** | Predicts each idea's effect, scores the prediction against reality, and distills failures into a **time-decaying skill library** re-injected next round. |
+| 🧠 **Self-improving** | Predicts each idea's effect, scores the prediction against reality, and distills failures into a **relevance-ranked, time-decaying skill library** re-injected next round. |
+| 🎯 **Calibrated agents** | **Universal predict-then-verify** — every agent's checkable claims (Reasoner deltas, Debate go/no-go) are scored against ground truth, so the loop learns *which of its own agents to trust*. |
 | 🛡️ **Can't be reward-hacked** | Two-phase **frozen scoring** (`train.py` can't fake the metric or see the val set) + edit **allowlist** + **VerifiedRegistry** number-grounding — proven by a bundled `cheater` engine. |
-| ✅ **Honest & testable** | 94 tests, **no API key or GPU needed** — the whole loop runs against a deterministic `MockLLM`. |
+| ✅ **Honest & testable** | 101 tests, **no API key or GPU needed** — the whole loop runs against a deterministic `MockLLM`. |
 
 > The LLM does only the open-ended reasoning. Everything checkable — search-space pruning, dedup,
 > calibration, number-grounding, promotion gates — is deterministic, unit-tested code, and the

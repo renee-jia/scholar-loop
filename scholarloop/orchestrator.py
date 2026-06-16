@@ -27,6 +27,7 @@ from scholarloop.litscout import LitScout
 from scholarloop.llm import LLMClient
 from scholarloop.profile import Profile
 from scholarloop.reasoner import Reasoner
+from scholarloop.calibration import CalibrationLog, score_binary, score_delta
 from scholarloop.governor import Governor, cost_of
 from scholarloop.reasoning import confidence_bound
 from scholarloop.reflector import Reflector
@@ -75,6 +76,7 @@ class Orchestrator:
         self.last_advice: dict | None = None
         self._refine_count = 0
         self._directed = False
+        self.calibration = CalibrationLog()   # universal predict-then-verify across agents (B)
 
     def _literature(self) -> tuple[str, list[str]]:
         """Fetch literature grounding once (cached). Empty when no Lit Scout is configured."""
@@ -118,9 +120,13 @@ class Orchestrator:
         if not lit_context and lit_priors is None:
             lit_context, lit_priors = self._literature()   # fall back to the Lit Scout
         if not skills and self.skill_library is not None:
-            skills = self.skill_library.render(time.time())   # inject accumulated intuition
+            # context assembly: bias the (bounded) skill slot toward lessons relevant to the
+            # current direction — topic + guidance + literature priors — not just the heaviest.
+            query = " ".join(filter(None, [self.topic, self.guidance, *(lit_priors or [])]))
+            skills = self.skill_library.render(time.time(), query=query)   # injected intuition, relevance-ranked
         proposal = self.reasoner.propose(entries, lit_context=lit_context, skills=skills,
-                                         guidance=self.guidance, lit_priors=lit_priors)
+                                         guidance=self.guidance, lit_priors=lit_priors,
+                                         calibration=self.calibration.render())   # close the verifier loop
         if not proposal.admissible:
             print(f"orchestrator: skipping inadmissible proposal {proposal.config} "
                   f"({proposal.violations})", file=sys.stderr)
@@ -142,6 +148,15 @@ class Orchestrator:
             config_override=proposal.config, edits=proposal.edits, reasoning=reasoning,
             predicted_delta=predicted_delta, parent=parent_id, parent_score=parent_score,
             ledger_path=self.ledger_path, registry_dir=self.registry_dir)
+
+    def _calibrate(self, entry) -> None:
+        """Universal predict-then-verify (B): score every agent claim attached to this run once the
+        ground truth (its measured delta / final verdict) is in."""
+        pred = entry.prediction or {}
+        self.calibration.record(score_delta("reasoner", pred.get("predicted"), pred.get("measured")))
+        debate = (entry.reasoning or {}).get("debate") or {}
+        if debate.get("decision") == "run":              # the panel bet this idea was worth a GPU run
+            self.calibration.record(score_binary("debate", True, entry.verdict == "kept"))
 
     def _post_run(self, entry, frontier, entries):
         if self.reflector is not None and self.skill_library is not None:   # Reflect → skill library
@@ -166,6 +181,7 @@ class Orchestrator:
                                parent.id if parent else None,
                                parent.primary_score() if parent else None,
                                proposal.predicted_delta)
+        self._calibrate(entry)                          # entry carries the prediction at this single tier
         self._post_run(entry, parent, entries)
         return entry
 
@@ -202,6 +218,7 @@ class Orchestrator:
         produced = [smoke]
         if self._promote(smoke, tiers[0], gate):
             produced += self._climb_from(smoke, proposal, reasoning, tiers[1:], gate, entries + produced)
+        self._calibrate(smoke)                          # the smoke entry carries the idea's prediction
         self._post_run(produced[-1], frontier, entries + produced)
         return produced
 
@@ -249,6 +266,8 @@ class Orchestrator:
         else:
             smoked = [smoke_one(it) for it in items]
         produced = list(smoked)
+        for e in smoked:                                # each smoke entry carries its idea's prediction
+            self._calibrate(e)
 
         # Phase 3 — climb only the smoke survivors, best-first, through the remaining tiers.
         survivors = [(e, batch[i][0], batch[i][1]) for i, e in enumerate(smoked)

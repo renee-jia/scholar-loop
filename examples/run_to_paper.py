@@ -68,7 +68,7 @@ def _unit(profile) -> str:
     return "%" if ("err" in name or "acc" in name) else ""
 
 
-def fmt_run(profile, entries, skills, usage, model, trace) -> str:
+def fmt_run(profile, entries, skills, usage, model, trace, calibration: str = "") -> str:
     d, lit = _first(trace, "director"), _first(trace, "lit_scout")
     cost = _cost(model, usage)
     u = _unit(profile)
@@ -94,8 +94,10 @@ def fmt_run(profile, entries, skills, usage, model, trace) -> str:
         out.append(f"| {e.id} | {e.fidelity[0]} | {e.primary_score()}{u} | {e.verdict} | {pm} | "
                    f"{e.hypothesis.source[:60]} |")
     out += ["", "## 🧠 Accumulated skills (self-improvement)", "",
-            skills.render() or "_(none recorded)_", "",
-            "## 🔁 Agent trace (every call, auditable)", "",
+            skills.render() or "_(none recorded)_", ""]
+    if calibration:
+        out += ["## 🎯 Agent calibration (predict-then-verify)", "", calibration, ""]
+    out += ["## 🔁 Agent trace (every call, auditable)", "",
             "`" + " · ".join(f"{a}:{n}" for a, n in sorted(Counter(c.agent for c in trace.calls).items())) + "`", "",
             "See [`paper.md`](paper.md) for the write-up this run produced, and "
             "[`experiments.jsonl`](experiments.jsonl) for the raw ledger.", ""]
@@ -148,7 +150,8 @@ def main() -> int:
     (out / "paper.md").write_text(
         fmt_paper(paper["draft"], paper["grounded"], paper["ungrounded"], paper["review"]))
     if orch is not None:                            # run.md reflects the campaign; keep it on paper-only re-runs
-        (out / "run.md").write_text(fmt_run(profile, entries, skills, llm.usage, model, orch.trace))
+        (out / "run.md").write_text(fmt_run(profile, entries, skills, llm.usage, model, orch.trace,
+                                            calibration=orch.calibration.render()))
 
     shutil.rmtree(registry_dir, ignore_errors=True)
     shutil.rmtree(skills_dir, ignore_errors=True)

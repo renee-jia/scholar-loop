@@ -123,6 +123,9 @@ class Reasoner(Agent):
             parts += ["", "Relevant literature:", lit_context]
         if skills:
             parts += ["", "Lessons from past runs (skill library):", skills]
+        calibration = ctx.get("calibration", "")
+        if calibration:
+            parts += ["", "Agent track record so far (predict-then-verify — trust accordingly):", calibration]
         parts += [
             "",
             "Propose the next experiment as a `config`: overrides to the tunable hyperparameters "
@@ -135,10 +138,11 @@ class Reasoner(Agent):
         return "\n".join(parts)
 
     def propose(self, entries: list[LedgerEntry], *, lit_context: str = "",
-                skills: str = "", guidance: str = "", lit_priors: list[str] | None = None) -> Proposal:
+                skills: str = "", guidance: str = "", lit_priors: list[str] | None = None,
+                calibration: str = "") -> Proposal:
         constraints = analyze_search_space(entries, self.profile, lit_priors=lit_priors)
         raw = self.run({"constraints": constraints, "lit_context": lit_context,
-                        "skills": skills, "guidance": guidance})
+                        "skills": skills, "guidance": guidance, "calibration": calibration})
 
         config = {item["name"]: item["value"] for item in raw.get("config", [])}
         edits = raw.get("edits", []) or []

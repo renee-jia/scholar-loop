@@ -204,6 +204,28 @@ def test_best_of_returns_none_for_an_all_killed_batch(tmp_path):
     assert orch._best_of([killed]) is None                  # nothing to reflect on, not a killed entry
 
 
+def test_calibrate_records_reasoner_and_debate_verdicts(tmp_path):
+    orch = Orchestrator(MockLLM(), PROFILE, ledger_path=tmp_path / "ledger.jsonl",
+                        registry_dir=tmp_path / "registry")
+    # an entry that carries both a scored prediction and a debate "run" decision that paid off
+    entry = LedgerEntry(
+        id="e1", domain="image-classification", hypothesis=Hypothesis("c", "arXiv:1"),
+        metric_name="val_top1_err", fidelity=["verify"], metric={"verify": 4.0, "seeds": [4.0]},
+        prediction={"predicted": -1.0, "measured": -0.8, "calibration_error": 0.2},
+        reasoning={"debate": {"decision": "run"}}, verdict="kept")
+    orch._calibrate(entry)
+    stats = orch.calibration.by_agent()
+    assert stats["reasoner"]["n"] == 1 and stats["reasoner"]["hit_rate"] == 1.0   # right direction
+    assert stats["debate"]["n"] == 1 and stats["debate"]["hit_rate"] == 1.0        # approved -> kept
+
+    # a rejected/uncalibratable entry adds nothing
+    bare = LedgerEntry(id="e2", domain="image-classification", hypothesis=Hypothesis("c", "arXiv:1"),
+                       metric_name="val_top1_err", fidelity=["smoke"], metric={"smoke": 9.0},
+                       prediction={"predicted": -1.0, "measured": None}, verdict="discarded")
+    orch._calibrate(bare)
+    assert orch.calibration.by_agent()["reasoner"]["n"] == 1   # measured None -> not scored
+
+
 def test_promote_gate_uses_statistical_significance(tmp_path):
     orch = Orchestrator(MockLLM(), PROFILE,            # promote_z=1.0 default
                         ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")

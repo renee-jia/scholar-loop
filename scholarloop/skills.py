@@ -14,9 +14,28 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+# Tiny lexical relevance, no embedding model needed (deterministic, offline). Used to surface the
+# lessons that actually bear on the CURRENT direction, not just the globally heaviest ones.
+_STOP = {"the", "a", "an", "to", "of", "and", "or", "is", "in", "on", "for", "with", "at", "by",
+         "be", "it", "this", "that", "from", "as", "are", "was", "not", "but", "than", "then",
+         "when", "its", "into", "rather", "use", "using", "dont", "do", "you", "your", "can"}
+
+
+def _terms(text: str) -> set[str]:
+    return {t for t in re.findall(r"[a-z0-9]+", (text or "").lower()) if len(t) > 2 and t not in _STOP}
+
+
+def _relevance(skill: "Skill", query_terms: set[str]) -> float:
+    """Fraction of the query's terms this lesson touches (0 when there's no query)."""
+    if not query_terms:
+        return 0.0
+    st = _terms(f"{skill.category} {skill.mitigation}")
+    return len(st & query_terms) / len(query_terms)
 
 
 @dataclass
@@ -73,17 +92,28 @@ class SkillLibrary:
         return out
 
     def active(self, now: float | None = None, *, top_k: int | None = None,
-               min_weight: float = 0.0) -> list[tuple[Skill, float]]:
-        """(skill, weight) pairs sorted by decayed weight, filtered/capped."""
+               min_weight: float = 0.0, query: str | None = None,
+               relevance_boost: float = 2.0) -> list[tuple[Skill, float]]:
+        """(skill, weight) pairs, capped/filtered. Ranked by decayed weight, and — when a `query` is
+        given — boosted by lexical relevance to it, so the lessons shown bear on the current
+        direction rather than just being the globally heaviest. query=None reproduces pure weight order."""
         now = time.time() if now is None else now
-        scored = [(s, s.weight(now, self.half_life_days)) for s in self.all()]
-        scored = [(s, w) for s, w in scored if w > min_weight]
-        scored.sort(key=lambda sw: sw[1], reverse=True)
-        return scored[:top_k] if top_k is not None else scored
+        qterms = _terms(query) if query else set()
+        scored = []
+        for s in self.all():
+            w = s.weight(now, self.half_life_days)
+            if w <= min_weight:
+                continue
+            rank = w * (1.0 + relevance_boost * _relevance(s, qterms))   # relevance lifts, weight floors
+            scored.append((s, w, rank))
+        scored.sort(key=lambda x: x[2], reverse=True)
+        pairs = [(s, w) for s, w, _ in scored]
+        return pairs[:top_k] if top_k is not None else pairs
 
-    def render(self, now: float | None = None, *, top_k: int = 5) -> str:
-        """Render the top lessons as a prompt block for the Reasoner's `skills` slot."""
-        rows = self.active(now, top_k=top_k)
+    def render(self, now: float | None = None, *, top_k: int = 5, query: str | None = None) -> str:
+        """Render the top lessons as a prompt block for the Reasoner's `skills` slot. Pass `query`
+        (the current topic/guidance/priors) to bias selection toward relevant lessons."""
+        rows = self.active(now, top_k=top_k, query=query)
         if not rows:
             return ""
         return "\n".join(f"- [{s.category}, w={w:.2f}] {s.mitigation}" for s, w in rows)

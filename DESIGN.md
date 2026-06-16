@@ -132,6 +132,13 @@ The campaign loop itself is **governed** rather than fixed-length. `run(..., gov
 
 `Governor` calls no LLM, so the stop logic is fully unit-tested on its own. Together these make an autonomous loop you can actually let run unattended: it fans out to explore, screens cheaply in parallel, concentrates compute on survivors, and halts itself when the money, the patience, or the headroom runs out.
 
+### 3.2 Loop engineering — context assembly + universal predict-then-verify
+
+Two more pieces govern *what the loop knows about itself* each round:
+
+- **Context assembly (bounded, relevant).** The skill library grows every round, but only a few lessons can enter the prompt. Selection is now **relevance-aware**: `SkillLibrary.render(query=...)` ranks by decayed weight **boosted by lexical overlap** with the current direction (topic + Advisor/Director guidance + literature priors), so the lessons shown bear on *this* idea, not just the globally heaviest. With no query it reproduces pure-weight order (backward-compatible). The ledger is already compressed into search-space constraints, so the agent's window stays bounded and on-topic as the campaign scales.
+- **Universal predict-then-verify (`calibration.py`).** Self-calibration is generalized from the Reasoner to *any* agent that commits to a checkable claim. A `CalibrationLog` scores two kinds of claim once ground truth lands — **delta** (the Reasoner's `predicted_delta` vs the measured change; a "hit" is getting the direction right) and **binary** (the Debate panel voting "run" = "this beats the gate", vs whether it actually did) — and renders a per-agent track record ("debate panel: 40% of approved ideas beat the gate") back into the next round's Reasoner prompt. The verifier loop, closed: the system learns not just *what* worked but *which of its own agents to trust*.
+
 ---
 
 ## 4. L3 Idea Engine (the key to escaping "local hill-climbing")
