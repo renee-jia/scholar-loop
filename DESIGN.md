@@ -137,7 +137,7 @@ The campaign loop itself is **governed** rather than fixed-length. `run(..., gov
 Two more pieces govern *what the loop knows about itself* each round:
 
 - **Context assembly (bounded, relevant).** The skill library grows every round, but only a few lessons can enter the prompt. Selection is now **relevance-aware**: `SkillLibrary.render(query=...)` ranks by decayed weight **boosted by lexical overlap** with the current direction (topic + Advisor/Director guidance + literature priors), so the lessons shown bear on *this* idea, not just the globally heaviest. With no query it reproduces pure-weight order (backward-compatible). The ledger is already compressed into search-space constraints, so the agent's window stays bounded and on-topic as the campaign scales.
-- **Universal predict-then-verify (`calibration.py`).** Self-calibration is generalized from the Reasoner to *any* agent that commits to a checkable claim. A `CalibrationLog` scores two kinds of claim once ground truth lands — **delta** (the Reasoner's `predicted_delta` vs the measured change; a "hit" is getting the direction right) and **binary** (the Debate panel voting "run" = "this beats the gate", vs whether it actually did) — and renders a per-agent track record ("debate panel: 40% of approved ideas beat the gate") back into the next round's Reasoner prompt. The verifier loop, closed: the system learns not just *what* worked but *which of its own agents to trust*.
+- **Universal predict-then-verify (`calibration.py`).** Self-calibration is generalized from the Reasoner to *any* agent that commits to a checkable claim. A `CalibrationLog` scores two kinds of claim once ground truth lands — **delta** (the Reasoner's `predicted_delta` vs the measured change; a "hit" is getting the direction right) and **binary** (the Debate panel voting "run" = "this idea is worth running", scored against whether it produced a baseline-beating result) — and renders a per-agent track record ("debate panel: 40% of approved ideas panned out") back into the next round's Reasoner prompt. The verifier loop, closed: the system learns not just *what* worked but *which of its own agents to trust*.
 
 ---
 
@@ -271,6 +271,10 @@ dead idea can't loop forever); the Director sets the campaign's direction and re
 - **Number grounding gate** (`grounded_registry` + `audit_draft`): every number in the draft
   must trace to a recorded fact — a captured measurement or a logged config value — or it is
   flagged. Deterministic; the Writer proposes, the registry verifies. Prose can't invent results.
+  The gate is **deliberately strict** (precision traded for safety): it flags *any* number it can't
+  trace, including a legitimately *derived* delta (e.g. `56.5 − 55.24`) or a structural constant
+  (e.g. a dataset's `442` samples). A ⚠️ on such a number is the gate working as intended, not a
+  defect — loosening it to ground arithmetic on grounded numbers would open a fabrication seam.
 - **`Reviewer`** critiques (strengths / weaknesses / score 1-10 / recommendation). The LLM judge
   is used for the qualitative review only, **never as the optimization target** (the metric decides quality).
 - Optional: hand a grounded, kept-findings draft to the ARS `academic-paper` / `-reviewer`

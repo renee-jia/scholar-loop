@@ -8,11 +8,11 @@ This module is the shared substrate for that — a tiny, pure scoring layer plus
 Two claim kinds today:
   - **delta**  — a signed predicted change in the metric (the Reasoner's `predicted_delta`). Scored
     against the measured delta: the error is the absolute gap; a "hit" is getting the *direction* right.
-  - **binary** — a go/no-go bet (e.g. the Debate panel voting "run" = "this idea will beat the gate").
-    Scored against the realized outcome (did it end up kept?).
+  - **binary** — a go/no-go bet (e.g. the Debate panel voting "run" = "this idea is worth running").
+    Scored against the realized outcome: did it produce a kept result (beat the baseline)?
 
 The log renders into a prompt block so the next round's Reasoner sees, e.g., "debate panel: 40%
-of approved ideas actually beat the gate" — the verifier loop, closed.
+of approved ideas produced a baseline-beating result" — the verifier loop, closed.
 """
 
 from __future__ import annotations

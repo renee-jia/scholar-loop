@@ -25,13 +25,13 @@ that keeps the agents honest and **impossible to reward-hack**.
 | domain | metric | baseline | best (confirmed) | the climb | cost | self-review |
 |---|---|---|---|---|---|---|
 | [**digits-mlp**](examples/sample_run/) | val error | 5.0% | **3.82%** | population → verify → full, governed | ≈ $0.45 | reject 2/10 |
-| [**diabetes-mlp**](examples/sample_run_diabetes/) | val RMSE | 56.5 *(linear model)* | **55.26** | smoke → verify → full | ≈ $0.40 | reject 3/10 |
+| [**diabetes-mlp**](examples/sample_run_diabetes/) | val RMSE | 56.5 *(linear model)* | **55.24** | population → verify → full, governed | ≈ $0.77 | reject 3/10 |
 
-In both, an idea climbed the multi-fidelity funnel to a result that beats the baseline, every number
-traces to a frozen-metric measurement, and the system's *own* reviewer still rejected the papers as
-too marginal. (It's not wrong.) The digits run is a **governed population funnel** — ideas
-smoke-screened in parallel, the loop halting itself on convergence, agents calibrated against ground
-truth. Click a domain for the captured paper, run log, and raw ledger.
+Both are **governed population funnels** — each round fans out several ideas, smoke-screens them in
+parallel, and climbs only the survivors, while the loop halts itself (on convergence or a round cap)
+and scores each agent's predictions against ground truth. An idea beats the baseline in each, every
+number traces to a frozen-metric measurement, and the system's *own* reviewer still rejects the
+papers as too marginal. (It's not wrong.) Click a domain for the captured paper, run log, and raw ledger.
 
 | Stage | What it does |
 |---|---|
@@ -58,7 +58,7 @@ truth. Click a domain for the captured paper, run log, and raw ledger.
 | 🧠 **Self-improving** | Predicts each idea's effect, scores the prediction against reality, and distills failures into a **relevance-ranked, time-decaying skill library** re-injected next round. |
 | 🎯 **Calibrated agents** | **Universal predict-then-verify** — every agent's checkable claims (Reasoner deltas, Debate go/no-go) are scored against ground truth, so the loop learns *which of its own agents to trust*. |
 | 🛡️ **Can't be reward-hacked** | Two-phase **frozen scoring** (`train.py` can't fake the metric or see the val set) + edit **allowlist** + **VerifiedRegistry** number-grounding — proven by a bundled `cheater` engine. |
-| ✅ **Honest & testable** | 101 tests, **no API key or GPU needed** — the whole loop runs against a deterministic `MockLLM`. |
+| ✅ **Honest & testable** | 108 tests, **no API key or GPU needed** — the whole loop runs against a deterministic `MockLLM`. |
 
 > The LLM does only the open-ended reasoning. Everything checkable — search-space pruning, dedup,
 > calibration, number-grounding, promotion gates — is deterministic, unit-tested code, and the

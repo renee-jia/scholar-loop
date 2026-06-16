@@ -7,6 +7,8 @@ from scholarloop.llm import MockLLM
 from scholarloop.orchestrator import Orchestrator
 from scholarloop.profile import load_profile
 from scholarloop.reasoner import Reasoner
+from scholarloop.reflector import Reflector
+from scholarloop.skills import SkillLibrary
 
 ROOT = Path(__file__).resolve().parent.parent
 PROFILE = load_profile(ROOT / "profiles" / "image-classification.yaml")  # minimize, baseline 4.9
@@ -153,6 +155,9 @@ def test_funnel_winner_climbs_smoke_verify_full(tmp_path):
     assert all(e.verdict == "kept" for e in produced)
     # tiers chain via parent
     assert produced[1].parent == produced[0].id and produced[2].parent == produced[1].id
+    # confidence grows up the funnel: verify uses 3 seeds, full uses 5 (full must not be a vacuous
+    # single-seed repeat of smoke)
+    assert len(produced[1].metric["seeds"]) == 3 and len(produced[2].metric["seeds"]) == 5
 
 
 def test_funnel_loser_dies_at_smoke(tmp_path):
@@ -180,8 +185,9 @@ def test_population_funnel_smokes_all_then_climbs_only_survivors(tmp_path):
     # the clearly-bad idea never leaves smoke
     bad_rows = [e for e in produced if e.config == bad]
     assert len(bad_rows) == 1 and bad_rows[0].verdict == "discarded"
-    # at least one good idea climbed past smoke into verify/full
-    assert any(e.fidelity[0] in ("verify", "full") for e in produced)
+    # BOTH good ideas climb past smoke; the bad one does not (exact, not just "at least one")
+    climbed = {tuple(sorted(e.config.items())) for e in produced if e.fidelity[0] in ("verify", "full")}
+    assert climbed == {tuple(sorted(good1.items())), tuple(sorted(good2.items()))}
 
 
 def test_run_with_governor_stops_on_round_cap(tmp_path):
@@ -193,6 +199,102 @@ def test_run_with_governor_stops_on_round_cap(tmp_path):
                         ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
     orch.run(governor=gov, funnel=True)                     # no n_steps: the governor bounds the loop
     assert gov.rounds == 2                                   # stopped exactly at the cap
+    assert gov.should_stop(None)[0] is True and "round cap" in gov.should_stop(None)[1]
+
+
+def test_population_step_parallel_no_id_collision_or_ledger_corruption(tmp_path):
+    # the real concurrency path: 4 ideas smoked on 4 threads, ids reserved up front
+    cfgs = [{"lr": 0.1, "depth": d, "weight_decay": 5e-4, "warmup": 5} for d in (20, 21, 22, 23)]
+    orch = Orchestrator(MockLLM(jsons=[_proposal_json(c) for c in cfgs]), PROFILE,
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    produced = orch.population_step(k=4, max_workers=4)
+    ids = [e.id for e in produced]
+    assert len(set(ids)) == len(ids)                        # no id collision under real threads
+    smoke_ids = sorted(e.id for e in produced if e.fidelity == ["smoke"])
+    assert smoke_ids == [f"exp_{i:04d}" for i in range(1, 5)]   # contiguous, no gaps/reuse
+    rows = list(Ledger(tmp_path / "ledger.jsonl").read_all())
+    assert len(rows) == len(produced)                       # every line parsed: no torn/lost records
+
+
+def test_population_step_dedups_identical_proposals(tmp_path):
+    cfg = {"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5}
+    # three proposals, two byte-identical -> only two distinct configs should be smoked
+    other = {"lr": 0.1, "depth": 22, "weight_decay": 5e-4, "warmup": 5}
+    orch = Orchestrator(MockLLM(jsons=[_proposal_json(cfg), _proposal_json(cfg), _proposal_json(other)]),
+                        PROFILE, ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    produced = orch.population_step(k=3)
+    smoked = {tuple(sorted(e.config.items())) for e in produced if e.fidelity == ["smoke"]}
+    assert len(smoked) == 2                                  # the duplicate was not smoked twice
+
+
+def test_population_step_all_killed_neither_climbs_nor_reflects(tmp_path):
+    import dataclasses
+    broken = dataclasses.replace(PROFILE, train_entrypoint="engines/vision/does_not_exist.py")
+    cfgs = [{"lr": 0.1, "depth": d, "weight_decay": 5e-4, "warmup": 5} for d in (20, 22)]
+    skills = SkillLibrary(tmp_path / "skills")
+    orch = Orchestrator(MockLLM(jsons=[_proposal_json(c) for c in cfgs]), broken,
+                        skill_library=skills, reflector=Reflector(MockLLM()),
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    produced = orch.population_step(k=2)
+    assert produced and all(e.verdict == "killed" and e.fidelity == ["smoke"] for e in produced)
+    assert skills.all() == []                                # _best_of is None -> no spurious reflection
+
+
+def test_funnel_step_records_calibration_once_a_parent_exists(tmp_path):
+    good1 = {"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5}
+    good2 = {"lr": 0.1, "depth": 22, "weight_decay": 5e-4, "warmup": 5}
+    orch = Orchestrator(MockLLM(jsons=[_proposal_json(good1), _proposal_json(good2)]), PROFILE,
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    orch.funnel_step()                                       # round 1: no parent -> reasoner unscorable
+    orch.funnel_step()                                       # round 2: parent exists -> reasoner scored
+    assert orch.calibration.by_agent().get("reasoner", {}).get("n", 0) >= 1
+
+
+def test_relaxed_gate_degenerates_to_no_slack_at_zero(tmp_path):
+    orch = Orchestrator(MockLLM(), PROFILE, ledger_path=tmp_path / "ledger.jsonl",
+                        registry_dir=tmp_path / "registry")
+    assert orch._relaxed_gate(0.0) == 0.0                    # documented degenerate case
+    smoke = LedgerEntry(id="z", domain="image-classification", hypothesis=Hypothesis("c", "arXiv:1"),
+                        metric_name="val_top1_err", fidelity=["smoke"],
+                        metric={"smoke": 0.01, "seeds": [0.01]}, verdict="kept")
+    assert orch._promote(smoke, "smoke", 0.0) is False      # no slack -> worse-than-gate is dropped
+
+
+def test_run_governor_converges_on_dry_patience(tmp_path):
+    from scholarloop.governor import Governor
+
+    good = {"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5}    # improves the frontier
+    bad = {"lr": 0.05, "depth": 18, "weight_decay": 1e-4, "warmup": 0}    # ~7.9, never improves
+    gov = Governor(dry_patience=1)
+    orch = Orchestrator(MockLLM(jsons=[_proposal_json(good), _proposal_json(bad)] * 2), PROFILE,
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    orch.run(governor=gov, funnel=True)
+    assert gov.rounds == 2                                   # round1 improves, round2 doesn't -> dry stop
+    assert "no frontier improvement" in gov.should_stop(None)[1]
+
+
+class _CostLLM(MockLLM):
+    """A MockLLM that reports a price and burns ~$1 of Opus output per call (for budget tests)."""
+    def __init__(self, jsons):
+        super().__init__(jsons=jsons)
+        self.model = "claude-opus-4-8"
+        self.usage = {"input_tokens": 0, "output_tokens": 0}
+
+    def complete_json(self, prompt, schema, system=None):
+        self.usage["output_tokens"] += 40_000               # 40k * $25/1M = $1.00 per call
+        return super().complete_json(prompt, schema, system=system)
+
+
+def test_run_governor_stops_on_budget(tmp_path):
+    from scholarloop.governor import Governor
+
+    cfgs = [{"lr": 0.1, "depth": d, "weight_decay": 5e-4, "warmup": 5} for d in range(20, 26)]
+    gov = Governor(max_cost=2.5)
+    orch = Orchestrator(_CostLLM([_proposal_json(c) for c in cfgs]), PROFILE,
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    orch.run(governor=gov, funnel=True)
+    assert gov.rounds == 3                                   # $0,$1,$2 ran; at $3 ≥ $2.5 it stopped
+    assert orch._spent() >= 2.5 and "budget" in gov.should_stop(orch._spent())[1]
 
 
 def test_best_of_returns_none_for_an_all_killed_batch(tmp_path):
