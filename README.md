@@ -20,19 +20,6 @@ hypothesis, **runs real ML experiments**, scores them against a frozen ground-tr
 from its failures, and drafts a peer-reviewed write-up — autonomously, with a deterministic harness
 that keeps the agents honest and **impossible to reward-hack**.
 
-### 📊 Two live runs on **Claude Opus 4.8** — real torch, real API, end to end
-
-| domain | metric | baseline | best (confirmed) | the climb | cost | self-review |
-|---|---|---|---|---|---|---|
-| [**digits-mlp**](examples/sample_run/) | val error | 5.0% | **3.82%** | population → verify → full, governed | ≈ $0.45 | reject 2/10 |
-| [**diabetes-mlp**](examples/sample_run_diabetes/) | val RMSE | 56.5 *(linear model)* | **55.24** | population → verify → full, governed | ≈ $0.77 | reject 3/10 |
-
-Both are **governed population funnels** — each round fans out several ideas, smoke-screens them in
-parallel, and climbs only the survivors, while the loop halts itself (on convergence or a round cap)
-and scores each agent's predictions against ground truth. An idea beats the baseline in each, every
-number traces to a frozen-metric measurement, and the system's *own* reviewer still rejects the
-papers as too marginal. (It's not wrong.) Click a domain for the captured paper, run log, and raw ledger.
-
 | Stage | What it does |
 |---|---|
 | 🎯 **Director** | reads ledger + literature trends → sets the next direction, topic & budget |
@@ -64,6 +51,44 @@ papers as too marginal. (It's not wrong.) Click a domain for the captured paper,
 > calibration, number-grounding, promotion gates — is deterministic, unit-tested code, and the
 > metric is the **only** optimization target (no LLM-as-judge). Multiple adversarial review passes
 > found and fixed real bugs across the loop's correctness and reward-hacking boundaries.
+
+## 🔁 Loop engineering — the part that isn't the prompt
+
+The leverage isn't in any single agent call — it's in the **outer loop** around them: how it fans
+out, what it spends compute on, what it remembers, and when it stops. ScholarLoop treats that loop
+as the product. One **governed round** looks like this:
+
+```text
+  Director topic ─▶  Reasoner ✦ proposes N distinct ideas
+                       │   fed: literature priors · relevance-ranked skills · each agent's track record
+                       ▼
+                  ╭──────────── parallel smoke screen · max_workers ────────────╮
+                  │   idea₁ 4.2     idea₂ 7.3 ✗     idea₃ 4.4      …     ideaₙ   │   cheap · concurrent
+                  ╰──────────────────────────────┬──────────────────────────────╯
+                                 survivors only   │   (the clearly-worse die here)
+                                                  ▼
+                       verify · 3 seeds + significance  ─▶  full · 5 seeds        compute spent on the few
+                                                  │
+                                                  ▼
+                       calibrate every agent's claim  ·  distill one lesson → skills
+                                                  │
+                                                  ▼
+                       governor ▸  budget?   rounds?   converged?  ──▶  stop ◇ or next round ↺
+```
+
+Four pillars, each a few lines of deterministic code — and each pinned by tests so it can't silently rot:
+
+| | pillar | what it buys you | in code |
+|---|---|---|---|
+| 🌐 | **Parallel population funnel** | explore wide, pay narrow — propose *N*, smoke-screen them **all at once**, climb only survivors | `Orchestrator.population_step(k, max_workers)` |
+| 🛑 | **Self-stopping governor** | run unattended — halt on a **$ budget**, a round cap, or **loop-until-dry** convergence | `Governor(max_cost, max_rounds, dry_patience)` |
+| 🎯 | **Universal predict-then-verify** | the loop learns *which of its own agents to trust* — Reasoner deltas & Debate go/no-go scored vs ground truth | `CalibrationLog` → next prompt |
+| 🧭 | **Relevance-ranked context** | a growing skill library stays useful — surface the lessons that bear on *this* idea, not just the heaviest | `SkillLibrary.render(query=…)` |
+
+> Net effect: a loop you can actually let run — it **fans out** to explore, **screens cheaply in
+> parallel**, **concentrates compute** on what survives, **calibrates itself**, and **knows when to
+> stop**. See it live in [`examples/governed_campaign.py`](examples/governed_campaign.py) (free,
+> deterministic) or in the two captured Opus runs above.
 
 ## 🚀 Quickstart
 
@@ -106,6 +131,20 @@ A single run shows the system
 - **save a GPU run** when the debate panel vetoes a redundant idea,
 - **kill a bad idea cheaply** at the smoke tier — no full run,
 - **catch its own wrong prediction** via predict-then-verify, then **pivot**.
+
+## 🧪 Two live runs on Claude Opus 4.8 — real torch, real API, end to end
+
+| domain | metric | baseline | best (confirmed) | the climb | cost | self-review |
+|---|---|---|---|---|---|---|
+| [**digits-mlp**](examples/sample_run/) | val error | 5.0% | **3.82%** | population → verify → full, governed | ≈ $0.45 | reject 2/10 |
+| [**diabetes-mlp**](examples/sample_run_diabetes/) | val RMSE | 56.5 *(linear model)* | **55.24** | population → verify → full, governed | ≈ $0.77 | reject 3/10 |
+
+Both are **governed population funnels** — each round fans out several ideas, smoke-screens them in
+parallel, and climbs only the survivors, while the loop halts itself (on convergence or a round cap)
+and scores each agent's predictions against ground truth. An idea beats the baseline in each, every
+number traces to a frozen-metric measurement, and the system's *own* reviewer still rejects the
+papers as too marginal. (It's not wrong.) Each link opens the captured **paper**, **run log**, and
+raw **ledger** — every number reproducible from the jsonl.
 
 ## 📊 Status
 
