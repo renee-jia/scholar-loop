@@ -37,7 +37,7 @@ that keeps the agents honest and **impossible to reward-hack**.
 
 | | |
 |---|---|
-| 🧪 **Real, pluggable experiments** | Drives a real PyTorch run (an MLP on sklearn digits — CPU-fast, no download). New domain = one YAML profile + an engine pair, **zero orchestrator changes**. |
+| 🧪 **Real, pluggable experiments** | Drives real PyTorch runs (CPU-fast, no download). Two domains ship today — **digit classification** (error %) and **diabetes regression** (RMSE) — and a new one is just a YAML profile + an engine pair, **zero orchestrator changes**. |
 | 🤖 **8 agents, one harness** | Director · Lit Scout · Reasoner · Debate · Reflector · Advisor · Writer · Reviewer — typed JSON-schema I/O, validate→retry, one shared audit trace. |
 | 🔭 **Literature-grounded** | The Lit Scout pulls real arXiv papers into *cited* techniques — so ideas aren't blind hill-climbing. |
 | 💸 **Budget-aware funnel** | One idea climbs **smoke → verify → full**, each tier gated. Bad ideas die after one cheap run; marginal ones never burn a full run. |
@@ -95,7 +95,9 @@ A single run shows the system
 ## 📊 Status
 
 **Research preview** — the full PhD-workflow skeleton runs end-to-end on real experiments, with the
-anti-reward-hacking guards in place and adversarially reviewed. Next: a live-LLM run
-(`AnthropicLLM` is wired in), a second domain, and container sandboxing for the residual boundaries.
+anti-reward-hacking guards in place and adversarially reviewed. It has been **run live against the
+real Anthropic API** (see [`examples/sample_run/`](examples/sample_run/) for a captured Opus run
+that beats a baseline and writes itself up) across **two domains** (classification + regression).
+Next: container sandboxing for the residual boundaries, statistical-significance gating, and scale.
 
 License: [MIT](LICENSE).

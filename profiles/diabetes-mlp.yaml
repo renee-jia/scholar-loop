@@ -1,0 +1,40 @@
+# Second real domain — torch MLP regression on sklearn diabetes (a different metric: RMSE).
+#   python -m scholarloop.profile validate profiles/diabetes-mlp.yaml
+name: diabetes-mlp
+paradigm: supervised
+train_entrypoint: engines/torch_regression/train.py
+fixed_module: engines/torch_regression/prepare.py
+
+metric:
+  name: val_rmse              # root mean squared error — lower is better
+  direction: minimize
+
+budget:
+  smoke_sec: 60
+  verify_sec: 180
+  full_sec: 600
+
+datasets:
+  - sklearn-diabetes
+
+baselines:
+  - untuned@60.0             # must-beat val RMSE (a default MLP ~56 clears it; ridge gets ~53)
+
+allowed_edits:
+  - architecture
+  - optimizer
+  - schedule
+  - regularization
+
+forbidden_edits:
+  - "**/prepare.py"
+  - prepare.py
+
+knobs:                        # tunable hyperparameters (name → default) the agent sets in `config`
+  lr: 0.1
+  hidden: 32
+  depth: 1
+  weight_decay: 0.0001
+  epochs: 200
+
+debate_roles: [Innovator, Pragmatist, Contrarian]
