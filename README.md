@@ -24,13 +24,14 @@ that keeps the agents honest and **impossible to reward-hack**.
 
 | domain | metric | baseline | best (confirmed) | the climb | cost | self-review |
 |---|---|---|---|---|---|---|
-| [**digits-mlp**](examples/sample_run/) | val error | 5.0% | **2.67%** | smoke → verify → full | ≈ $0.60 | reject 3/10 |
+| [**digits-mlp**](examples/sample_run/) | val error | 5.0% | **3.82%** | population → verify → full, governed | ≈ $0.45 | reject 2/10 |
 | [**diabetes-mlp**](examples/sample_run_diabetes/) | val RMSE | 56.5 *(linear model)* | **55.26** | smoke → verify → full | ≈ $0.40 | reject 3/10 |
 
-In both, an idea climbed the full multi-fidelity funnel to a result that beats the baseline, every
-number traces to a frozen-metric measurement, predict-then-verify caught the Reasoner's optimistic
-predictions — and the system's *own* reviewer still rejected the papers as too marginal. (It's not
-wrong.) Click a domain for the captured paper, run log, and raw ledger.
+In both, an idea climbed the multi-fidelity funnel to a result that beats the baseline, every number
+traces to a frozen-metric measurement, and the system's *own* reviewer still rejected the papers as
+too marginal. (It's not wrong.) The digits run is a **governed population funnel** — ideas
+smoke-screened in parallel, the loop halting itself on convergence, agents calibrated against ground
+truth. Click a domain for the captured paper, run log, and raw ledger.
 
 | Stage | What it does |
 |---|---|

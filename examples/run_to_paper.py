@@ -113,6 +113,10 @@ def main() -> int:
     topic = os.environ.get("SCHOLARLOOP_TOPIC", "small MLP image classification regularization")
     paper_only = bool(os.environ.get("SCHOLARLOOP_PAPER_ONLY"))   # regenerate paper.md from a saved ledger
     profile_name = os.environ.get("SCHOLARLOOP_PROFILE", "digits-mlp")
+    population = int(os.environ.get("SCHOLARLOOP_POPULATION", "1"))   # >1 -> parallel population funnel
+    max_workers = int(os.environ.get("SCHOLARLOOP_MAX_WORKERS", "1"))
+    dry_patience = os.environ.get("SCHOLARLOOP_DRY_PATIENCE")         # loop-until-dry convergence
+    max_cost = os.environ.get("SCHOLARLOOP_MAX_COST")                 # USD budget ceiling
     out = Path(os.environ.get("SCHOLARLOOP_OUT", "")) if os.environ.get("SCHOLARLOOP_OUT") else OUT
 
     out.mkdir(parents=True, exist_ok=True)
@@ -139,8 +143,17 @@ def main() -> int:
             reflector=Reflector(llm), advisor=Advisor(llm), director=Director(llm, profile),
             skill_library=skills, topic=topic,
             ledger_path=ledger_path, registry_dir=registry_dir)
-        print(f"=== running {steps}-step campaign on {profile.name} with {model} ... ===")
-        orch.run(steps, funnel=True)
+        gov = None
+        if dry_patience or max_cost:
+            from scholarloop.governor import Governor
+            gov = Governor(max_rounds=steps,
+                           dry_patience=int(dry_patience) if dry_patience else None,
+                           max_cost=float(max_cost) if max_cost else None)
+        mode = (f"population={population} (max_workers={max_workers})" if population > 1 else "funnel")
+        print(f"=== running campaign on {profile.name} with {model} · {mode}"
+              + (f" · governed{' (dry='+dry_patience+')' if dry_patience else ''}" if gov else f" · {steps} steps")
+              + " ... ===")
+        orch.run(steps, funnel=True, population=population, max_workers=max_workers, governor=gov)
         entries = list(Ledger(ledger_path).read_all())
         kept = [e for e in entries if e.verdict == "kept"]
         print(f"   {len(entries)} experiments, {len(kept)} kept. writing the paper ...")
