@@ -75,7 +75,7 @@ def fmt_run(profile, entries, skills, usage, model, trace) -> str:
            "## 🎯 Director — direction",
            f"> {d.get('direction', '(n/a)')}  ",
            f"> *topic for the Lit Scout:* {d.get('topic', '(n/a)')}", "",
-           "## 🔭 Lit Scout — grounded findings (real arXiv)"]
+           "## 🔭 Lit Scout — grounded findings (real literature: arXiv + OpenAlex, citation-ranked)"]
     for f in lit.get("findings", []):
         out.append(f"- **{f.get('technique')}** ({f.get('source')}) — {f.get('predicted_effect')}")
     out += ["", "## 🪜 Experiments (real torch · multi-fidelity funnel)", "",

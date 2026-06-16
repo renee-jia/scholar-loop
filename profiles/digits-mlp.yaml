@@ -25,11 +25,12 @@ baselines:
   - logreg@5.0
 
 knobs:                        # tunable hyperparameters (name → default) the agent sets in `config`
-  lr: 0.1
-  hidden: 64
+  lr: 0.05
+  hidden: 128
   depth: 1
   weight_decay: 0.0001
-  epochs: 40
+  epochs: 120                  # smoke is ~1-2s here, so under-training is the trap, not the budget:
+                              # an MLP needs ~120 epochs to converge (it hits ~4% then, ~8% at 40)
 
 allowed_edits:
   - architecture

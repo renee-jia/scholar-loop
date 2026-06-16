@@ -4,14 +4,16 @@ A **verbatim capture** of one autonomous ScholarLoop run: the real `digits-mlp` 
 with **Claude Opus 4.8** as every agent, taken all the way from *"pick a direction"* to a
 written-up, peer-reviewed paper. Produced by [`../run_to_paper.py`](../run_to_paper.py).
 
-> **5 experiments · 24 LLM calls · ≈ $0.27.** The loop read the literature, proposed
-> literature-grounded configs, debated them, ran real PyTorch experiments through the
-> multi-fidelity funnel, learned from a diverging run, found a config that beats the baseline, and
-> wrote it up — then its own reviewer rejected the paper as too marginal. (It's not wrong.)
+> **11 experiments · 45 LLM calls · ≈ $0.60.** The loop read the literature, proposed
+> literature-grounded configs, debated them, and ran real PyTorch experiments through the
+> multi-fidelity funnel. One idea climbed the full ladder — smoke → verify → full — to a confirmed
+> **2.67% val error, less than half the 5.0 baseline**, while the Reasoner's over-optimistic gain
+> predictions were caught by predict-then-verify and distilled into reusable lessons. It wrote the
+> result up — then its own reviewer rejected the paper 3/10 as too marginal. (It's not wrong.)
 
 | file | what it is |
 |---|---|
-| **[`run.md`](run.md)** | the autonomous run log — director's direction, the real arXiv findings, every experiment (funnel tiers + verdicts + predict-vs-measured), and the lessons the Reflector distilled |
+| **[`run.md`](run.md)** | the autonomous run log — director's direction, the real (arXiv + OpenAlex, citation-ranked) findings, every experiment (funnel tiers + verdicts + predict-vs-measured), and the lessons the Reflector distilled |
 | **[`paper.md`](paper.md)** | the paper the L5 Writer produced + the Reviewer's assessment. Every number is checked against the experiment registry (grounding ✅) |
 | **[`experiments.jsonl`](experiments.jsonl)** | the raw ledger — one real torch training run per record |
 
