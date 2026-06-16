@@ -3,6 +3,8 @@
 import dataclasses
 from pathlib import Path
 
+import pytest
+
 from scholarloop.ledger import Hypothesis, Ledger
 from scholarloop.profile import load_profile
 from scholarloop.registry import VerifiedRegistry
@@ -64,6 +66,25 @@ def test_config_override_varies_outcome_and_feeds_reasoning(tmp_path):
     c = analyze_search_space(entries, profile)
     assert "lr" in c.focus                                    # lr clearly moves the metric
     assert any(r.startswith("lr>") for r in c.ruled_out)      # high lr region is exhausted
+
+
+def test_run_seeds_tolerates_partial_failure():
+    from scholarloop.runner import RunError, _run_seeds
+
+    def run_one(s):                                  # seed 1 crashes; 0 and 2 succeed
+        if s == 1:
+            raise RunError("seed 1 crashed")
+        return {"value": 5.0 + s}
+
+    results, failures = _run_seeds([0, 1, 2], run_one)
+    assert [r["value"] for r in results] == [5.0, 7.0]   # the survivors are kept
+    assert len(failures) == 1
+
+    def always_fail(s):
+        raise RunError("boom")
+
+    with pytest.raises(RunError):                    # every seed failing still kills the run
+        _run_seeds([0, 1], always_fail)
 
 
 def test_run_experiment_kill_path(tmp_path):

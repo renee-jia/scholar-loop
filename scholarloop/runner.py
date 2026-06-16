@@ -131,6 +131,21 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
             pass
 
 
+def _run_seeds(seeds: list[int], run_one):
+    """Run each seed, tolerating per-seed failures. Returns (results, failures). Raises RunError
+    only if EVERY seed failed — so a single crashed/timed-out seed in a multi-seed verify run
+    doesn't void the seeds that did succeed."""
+    results, failures = [], []
+    for s in seeds:
+        try:
+            results.append(run_one(s))
+        except RunError as e:
+            failures.append(f"seed {s}: {e}")
+    if not results:
+        raise RunError("; ".join(failures) or "no seeds ran")
+    return results, failures
+
+
 def run_experiment(
     profile: Profile,
     fidelity: str,
@@ -174,8 +189,9 @@ def run_experiment(
     agg: float | None = None
     registry = VerifiedRegistry(Path(registry_dir) / f"{exp_id}.json", exp_id=exp_id)
     try:
-        results = [_run_one_seed(train_module, score_module, s, budget, config_override, engine_cwd)
-                   for s in seeds]
+        results, failures = _run_seeds(
+            seeds, lambda s: _run_one_seed(train_module, score_module, s, budget,
+                                           config_override, engine_cwd))
         per_seed = [float(r["value"]) for r in results]
         config = results[0].get("config", {})   # hparams are fixed across seeds for one run
         agg = round(mean(per_seed), 4)
@@ -188,6 +204,8 @@ def run_experiment(
         else:
             verdict = "kept" if profile.metric.is_better(agg, baseline) else "discarded"
         metric_blob = {"name": profile.metric.name, fidelity: agg, "seeds": per_seed}
+        if failures:                            # partial run: some seeds crashed but enough survived
+            metric_blob["seeds_failed"] = len(failures)
     except RunError as e:
         registry.status = "killed"   # mark, so an empty registry isn't mistaken for a clean run
         registry.save()
