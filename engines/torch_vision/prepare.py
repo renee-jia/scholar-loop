@@ -1,5 +1,5 @@
 """FROZEN module for the digits-mlp engine — data, model construction, and evaluation.
-Never edit this file. It is the trust anchor (DESIGN §7.1):
+Never edit this file. It is the trust anchor:
 
   1. `load_train()` hands the agent ONLY the training split — the val set never leaves here.
   2. `build_model()` is frozen, so the model the scorer reconstructs is defined by trusted code;

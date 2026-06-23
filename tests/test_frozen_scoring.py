@@ -1,4 +1,4 @@
-"""The frozen-scoring guard (DESIGN §7.1): the runner trusts only the frozen scorer's number,
+"""The frozen-scoring guard: the runner trusts only the frozen scorer's number,
 so an edited train.py can neither fabricate the metric nor be the source of truth."""
 
 from pathlib import Path

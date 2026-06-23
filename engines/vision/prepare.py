@@ -51,7 +51,7 @@ def emit_result(value: float, seeds: list[float] | None = None, config: dict | N
     """Print the result in the protocol the runner parses (a single tagged JSON line).
 
     `config` is the hyperparameter snapshot this run used; the runner stores it in the
-    ledger so the Reasoning Layer (DESIGN §4.5) can prune the search space across runs.
+    ledger so the Reasoning Layer can prune the search space across runs.
     """
     payload = {"metric_name": METRIC_NAME, "value": float(value),
                "seeds": seeds or [value], "config": config or {}}

@@ -1,4 +1,4 @@
-"""The Reflector agent (DESIGN §4.5 mechanism 3) — compounds intuition after each run.
+"""The Reflector agent — compounds intuition after each run.
 
 Given a completed experiment and its parent, the Reflector asks: what is the one transferable
 lesson here? It weighs the prediction against the measurement (a large `calibration_error`

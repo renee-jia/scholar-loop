@@ -1,4 +1,4 @@
-"""Live end-to-end run against the real Anthropic API (impl_plan #1).
+"""Live end-to-end run against the real Anthropic API.
 
 Swaps the scripted MockLLM for AnthropicLLM and runs the full agent chain — Director, Lit Scout
 (real arXiv), Reasoner, Debate, Reflector, Advisor — over the multi-fidelity funnel on the real

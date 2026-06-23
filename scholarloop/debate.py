@@ -1,4 +1,4 @@
-"""Debate panel (DESIGN §4.6) — diverse/adversarial perspectives before spending a GPU.
+"""Debate panel — diverse/adversarial perspectives before spending a GPU.
 
 Several persona critics (from `profile.debate_roles`, e.g. Innovator / Pragmatist /
 Contrarian) each examine a proposal through a distinct lens and vote run / revise / reject.

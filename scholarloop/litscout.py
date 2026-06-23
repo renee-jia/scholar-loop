@@ -1,4 +1,4 @@
-"""Lit Scout (DESIGN §4 L3) — literature grounding for the Reasoner.
+"""Lit Scout — literature grounding for the Reasoner.
 
 Two cleanly separated halves, per the harness rule "retrieval is a deterministic tool,
 extraction is an agent":

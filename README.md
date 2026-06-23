@@ -49,7 +49,7 @@ that keeps the agents honest and **impossible to reward-hack**.
 
 > The LLM does only the open-ended reasoning. Everything checkable — search-space pruning, dedup,
 > calibration, number-grounding, promotion gates — is deterministic, unit-tested code, and the
-> metric is the **only** optimization target (no LLM-as-judge). Multiple adversarial review passes
+> metric is the **only** optimization target (no LLM-as-judge in the optimization loop). Multiple adversarial review passes
 > found and fixed real bugs across the loop's correctness and reward-hacking boundaries.
 
 ## 🔁 Loop engineering — the part that isn't the prompt
@@ -88,16 +88,18 @@ Four pillars, each a few lines of deterministic code — and each pinned by test
 > Net effect: a loop you can actually let run — it **fans out** to explore, **screens cheaply in
 > parallel**, **concentrates compute** on what survives, **calibrates itself**, and **knows when to
 > stop**. See it live in [`examples/governed_campaign.py`](examples/governed_campaign.py) (free,
-> deterministic) or in the two captured Opus runs above.
+> deterministic) or in the two captured Opus runs at the end.
 
 ## 🚀 Quickstart
 
 ```bash
-pip install -e ".[dev]"          # pyyaml + jsonschema + pytest   (".[llm]" adds the Anthropic client)
+pip install -e ".[dev]"             # pyyaml + jsonschema + pytest
+python examples/quickstart.py       # the whole loop in <1s — no GPU, no API key
 
-python examples/quickstart.py    # the whole loop in <1s — no GPU, no API key
-python examples/campaign_demo.py # a full campaign on real torch, MockLLM-scripted
+pip install -e ".[dev,engines]"     # adds torch + scikit-learn for the real experiment engines
+python examples/campaign_demo.py    # a full campaign on real torch, MockLLM-scripted
 pytest -q
+# ".[llm]" adds the Anthropic client, only needed for live API runs (e.g. examples/run_to_paper.py)
 ```
 
 `quickstart.py` runs one idea through the funnel:

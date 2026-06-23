@@ -1,4 +1,4 @@
-"""Loop governor (DESIGN §3 / §6) — the autonomous loop's stop conditions and budget control.
+"""Loop governor — the autonomous loop's stop conditions and budget control.
 
 A long-running campaign should not run a fixed number of steps blindly: it should stop when it has
 spent its money, exhausted its ideas, or run long enough. The `Governor` is a small, pure

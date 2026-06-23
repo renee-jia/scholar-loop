@@ -1,4 +1,4 @@
-"""The minimal orchestration loop (DESIGN §3) — one ReAct-light iteration per step.
+"""The minimal orchestration loop — one ReAct-light iteration per step.
 
 step():
   1. read the ledger,
@@ -201,7 +201,7 @@ class Orchestrator:
 
     def funnel_step(self, *, tiers=("smoke", "verify", "full"), lit_context: str = "",
                     skills: str = "", lit_priors: list[str] | None = None) -> list[LedgerEntry]:
-        """Funnel one idea up the fidelity ladder (DESIGN §3): each tier must clear a promotion
+        """Funnel one idea up the fidelity ladder: each tier must clear a promotion
         gate to advance, so cheap smoke runs kill most ideas before any expensive full run.
         The tiers chain via `parent`; calibration is measured against the frontier. Returns the
         chain of entries produced (1-3)."""

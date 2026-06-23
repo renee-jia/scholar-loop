@@ -1,5 +1,5 @@
 """FROZEN module for the diabetes-mlp regression engine — data, model, evaluation.
-Never edit this file. Same trust guarantees as the other engines (DESIGN §7.1): the agent gets
+Never edit this file. Same trust guarantees as the other engines: the agent gets
 the training split only, and the trusted RMSE is computed here from a state_dict loaded with
 weights_only=True.
 """

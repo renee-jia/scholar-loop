@@ -6,7 +6,7 @@ the metric — the runner runs the frozen `prepare score` step on the artifact f
 number, so an edited train.py cannot fabricate a result. The runner injects a hyperparameter
 override via $SCHOLARLOOP_CONFIG.
 
-Two edit channels (DESIGN §4.5): the runner sweeps the hparam space via the override
+Two edit channels: the runner sweeps the hparam space via the override
 (parallel-safe, no source mutation); real architecture changes are made by editing this file.
 """
 

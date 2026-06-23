@@ -1,4 +1,4 @@
-"""Skill Library (DESIGN §2.4 / §4.5 mechanism 3) — the PhD's accumulating intuition.
+"""Skill Library — the PhD's accumulating intuition.
 
 A deterministic store of lessons distilled from past runs. Each lesson decays in influence
 over time (half-life ~30 days), so recent experience outweighs stale experience without ever

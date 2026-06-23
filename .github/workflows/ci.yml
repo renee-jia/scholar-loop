@@ -16,8 +16,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install -U pip
+          # CPU torch wheel first (avoids the multi-GB CUDA build); the rest comes from the extras
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install scikit-learn
-          pip install -e ".[dev]"
+          pip install -e ".[dev,engines]"
       - name: Run tests
         run: pytest -q

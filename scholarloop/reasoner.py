@@ -1,4 +1,4 @@
-"""The Reasoner agent (DESIGN §4.5, ReAct-light "reason → act").
+"""The Reasoner agent — ReAct-light "reason → act".
 
 Given the experiment ledger, the Reasoner:
   1. mines search-space constraints from history (deterministic, `reasoning.py`),

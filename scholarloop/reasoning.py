@@ -1,4 +1,4 @@
-"""Reasoning Layer (DESIGN §4.5), ReAct-light.
+"""Reasoning Layer — ReAct-light.
 
 This module holds the *deterministic* substrate the LLM Reasoner stands on:
 
@@ -40,7 +40,7 @@ class SearchSpaceConstraints:
     def violations(self, config: dict) -> list[str]:
         """Return the reasons `config` violates the constraints (empty == admissible).
 
-        This is what makes search-space limitation actually BIND (DESIGN §4.5): a proposed
+        This is what makes search-space limitation actually BIND: a proposed
         config inside a ruled-out region — or already tried — is rejected, not merely discouraged.
         """
         out = []

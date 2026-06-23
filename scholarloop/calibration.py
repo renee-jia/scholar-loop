@@ -1,4 +1,4 @@
-"""Universal predict-then-verify (DESIGN §4.5 mechanism 1, generalized).
+"""Universal predict-then-verify.
 
 Self-calibration is not special to the Reasoner: ANY generative step that commits to a checkable
 claim can be scored once ground truth arrives, and the running accuracy fed back into the loop.

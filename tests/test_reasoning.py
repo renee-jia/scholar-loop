@@ -1,4 +1,4 @@
-"""Tests for the deterministic search-space reasoning (DESIGN §4.5, mechanism 1 & 2)."""
+"""Tests for the deterministic search-space reasoning (mechanism 1 & 2)."""
 
 from pathlib import Path
 

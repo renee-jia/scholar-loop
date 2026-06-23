@@ -4,7 +4,7 @@ Three pieces, on the agent harness:
   - `Writer` drafts a short paper from the kept ledger findings.
   - **Number grounding** (the anti-hallucination gate): every number in the draft must trace
     to a recorded fact — a captured measurement (VerifiedRegistry) or a logged config value.
-    Any ungrounded number is flagged, so prose can never invent results (DESIGN §2.3 / §5).
+    Any ungrounded number is flagged, so prose can never invent results.
   - `Reviewer` critiques the draft (strengths / weaknesses / score / recommendation).
 
 The grounding is deterministic code, not an agent — the Writer proposes, the registry verifies.

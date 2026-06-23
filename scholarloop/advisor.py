@@ -1,4 +1,4 @@
-"""The Advisor agent (DESIGN §3 step 7) — post-run loop control.
+"""The Advisor agent — post-run loop control.
 
 After an experiment, the Advisor reads the result against its parent and recent history and
 decides the loop's next move:

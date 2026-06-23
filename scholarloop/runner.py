@@ -8,7 +8,7 @@ Given a domain Profile and a fidelity tier, the runner:
   5. compares the aggregate against the profile's must-beat baseline to set a verdict,
   6. appends one record to the Experiment Ledger.
 
-This is the minimal "read idea -> run -> measure -> remember" loop from DESIGN.md Phase 0.
+This is the minimal "read idea -> run -> measure -> remember" loop.
 The agent that edits train.py and the L3 idea engine plug in above this; both are later phases.
 
 CLI:
@@ -58,7 +58,7 @@ def _module_from_entrypoint(entrypoint: str) -> str:
 def _engine_root(train_entrypoint: str, edits: list[dict]) -> Path:
     """Copy the engine package into a throwaway temp root and apply the agent's edits there.
 
-    This is the source-diff edit channel under per-run isolation (DESIGN §4.5): architecture
+    This is the source-diff edit channel under per-run isolation: architecture
     edits run against a copy, so the real repo source is never mutated and concurrent runs can't
     clobber each other. Edits to frozen surfaces are rejected upstream, so the copied
     `prepare.py` stays original — the frozen scorer's integrity holds.
@@ -98,7 +98,7 @@ def _run(module_args: list[str], cwd: Path, timeout_sec: int, extra_env: dict, s
 def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: int,
                   config_override: dict | None, engine_cwd: Path,
                   frozen_guard: tuple = (None, None)) -> dict:
-    """Two-phase run for one seed (DESIGN §7.1 — the reward-hacking guard).
+    """Two-phase run for one seed — the reward-hacking guard.
 
     Phase 1 runs the EDITABLE train module, which must write a model artifact to
     $SCHOLARLOOP_ARTIFACT. Its stdout is intentionally ignored. Phase 2 runs the FROZEN
@@ -143,7 +143,7 @@ def _file_hash(path: Path) -> str:
 
 def _verify_frozen(path: Path, expected: str | None) -> None:
     """Refuse to score if the frozen module changed since the run started — a defense against an
-    adversarial train.py overwriting (or deleting) the trusted scorer at runtime (DESIGN §7.1).
+    adversarial train.py overwriting (or deleting) the trusted scorer at runtime.
     Detection, not prevention: a tampered run is killed, so the agent gains nothing. Full FS isolation
     needs a sandbox."""
     if expected is None:
@@ -186,7 +186,7 @@ def run_experiment(
 ) -> LedgerEntry:
     """Run one experiment at one fidelity tier and record it. Returns the ledger entry.
 
-    Two edit channels (DESIGN §4.5): `config_override` sweeps the hyperparameter space without
+    Two edit channels: `config_override` sweeps the hyperparameter space without
     mutating source; `edits` (list of {path, content}) is the source-diff channel, applied in an
     isolated engine copy. Edits to frozen surfaces are refused here (the `forbidden_edits` guard,
     defense-in-depth — the orchestrator also gates them before calling).
