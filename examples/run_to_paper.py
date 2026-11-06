@@ -5,10 +5,13 @@ artifacts to examples/sample_run/ : the paper (paper.md), the real experiments
     export ANTHROPIC_API_KEY=sk-ant-...
     python examples/run_to_paper.py
     # knobs:  SCHOLARLOOP_MODEL=claude-opus-4-8  SCHOLARLOOP_STEPS=3
+    # start from a human-chosen idea (python -m scholarloop.session ... -> handoff.json):
+    #         SCHOLARLOOP_HANDOFF=runs/s1/handoff.json python examples/run_to_paper.py
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -19,6 +22,7 @@ from pathlib import Path
 from scholarloop.advisor import Advisor
 from scholarloop.debate import DebatePanel
 from scholarloop.director import Director
+from scholarloop.governor import cost_of
 from scholarloop.ledger import Ledger
 from scholarloop.litscout import ArxivClient, LitScout, OpenAlexClient
 from scholarloop.llm import AnthropicLLM
@@ -30,15 +34,10 @@ from scholarloop.skills import SkillLibrary
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "examples" / "sample_run"
-_PRICE = {"claude-opus-4-8": (5.0, 25.0), "claude-sonnet-4-6": (3.0, 15.0),
-          "claude-haiku-4-5": (1.0, 5.0)}
 
 
 def _cost(model, usage):
-    if model not in _PRICE:
-        return None
-    pin, pout = _PRICE[model]
-    return usage["input_tokens"] / 1e6 * pin + usage["output_tokens"] / 1e6 * pout
+    return cost_of(usage, model)          # one price table (scholarloop.governor), not a copy
 
 
 def _first(trace, agent):
@@ -68,7 +67,8 @@ def _unit(profile) -> str:
     return "%" if ("err" in name or "acc" in name) else ""
 
 
-def fmt_run(profile, entries, skills, usage, model, trace, calibration: str = "") -> str:
+def fmt_run(profile, entries, skills, usage, model, trace, calibration: str = "",
+            handoff: dict | None = None) -> str:
     d, lit = _first(trace, "director"), _first(trace, "lit_scout")
     cost = _cost(model, usage)
     u = _unit(profile)
@@ -78,13 +78,20 @@ def fmt_run(profile, entries, skills, usage, model, trace, calibration: str = ""
            f"- **{len(entries)}** experiments · **{usage['calls']}** LLM calls · "
            f"{usage['input_tokens']}+{usage['output_tokens']} tokens"
            + (f" · ≈ **${cost:.3f}**" if cost is not None else ""),
-           f"- baseline to beat: {profile.best_baseline()}{u} {profile.metric.name}", "",
-           "## 🎯 Director — direction",
-           f"> {d.get('direction', '(n/a)')}  ",
-           f"> *topic for the Lit Scout:* {d.get('topic', '(n/a)')}", "",
-           "## 🔭 Lit Scout — grounded findings (real literature: arXiv + OpenAlex, citation-ranked)"]
-    for f in lit.get("findings", []):
-        out.append(f"- **{f.get('technique')}** ({f.get('source')}) — {f.get('predicted_effect')}")
+           f"- baseline to beat: {profile.best_baseline()}{u} {profile.metric.name}", ""]
+    if handoff:
+        idea = handoff.get("idea", {})
+        out += ["## 💡 Chosen idea (human-selected in a research session)",
+                f"> **{idea.get('title', handoff.get('topic'))}** — {idea.get('description', '')}  ",
+                f"> *hypothesis:* {idea.get('hypothesis', {}).get('claim', '')}  ",
+                f"> *builds on:* {', '.join(handoff.get('sources', []))}", ""]
+    else:
+        out += ["## 🎯 Director — direction",
+                f"> {d.get('direction', '(n/a)')}  ",
+                f"> *topic for the Lit Scout:* {d.get('topic', '(n/a)')}", "",
+                "## 🔭 Lit Scout — grounded findings (real literature: arXiv + OpenAlex, citation-ranked)"]
+        for f in lit.get("findings", []):
+            out.append(f"- **{f.get('technique')}** ({f.get('source')}) — {f.get('predicted_effect')}")
     out += ["", "## 🪜 Experiments (real torch · multi-fidelity funnel)", "",
             f"| id | tier | {profile.metric.name} | verdict | predicted→measured | grounded source |",
             "|---|---|---|---|---|---|"]
@@ -117,6 +124,8 @@ def main() -> int:
     max_workers = int(os.environ.get("SCHOLARLOOP_MAX_WORKERS", "1"))
     dry_patience = os.environ.get("SCHOLARLOOP_DRY_PATIENCE")         # loop-until-dry convergence
     max_cost = os.environ.get("SCHOLARLOOP_MAX_COST")                 # USD budget ceiling
+    handoff_path = os.environ.get("SCHOLARLOOP_HANDOFF")              # a research session's chosen idea
+    handoff = json.loads(Path(handoff_path).read_text()) if handoff_path else None
     out = Path(os.environ.get("SCHOLARLOOP_OUT", "")) if os.environ.get("SCHOLARLOOP_OUT") else OUT
 
     out.mkdir(parents=True, exist_ok=True)
@@ -143,6 +152,9 @@ def main() -> int:
             reflector=Reflector(llm), advisor=Advisor(llm), director=Director(llm, profile),
             skill_library=skills, topic=topic,
             ledger_path=ledger_path, registry_dir=registry_dir)
+        if handoff:                                   # the human already chose the direction
+            orch.adopt(handoff)
+            print(f"=== adopting the chosen idea: {handoff['topic']!r} ===")
         gov = None
         if dry_patience or max_cost:
             from scholarloop.governor import Governor
@@ -164,7 +176,7 @@ def main() -> int:
         fmt_paper(paper["draft"], paper["grounded"], paper["ungrounded"], paper["review"]))
     if orch is not None:                            # run.md reflects the campaign; keep it on paper-only re-runs
         (out / "run.md").write_text(fmt_run(profile, entries, skills, llm.usage, model, orch.trace,
-                                            calibration=orch.calibration.render()))
+                                            calibration=orch.calibration.render(), handoff=handoff))
 
     shutil.rmtree(registry_dir, ignore_errors=True)
     shutil.rmtree(skills_dir, ignore_errors=True)

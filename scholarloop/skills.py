@@ -14,20 +14,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 # Tiny lexical relevance, no embedding model needed (deterministic, offline). Used to surface the
 # lessons that actually bear on the CURRENT direction, not just the globally heaviest ones.
-_STOP = {"the", "a", "an", "to", "of", "and", "or", "is", "in", "on", "for", "with", "at", "by",
-         "be", "it", "this", "that", "from", "as", "are", "was", "not", "but", "than", "then",
-         "when", "its", "into", "rather", "use", "using", "dont", "do", "you", "your", "can"}
-
-
-def _terms(text: str) -> set[str]:
-    return {t for t in re.findall(r"[a-z0-9]+", (text or "").lower()) if len(t) > 2 and t not in _STOP}
+from scholarloop.text import terms as _terms
 
 
 def _relevance(skill: "Skill", query_terms: set[str]) -> float:

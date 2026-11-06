@@ -55,6 +55,7 @@ class Paper:
     url: str
     citations: int | None = None   # impact signal for ranking; None when the source omits it
     code_url: str | None = None    # populated only when a source actually links code
+    year: int | None = None        # publication year when the source carries it (recency signal)
 
 
 # --------------------------------------------------------------------------------------------
@@ -82,11 +83,13 @@ class ArxivClient:
         papers: list[Paper] = []
         for e in root.findall(_ATOM + "entry"):
             id_text = (e.findtext(_ATOM + "id") or "").strip()
+            published = (e.findtext(_ATOM + "published") or "").strip()
             papers.append(Paper(
                 title=" ".join((e.findtext(_ATOM + "title") or "").split()),
                 summary=" ".join((e.findtext(_ATOM + "summary") or "").split()),
                 arxiv_id="arXiv:" + id_text.rsplit("/", 1)[-1],   # prefixed like every other source, so dedup collapses cross-source
                 url=id_text,
+                year=int(published[:4]) if published[:4].isdigit() else None,
             ))
         return papers
 
@@ -152,6 +155,7 @@ class OpenAlexClient:
                 summary=_reconstruct_abstract(w.get("abstract_inverted_index")),
                 arxiv_id=cite_id, url=url,
                 citations=w.get("cited_by_count"),
+                year=w.get("publication_year"),
             ))
         return papers
 
@@ -162,7 +166,7 @@ class SemanticScholarClient:
     when you have a key. `fetcher(query, max_results) -> json_text` is injectable."""
 
     name = "semantic_scholar"
-    _FIELDS = "title,abstract,citationCount,externalIds,openAccessPdf"
+    _FIELDS = "title,abstract,citationCount,externalIds,openAccessPdf,year"
 
     def __init__(self, fetcher=None, *, timeout: float = 20.0, api_key: str | None = None):
         self._fetch = fetcher or self._http_fetch
@@ -191,6 +195,7 @@ class SemanticScholarClient:
                 arxiv_id=cite_id, url=(p.get("openAccessPdf") or {}).get("url", ""),
                 citations=p.get("citationCount"),
                 code_url=(p.get("openAccessPdf") or {}).get("url"),
+                year=p.get("year"),
             ))
         return papers
 
@@ -227,9 +232,48 @@ def merge_papers(groups: list[list[Paper]], max_results: int) -> list[Paper]:
             keep, drop = (p, cur) if _richer(p, cur) else (cur, p)
             if drop.code_url and not keep.code_url:     # never lose a code link regardless of which row wins
                 keep.code_url = drop.code_url
+            if drop.year is not None and keep.year is None:
+                keep.year = drop.year
             best[k] = keep
     ranked = sorted(best.values(), key=lambda p: (p.citations is None, -(p.citations or 0)))
     return ranked[:max_results]
+
+
+def retrieve(sources: list, queries: list[str], *, per_query: int = 8, max_total: int = 20,
+             recent_share: float = 0.3) -> list[Paper]:
+    """Multi-query retrieval for a literature review: run every query against every source,
+    merge + de-duplicate, then fill `max_total` slots with the highest-cited papers while reserving
+    `recent_share` of them for papers that carry no citation count (typically fresh arXiv preprints),
+    so a review sees both the established work and the newest. Per-source failures are skipped.
+    Deterministic given the fetchers."""
+    groups: list[list[Paper]] = []
+    for q in queries:
+        for src in sources:
+            try:
+                groups.append(src.search(q, per_query))
+            except Exception as e:  # pragma: no cover - network
+                print(f"lit_review: {getattr(src, 'name', 'source')} failed on {q!r} "
+                      f"({type(e).__name__}), skipping it", file=sys.stderr)
+    merged = merge_papers(groups, max_results=10 ** 9)          # everything, ranked
+    cited = [p for p in merged if p.citations is not None]
+    uncited = [p for p in merged if p.citations is None]
+    n_recent = min(len(uncited), int(round(max_total * recent_share))) if cited else len(uncited)
+    out = cited[:max_total - n_recent] + uncited[:n_recent]
+    if len(out) < max_total:                                   # backfill from whichever pool has more
+        rest = [p for p in merged if p not in out]
+        out += rest[:max_total - len(out)]
+    return out
+
+
+def render_papers(papers: list[Paper], *, max_chars: int = 700) -> str:
+    """One prompt block per paper, tagged by its citation id so agents can cite it verbatim."""
+    rows = []
+    for p in papers:
+        meta = ", ".join(x for x in [str(p.year) if p.year else "",
+                                     f"{p.citations} citations" if p.citations is not None else ""] if x)
+        code = f"\ncode: {p.code_url}" if p.code_url else ""
+        rows.append(f"[{p.arxiv_id}{' · ' + meta if meta else ''}] {p.title}\n{p.summary[:max_chars]}{code}")
+    return "\n\n".join(rows)
 
 
 # --------------------------------------------------------------------------------------------

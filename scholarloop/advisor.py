@@ -47,8 +47,9 @@ class Advisor(Agent):
             f"Config: {e.config}.  Prediction: {e.prediction}.",
         ]
         if parent is not None:
+            better = (lambda a, b: a < b) if ctx.get("direction", "minimize") == "minimize" else (lambda a, b: a > b)
             improved = (e.primary_score() is not None and parent.primary_score() is not None
-                        and e.primary_score() < parent.primary_score())
+                        and better(e.primary_score(), parent.primary_score()))
             lines.append(f"Frontier {parent.id} scored {parent.primary_score()} "
                          f"({'improved' if improved else 'did not improve'}).")
         lines.append(f"Recent verdicts: {ctx.get('recent_verdicts', [])}.")
@@ -56,6 +57,6 @@ class Advisor(Agent):
         return "\n".join(lines)
 
     def advise(self, entry: LedgerEntry, parent: LedgerEntry | None,
-               recent_verdicts: list[str] | None = None) -> dict:
+               recent_verdicts: list[str] | None = None, *, direction: str = "minimize") -> dict:
         return self.run({"entry": entry, "parent": parent,
-                         "recent_verdicts": recent_verdicts or []})
+                         "recent_verdicts": recent_verdicts or [], "direction": direction})

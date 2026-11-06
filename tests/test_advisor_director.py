@@ -45,14 +45,29 @@ def test_pivot_clears_lit_cache_and_calls_director(tmp_path):
     director = Director(MockLLM(jsons=[{"direction": "explore augmentation",
                                         "topic": "data augmentation", "rationale": "new angle"}]),
                         PROFILE)
+    from scholarloop.litscout import ArxivClient, LitScout
+    scout = LitScout(MockLLM(), ArxivClient(fetcher=lambda q, n: "<feed/>"))   # never called here
     orch = Orchestrator(MockLLM(jsons=[_proposal_json(cfg)]), PROFILE,
-                        advisor=advisor, director=director,
+                        advisor=advisor, director=director, lit_scout=scout,
                         ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
     orch._lit = ("stale lit", ["x"])      # pretend literature was cached
     orch.step()
-    assert orch._lit is None              # pivot dropped the cache to re-ground
+    assert orch._lit is None              # pivot dropped the cache so the scout re-grounds
     assert orch.topic == "data augmentation"       # Director chose the new topic
     assert orch.guidance == "explore augmentation"
+
+
+def test_pivot_without_a_scout_keeps_adopted_literature(tmp_path):
+    # a human-chosen idea's literature (ResearchSession handoff) is the only grounding the loop has
+    # when no Lit Scout is configured -- a pivot must not throw it away
+    cfg = {"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5}
+    advisor = Advisor(MockLLM(jsons=[{"decision": "pivot", "rationale": "switch direction"}]))
+    orch = Orchestrator(MockLLM(jsons=[_proposal_json(cfg)]), PROFILE, advisor=advisor,
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    orch.adopt({"topic": "chosen idea", "guidance": "test it", "lit_context": "ctx", "lit_priors": ["p"]})
+    orch.step()
+    assert orch._lit == ("ctx", ["p"])
+    assert "change approach" in orch.guidance       # the pivot still redirects the Reasoner
 
 
 def test_refine_is_bounded_then_forces_pivot(tmp_path):

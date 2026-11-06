@@ -76,15 +76,29 @@ class Orchestrator:
         self.last_advice: dict | None = None
         self._refine_count = 0
         self._directed = False
+        self.adopted: dict | None = None     # a human-chosen idea (ResearchSession handoff), if any
         self.calibration = CalibrationLog()   # universal predict-then-verify across agents (B)
 
+    def adopt(self, handoff: dict) -> None:
+        """Start the loop from a human-chosen idea (a `ResearchSession` handoff): its title becomes
+        the topic, its plan + hypothesis the Reasoner guidance, and its own sources the literature
+        context. The Director is NOT consulted for an opening direction — the human already set it;
+        it is still used on a PIVOT, when the idea's direction has been exhausted."""
+        self.adopted = handoff
+        self.topic = handoff.get("topic", self.topic)
+        self.guidance = handoff.get("guidance", "")
+        self._lit = (handoff.get("lit_context", ""), list(handoff.get("lit_priors", [])))
+        self._directed = True
+
     def _literature(self) -> tuple[str, list[str]]:
-        """Fetch literature grounding once (cached). Empty when no Lit Scout is configured."""
+        """Literature grounding, cached: an adopted idea's own sources, else one Lit Scout pass.
+        Empty when neither is available."""
+        if self._lit is not None:
+            return self._lit
         if self.lit_scout is None:
             return "", []
-        if self._lit is None:
-            self.lit_scout.trace = self.trace
-            self._lit = self.lit_scout.scout(self.topic)
+        self.lit_scout.trace = self.trace
+        self._lit = self.lit_scout.scout(self.topic)
         return self._lit
 
     @staticmethod
@@ -165,7 +179,8 @@ class Orchestrator:
                 self.skill_library.add(skill)
         if self.advisor is not None:                       # post-run loop control
             recent = [e.verdict for e in entries[-5:]]
-            self.last_advice = self.advisor.advise(entry, frontier, recent_verdicts=recent)
+            self.last_advice = self.advisor.advise(entry, frontier, recent_verdicts=recent,
+                                                   direction=self.profile.metric.direction)
             self._apply_advice(entries)
 
     def step(self, *, fidelity: str = "smoke", lit_context: str = "", skills: str = "",
@@ -346,7 +361,8 @@ class Orchestrator:
         is unchanged, so we at least instruct the Reasoner to leave the exhausted region.
         """
         self._refine_count = 0
-        self._lit = None
+        if self.lit_scout is not None:
+            self._lit = None                 # re-ground from fresh literature on the new direction
         if self.director is not None:
             d = self.director.direct(entries)
             self.topic = d.get("topic", self.topic)
@@ -360,19 +376,21 @@ class Orchestrator:
         usage = getattr(self.llm, "usage", None) or {}
         return cost_of(usage, getattr(self.llm, "model", None))
 
-    def _round(self, *, funnel, population, fidelity, max_workers, lit_context, skills) -> list[LedgerEntry]:
+    def _round(self, *, funnel, population, fidelity, max_workers, lit_context, skills,
+               lit_priors=None) -> list[LedgerEntry]:
         """One campaign round: a population funnel, a single-idea funnel, or one flat run."""
         if population > 1:
             return self.population_step(population, max_workers=max_workers,
-                                        lit_context=lit_context, skills=skills)
+                                        lit_context=lit_context, skills=skills, lit_priors=lit_priors)
         if funnel:
-            return self.funnel_step(lit_context=lit_context, skills=skills)
-        entry = self.step(fidelity=fidelity, lit_context=lit_context, skills=skills)
+            return self.funnel_step(lit_context=lit_context, skills=skills, lit_priors=lit_priors)
+        entry = self.step(fidelity=fidelity, lit_context=lit_context, skills=skills, lit_priors=lit_priors)
         return [entry] if entry is not None else []
 
     def run(self, n_steps: int | None = None, *, fidelity: str = "smoke", funnel: bool = False,
             population: int = 1, max_workers: int = 1, governor: Governor | None = None,
-            lit_context: str = "", skills: str = "") -> list[LedgerEntry]:
+            lit_context: str = "", skills: str = "",
+            lit_priors: list[str] | None = None) -> list[LedgerEntry]:
         """Run autonomous rounds; returns the entries that actually ran.
 
         Bounding the campaign (at least one is required, else it's a single round):
@@ -409,7 +427,8 @@ class Orchestrator:
                     break
 
             produced = self._round(funnel=funnel, population=population, fidelity=fidelity,
-                                    max_workers=max_workers, lit_context=lit_context, skills=skills)
+                                    max_workers=max_workers, lit_context=lit_context, skills=skills,
+                                    lit_priors=lit_priors)
             out.extend(produced)
             round_idx += 1
 

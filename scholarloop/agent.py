@@ -82,7 +82,12 @@ class Agent(ABC):
         output: dict = {}
         errors: list[str] = []
         for attempt in range(self.max_retries + 1):
-            output = self.llm.complete_json(prompt, self.schema, system=self.system)
+            try:
+                output = self.llm.complete_json(prompt, self.schema, system=self.system)
+            except ValueError as e:          # json.JSONDecodeError: a truncated / non-JSON reply
+                output, errors = {}, [f"response was not valid JSON ({e})"]
+                prompt = self._retry_prompt(prompt, errors)
+                continue
             errors = []
             if validator is not None:
                 errors += [f"schema: {e.message}" for e in validator.iter_errors(output)]
