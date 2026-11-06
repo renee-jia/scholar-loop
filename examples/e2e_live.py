@@ -1,7 +1,7 @@
 """Live end-to-end run against the real Anthropic API.
 
 Swaps the scripted MockLLM for AnthropicLLM and runs the full agent chain — Director, Lit Scout
-(real arXiv), Reasoner, Debate, Reflector, Advisor — over the multi-fidelity funnel on the real
+(real OpenAlex + arXiv), Reasoner, Debate, Reflector, Advisor — over the multi-fidelity funnel on the real
 torch digits-mlp engine. The experiments are real torch; the agents are a real LLM.
 
     export ANTHROPIC_API_KEY=sk-ant-...

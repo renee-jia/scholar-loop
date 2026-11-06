@@ -77,6 +77,8 @@ class Orchestrator:
         self._refine_count = 0
         self._directed = False
         self.adopted: dict | None = None     # a human-chosen idea (ResearchSession handoff), if any
+        self._base_guidance = ""             # standing guidance a "proceed" falls back to (the adopted plan)
+        self.stop_reason: str | None = None  # why the last governed `run()` ended, for run logs
         self.calibration = CalibrationLog()   # universal predict-then-verify across agents (B)
 
     def adopt(self, handoff: dict) -> None:
@@ -86,7 +88,7 @@ class Orchestrator:
         it is still used on a PIVOT, when the idea's direction has been exhausted."""
         self.adopted = handoff
         self.topic = handoff.get("topic", self.topic)
-        self.guidance = handoff.get("guidance", "")
+        self.guidance = self._base_guidance = handoff.get("guidance", "")
         self._lit = (handoff.get("lit_context", ""), list(handoff.get("lit_priors", [])))
         self._directed = True
 
@@ -353,7 +355,7 @@ class Orchestrator:
         elif decision == "pivot":
             self._pivot(entries, rationale)
         else:  # "proceed", or any unrecognized decision -> safe default (never an accidental pivot)
-            self._refine_count, self.guidance = 0, ""
+            self._refine_count, self.guidance = 0, self._base_guidance   # keep steering by the adopted plan
 
     def _pivot(self, entries: list[LedgerEntry], rationale: str) -> None:
         """Change direction: reset refines, drop cached literature, re-ground.
@@ -362,6 +364,7 @@ class Orchestrator:
         is unchanged, so we at least instruct the Reasoner to leave the exhausted region.
         """
         self._refine_count = 0
+        self._base_guidance = ""             # the adopted plan is exhausted; stop steering by it
         if self.lit_scout is not None:
             self._lit = None                 # re-ground from fresh literature on the new direction
         if self.director is not None:
@@ -409,6 +412,11 @@ class Orchestrator:
             self.topic, self.guidance, self._directed = d.get("topic", self.topic), \
                 d.get("direction", ""), True
         direction = self.profile.metric.direction
+        self.stop_reason = None
+        if governor is not None and governor.max_cost is not None and self._spent() is None:
+            print(f"governor: WARNING — max_cost=${governor.max_cost:.2f} cannot be enforced: no price "
+                  f"is known for model {getattr(self.llm, 'model', None)!r}; the budget gate is OFF "
+                  "(add it to scholarloop.governor.MODEL_PRICES).", file=sys.stderr)
         if governor is not None:                               # seed convergence tracking from any prior best
             fr = self._parent(list(Ledger(self.ledger_path).read_all()))
             if fr is not None:
@@ -419,6 +427,7 @@ class Orchestrator:
             if governor is not None:
                 stop, why = governor.should_stop(self._spent())
                 if stop:
+                    self.stop_reason = why
                     print(f"governor: stopping — {why}", file=sys.stderr)
                     break
             if n_steps is not None and round_idx >= n_steps:

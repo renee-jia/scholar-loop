@@ -55,11 +55,14 @@ def load_skill(*names: str) -> str:
 # ---------------------------------------------------------------------------------------------
 # Prose lint — the enforceable half of writing_skills/style.md
 # ---------------------------------------------------------------------------------------------
+# Words with no legitimate technical sense in a results paper. "foster" (a surname) and
+# "underscore" (the character) are NOT here; their machine-writing senses are caught as phrases.
 _BANNED_WORDS = re.compile(
-    r"\b(delv(?:e|es|ed|ing)|leverag(?:e|es|ed|ing)|tapestry|testament|underscor(?:e|es|ed|ing)|"
-    r"pivotal|showcas(?:e|es|ed|ing)|foster(?:s|ed|ing)?|realm|seamless(?:ly)?|multifaceted|"
-    r"paradigm shift|groundbreaking|intricate|crucial|vital)\b", re.IGNORECASE)
+    r"\b(delv(?:e|es|ed|ing)|leverag(?:e|es|ed|ing)|tapestry|testament|"
+    r"pivotal|showcas(?:e|es|ed|ing)|realm|seamless(?:ly)?|multifaceted|"
+    r"paradigm shift|groundbreaking|intricate(?:ly)?|crucial(?:ly)?|vital(?:ly)?)\b", re.IGNORECASE)
 _BANNED_PHRASES = [
+    "underscores the", "underscore the", "underscoring the", "fosters a", "foster a", "fostering a",
     "it is worth noting", "it should be noted", "it is important to note", "in recent years",
     "with the rapid development", "despite recent advances", "pave the way", "paves the way",
     "shed light on", "sheds light on", "bridge the gap", "bridges the gap", "open new avenues",
@@ -115,6 +118,10 @@ def prose_warnings(text: str, max_words: int = 40) -> list[str]:
             break
     if len(re.findall(r"\bnovel\b", text, re.IGNORECASE)) > 1:
         warns.append('"novel" used more than once')
+    soft = ["strong results", "a novel framework", "the landscape", "performance"]
+    hits = [w for w in soft if re.search(r"\b" + re.escape(w) + r"\b", text, re.IGNORECASE)]
+    if hits:
+        warns.append(f"vague wording, name the metric or the claim instead: {hits}")
     return warns
 
 
@@ -125,7 +132,7 @@ _YEARS = {float(y) for y in range(1900, 2100)}
 # Tiny integers are counts (5 seeds, 3 tiers, section 2), not results: a fabricated metric is never
 # a bare 0-10 integer in these domains, while blocking "five seeds" written as "5" is pure friction.
 _SMALL_INTS = {float(i) for i in range(0, 11)}
-_ID_RX = re.compile(r"(arXiv:[\w.\-/]+|doi:[\w./\-()]+|openalex:\w+|s2:\w+|exp_\d{4})")
+_ID_RX = re.compile(r"(arXiv:[\w.\-/]+|doi:[\w./\-()]+|openalex:\w+|s2:\w+|exp_\d{4,})")
 
 
 @dataclass
@@ -583,8 +590,9 @@ def render_keypoints_md(o: dict, kp: dict, transcript: list[dict], feedback: lis
 def render_paper_md(o: dict, sections: list[dict], review: dict | None = None) -> str:
     out = [f"# {o['title']}", ""]
     if review:
+        scores = " · ".join(f"{r['persona']} {r['score']}" for r in review["reviews"])
         out += [f"> **Panel review:** {review['recommendation']} · mean score {review['mean_score']}/10 "
-                f"({' · '.join(f'{r['persona']} {r['score']}' for r in review['reviews'])})", ""]
+                f"({scores})", ""]
     for s in sections:
         out += [f"## {s['heading']}", "", s["body"], ""]
     warns = [(s["heading"], w) for s in sections for w in s.get("warnings", [])]
@@ -870,7 +878,11 @@ def _main(argv: list[str]) -> int:
     if not any([a.feedback, a.approve, a.auto]):
         return 0 if s.interactive() else 1
     if a.feedback:
-        {"new": s.outline, "outlined": s.outline, "keypointed": s.key_points}.get(s.stage, s.outline)(feedback=a.feedback)
+        # Feedback lands on the last stage the author signs off: the outline while it is being
+        # settled, the key points afterwards. Past the draft it re-derives points → draft → review
+        # and keeps the agreed outline; it never silently throws the whole session away.
+        target = s.outline if s.stage in ("new", "outlined") else s.key_points
+        target(feedback=a.feedback)
         print(f"stage {s.stage} → {s.out}")
         return 0
     steps = {"new": s.outline, "outlined": s.key_points, "keypointed": s.draft, "drafted": s.review}

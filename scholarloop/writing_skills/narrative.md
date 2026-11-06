@@ -15,7 +15,7 @@ cannot state it in one sentence, the paper's focus is unclear.
 
 ## What / Why / So-what (must be clear by the end of the introduction)
 - **What**: 1-3 specific claims within one theme ("X improves Y by Z under condition W").
-- **Why believe it**: the evidence — which runs, how many seeds, against which baseline.
+- **Why believe it**: the evidence: which runs, how many seeds, against which baseline.
 - **So what**: why a reader who does not work on this exact setup should care.
 
 ## Contributions

@@ -61,9 +61,15 @@ def _number_tokens(text: str):
 
 
 def _decimals(tok: str) -> int:
-    """Number of fractional digits a numeric token carries (ignores exponent)."""
-    mantissa = tok.split("e")[0].split("E")[0]
-    return len(mantissa.split(".")[1]) if "." in mantissa else 0
+    """Number of significant fractional digits a numeric token carries, exponent included:
+    "5.83" -> 2, "3e-4" -> 4, "2.5e-3" -> 4, "2.5e3" -> 0. Without the exponent term "3e-4" would
+    be matched at integer precision, where every measurement below 0.5 "grounds" it."""
+    mantissa, _, exp = tok.lower().partition("e")
+    frac = len(mantissa.split(".")[1]) if "." in mantissa else 0
+    try:
+        return max(0, frac - int(exp)) if exp else frac
+    except ValueError:
+        return frac
 
 
 @dataclass

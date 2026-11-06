@@ -35,12 +35,16 @@ profile + engine pair are new, which is the whole point of pluggable domains. Pr
 | **[`paper.md`](paper.md)** | the paper the L5 Writer produced + the Reviewer's assessment, with the grounding audit's ⚠️ on the un-measured `442` |
 | **[`experiments.jsonl`](experiments.jsonl)** | the raw ledger — one real torch training run per record |
 
+Captured 2026-06-15 with the one-shot Writer + Reviewer; the step-by-step writing session
+(`outline.md` / `key_points.md` / `review.md`, now the default) postdates this run, which is why
+those files are absent here.
+
 Reproduce (non-deterministic — a fresh run yields different experiments and a different paper):
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-... \
   SCHOLARLOOP_PROFILE=diabetes-mlp \
-  SCHOLARLOOP_OUT=examples/sample_run_diabetes \
+  SCHOLARLOOP_OUT=examples/sample_run_diabetes SCHOLARLOOP_WRITING=oneshot \
   SCHOLARLOOP_POPULATION=3 SCHOLARLOOP_MAX_WORKERS=3 \
   SCHOLARLOOP_DRY_PATIENCE=2 SCHOLARLOOP_STEPS=4 \
   python examples/run_to_paper.py

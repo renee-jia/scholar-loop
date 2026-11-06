@@ -26,7 +26,7 @@ off** before the next. A deterministic harness keeps the agents honest and **imp
 | 📚 **Lit Review** | plans queries → pulls real papers (arXiv + OpenAlex) → themes · per-paper notes · **open gaps** → `lit_review.md` |
 | 💡 **Ideator** | gaps + your engine's setting + what the ledger tried → N distinct, cited ideas, **novelty-checked** → `ideas.md` |
 | 🧑‍🔬 **You** | read the review, push back; read the ideas, pick one (or push back) → `handoff.json` |
-| 🎯 **Director** | *(unattended runs)* reads ledger + literature trends → sets the next direction, topic & budget |
+| 🎯 **Director** | *(unattended runs)* reads ledger + literature trends → sets the next direction & topic |
 | 🔭 **Lit Scout** | pulls real papers from arXiv + OpenAlex, citation-ranked → structured, *cited* findings |
 | 💡 **Reasoner** | constraints + literature + past lessons → the next experiment |
 | 🗳️ **Debate Panel** | three personas vote — *is this worth a GPU?* |
@@ -59,7 +59,8 @@ python -m scholarloop.session --profile profiles/digits-mlp.yaml \
     --topic "regularization recipes for small MLPs" --out runs/s1       # interactive
 #   (a)pprove · (r)efine <feedback> · (q)uit  >  r also cover data-side regularization such as mixup
 #   (s)elect <n> · (r)efine <feedback> · (q)uit >  s 2
-SCHOLARLOOP_HANDOFF=runs/s1/handoff.json python examples/run_to_paper.py   # run the chosen idea
+SCHOLARLOOP_HANDOFF=runs/s1/handoff.json SCHOLARLOOP_OUT=runs/s1 \
+    python examples/run_to_paper.py                                      # run the chosen idea, then write it up
 ```
 
 Non-interactive too: `--stop-after review` writes the report and exits for a human; `--feedback "…"`
@@ -96,9 +97,11 @@ argument first, lets different agents fight over it, and asks you before moving 
 ```
 
 ```bash
+# run_to_paper.py ends in this session (interactive on a terminal, unattended otherwise);
+# the same directory can be resumed or revised later:
 python -m scholarloop.writing --profile profiles/digits-mlp.yaml \
     --ledger runs/s1/experiments.jsonl --registry runs/s1/registry \
-    --research runs/s1 --out runs/s1/paper          # interactive; --approve / --feedback "…" / --auto for scripts
+    --research runs/s1 --out runs/s1                 # interactive; --approve / --feedback "…" / --auto for scripts
 python examples/writing_demo.py                     # the whole flow, free and deterministic
 ```
 
@@ -127,7 +130,7 @@ checked is checked in code, and rejected + retried:
 | 🧠 **Self-improving** | Predicts each idea's effect, scores the prediction against reality, and distills failures into a **relevance-ranked, time-decaying skill library** re-injected next round. |
 | 🎯 **Calibrated agents** | **Universal predict-then-verify** — every agent's checkable claims (Reasoner deltas, Debate go/no-go) are scored against ground truth, so the loop learns *which of its own agents to trust*. |
 | 🛡️ **Can't be reward-hacked** | Two-phase **frozen scoring** (`train.py` can't fake the metric or see the val set) + edit **allowlist** + **VerifiedRegistry** number-grounding — proven by a bundled `cheater` engine. |
-| ✅ **Honest & testable** | 154 tests, **no API key or GPU needed** — the whole loop, the research and writing sessions included, runs against a deterministic `MockLLM`. |
+| ✅ **Honest & testable** | 160 tests, **no API key or GPU needed** — the whole loop, the research and writing sessions included, runs against a deterministic `MockLLM`. |
 
 > The LLM does only the open-ended reasoning. Everything checkable — search-space pruning, dedup,
 > calibration, number-grounding, promotion gates — is deterministic, unit-tested code, and the
@@ -192,7 +195,7 @@ pytest -q
 baseline to beat: 4.9% val_top1_err
   smoke  3.7644%  [kept]
   verify 3.8004%  [kept]
-  full   3.7644%  [kept]    →  climbed 3 tiers, 3 kept
+  full   3.8208%  [kept]    →  climbed 3 tiers, 3 kept
 ```
 
 ## 🎬 See it run — a real campaign
@@ -223,7 +226,7 @@ A single run shows the system
 | domain | metric | baseline | best (confirmed) | the climb | cost | self-review |
 |---|---|---|---|---|---|---|
 | [**digits-mlp**](examples/sample_run/) | val error | 5.0% | **3.82%** | population → verify → full, governed | ≈ $0.45 | reject 2/10 |
-| [**diabetes-mlp**](examples/sample_run_diabetes/) | val RMSE | 56.5 *(linear model)* | **55.24** | population → verify → full, governed | ≈ $0.77 | reject 3/10 |
+| [**diabetes-mlp**](examples/sample_run_diabetes/) | val RMSE | 56.5 *(linear model)* | **55.27** | population → verify → full, governed | ≈ $0.77 | reject 3/10 |
 
 Both are **governed population funnels** — each round fans out several ideas, smoke-screens them in
 parallel, and climbs only the survivors, while the loop halts itself (on convergence or a round cap)

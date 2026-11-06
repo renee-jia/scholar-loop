@@ -8,8 +8,8 @@ Design principles (the "harnessing" that matters more than the agent count):
      downstream always receive a well-formed object — never prose to parse.
   3. Checkable work (dedup, calibration, constraint enforcement) stays in code, not the
      agent. The agent only does the open-ended part; the harness keeps it honest.
-  4. Every call is traced (agent name + attempts + output) for auditability. This is also
-     where token/cost accounting plugs in once the LLMClient surfaces usage.
+  4. Every call is traced (agent name + attempts + output) for auditability; token/cost
+     accounting reads `AnthropicLLM.usage` (see `governor.cost_of`).
 
 Concrete agents (Reasoner, LitScout, …) subclass `Agent`, declare `schema` + `system`,
 and implement `build_prompt`; the harness owns validate → retry → trace.

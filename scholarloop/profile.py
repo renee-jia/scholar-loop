@@ -72,12 +72,17 @@ class Profile:
 
     @property
     def root(self) -> Path:
-        """The directory `train_entrypoint` / `fixed_module` are relative to: the parent of the
-        `profiles/` folder this profile was loaded from (the repo layout), else the cwd. Resolved from
-        the profile, not from the installed package, so a pip-installed scholarloop still finds a
-        project's engines."""
+        """The directory `train_entrypoint` / `fixed_module` are relative to. Resolved from the
+        profile, not from the installed package, so a pip-installed scholarloop still finds a
+        project's engines: the parent of a `profiles/` folder (the repo layout); else the nearest
+        ancestor of the profile file that actually contains `train_entrypoint`; else the cwd."""
         if self.source_path is not None:
-            return Path(self.source_path).resolve().parent.parent
+            here = Path(self.source_path).resolve().parent
+            if here.name == "profiles":
+                return here.parent
+            for d in (here, *here.parents):
+                if (d / self.train_entrypoint).exists():
+                    return d
         return Path.cwd()
 
     def best_baseline(self) -> float | None:

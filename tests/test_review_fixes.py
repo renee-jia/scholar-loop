@@ -145,3 +145,77 @@ def test_schema_is_package_data_and_root_resolves_from_profile():
     from scholarloop import profile as pm
     assert pm._SCHEMA_PATH.parent.name == "scholarloop" and pm._SCHEMA_PATH.exists()
     assert PROFILE.root == ROOT
+
+
+# ---- second review pass ---------------------------------------------------------------------
+
+# 12. scientific-notation tokens are grounded at their real precision, not as integers
+def test_number_grounding_is_not_fooled_by_exponent_notation(tmp_path):
+    from scholarloop.registry import VerifiedRegistry
+    reg = VerifiedRegistry(tmp_path / "r.json", "e")
+    reg.capture("val_err", 3.8222, seeds=[3.7, 3.9])
+    reg.capture("lr", 0.1)
+    assert reg.audit_text("lr 3e-4 and wd 1e-3") == ["3e-4", "1e-3"]     # fabricated
+    reg.capture("weight_decay", 0.0003)
+    assert reg.audit_text("wd 3e-4") == []                                 # real
+
+
+# 13. Profile.root follows the layout, not a fixed depth
+def test_profile_root_outside_a_profiles_folder(tmp_path):
+    src = ROOT / "profiles" / "digits-mlp.yaml"
+    flat = tmp_path / "proj"
+    (flat / "engines").mkdir(parents=True)
+    (flat / "my-profile.yaml").write_text(src.read_text())
+    p = load_profile(flat / "my-profile.yaml")
+    (flat / p.train_entrypoint).parent.mkdir(parents=True, exist_ok=True)
+    (flat / p.train_entrypoint).write_text("")
+    assert p.root == flat                                                  # found the engine next to the profile
+    assert PROFILE.root == ROOT                                            # the repo layout still works
+
+
+# 14. a human-chosen idea keeps steering after the Advisor says "proceed"
+def test_adopted_guidance_survives_proceed(tmp_path):
+    orch = Orchestrator(MockLLM(), PROFILE, ledger_path=tmp_path / "l.jsonl", registry_dir=tmp_path / "r")
+    orch.adopt({"topic": "Skip MLP", "guidance": "Test this idea: add skips. Experiment plan: depth=20"})
+    orch.last_advice = {"decision": "proceed", "rationale": "keep going"}
+    orch._apply_advice([])
+    assert orch.guidance.startswith("Test this idea")
+    orch.last_advice = {"decision": "pivot", "rationale": "exhausted"}
+    orch._apply_advice([])
+    assert "Test this idea" not in orch.guidance and orch._base_guidance == ""
+
+
+# 15. an unpriced model cannot silently disable the budget ceiling
+def test_governor_warns_when_budget_cannot_be_metered(tmp_path, capsys):
+    orch = Orchestrator(MockLLM(), PROFILE, ledger_path=tmp_path / "l.jsonl", registry_dir=tmp_path / "r")
+    orch.run(0, governor=Governor(max_cost=1.0, max_rounds=1))
+    assert "cannot be enforced" in capsys.readouterr().err
+    orch.run(0, governor=Governor(max_rounds=1))
+    assert orch.stop_reason is None or "round cap" in orch.stop_reason
+
+
+# 16. the prose lint does not reject legitimate English
+def test_lint_prose_spares_surnames_and_the_underscore_character():
+    from scholarloop.writing import lint_prose
+    assert lint_prose("Foster et al. report 3.8 error. Variable names use underscores.") == []
+    assert lint_prose("This result underscores the need for more seeds.")        # the machine sense
+    assert lint_prose("Crucially, the gap closes.") and lint_prose("It fosters a deeper view.")
+
+
+# 17. feedback after the draft keeps the outline and re-derives from the key points
+def test_writing_feedback_after_draft_keeps_outline(monkeypatch, tmp_path):
+    from scholarloop import writing as w
+    calls = []
+
+    class Fake:
+        stage = "drafted"
+        out = tmp_path
+        def outline(self, feedback=""): calls.append(("outline", feedback))
+        def key_points(self, feedback=""): calls.append(("key_points", feedback))
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setattr(w, "WritingSession", lambda *a, **k: Fake())
+    monkeypatch.setattr("scholarloop.llm.AnthropicLLM", lambda *a, **k: None)
+    monkeypatch.setattr("scholarloop.profile.load_profile", lambda p: None)
+    w._main(["--profile", "p", "--ledger", "l", "--registry", "r", "--out", str(tmp_path), "--feedback", "tighten"])
+    assert calls == [("key_points", "tighten")]

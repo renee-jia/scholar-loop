@@ -9,7 +9,7 @@ Given a domain Profile and a fidelity tier, the runner:
   6. appends one record to the Experiment Ledger.
 
 This is the minimal "read idea -> run -> measure -> remember" loop.
-The agent that edits train.py and the L3 idea engine plug in above this; both are later phases.
+The Reasoner's edit channel and the idea engine plug in above this (`orchestrator.py`, `session.py`).
 
 CLI:
     python -m scholarloop.runner run \

@@ -1,8 +1,8 @@
-"""The Research Director (L4) — sets the campaign's direction and budget.
+"""The Research Director (L4) — sets the campaign's direction.
 
 Given the ledger so far (what's been tried, the current frontier, recent verdicts) and any
 literature hotspots, the Director picks the next research direction and a concrete `topic` for
-the Lit Scout to search, plus a suggested step budget. It runs once at the start of a campaign
+the Lit Scout to search (budget is the Governor's job). It runs once at the start of a campaign
 and again on a PIVOT, so the loop has a sense of *where to look*, not just *how to tweak*.
 
 Higher-level than the Advisor (which only nudges the next config): the Director changes the

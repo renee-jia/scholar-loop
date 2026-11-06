@@ -6,10 +6,11 @@ the evidence is a small captured ledger on the stub profile. Run from the repo r
 
     python examples/writing_demo.py
 
-With a real key the same flow runs on a real campaign:
+With a real key the same flow runs on a real campaign (examples/run_to_paper.py ends in it; the
+directory it wrote can be resumed or revised with the CLI):
     python -m scholarloop.writing --profile profiles/digits-mlp.yaml \
-        --ledger examples/sample_run/experiments.jsonl --registry <registry dir> \
-        --research runs/s1 --out runs/s1/paper
+        --ledger runs/s1/experiments.jsonl --registry runs/s1/registry \
+        --research runs/s1 --out runs/s1
 """
 
 from __future__ import annotations

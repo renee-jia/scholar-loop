@@ -1,12 +1,29 @@
-"""Run a COMPLETE ScholarLoop flow with a real LLM — campaign + L5 write-up — and save the
-artifacts to examples/sample_run/ : the paper (paper.md), the real experiments
-(experiments.jsonl), and a narrative run log (run.md).
+"""Run a COMPLETE ScholarLoop flow with a real LLM — campaign + write-up — and save the artifacts
+to one directory (default runs/live/): the real experiments (experiments.jsonl + registry/), a
+narrative run log (run.md), and the paper.
+
+The write-up is the step-by-step WritingSession (outline → key points → draft → review): when stdin
+is a terminal it asks you to approve or refine the outline and the key points; otherwise it runs
+unattended. Its artifacts land next to the run log: outline.md, key_points.md, paper.md, review.md,
+writing.json (resume or revise later with `python -m scholarloop.writing --out <dir> ...`).
 
     export ANTHROPIC_API_KEY=sk-ant-...
     python examples/run_to_paper.py
-    # knobs:  SCHOLARLOOP_MODEL=claude-opus-4-8  SCHOLARLOOP_STEPS=3
-    # start from a human-chosen idea (python -m scholarloop.session ... -> handoff.json):
-    #         SCHOLARLOOP_HANDOFF=runs/s1/handoff.json python examples/run_to_paper.py
+    # start from a human-chosen idea (python -m scholarloop.session --out runs/s1 ... -> handoff.json):
+    SCHOLARLOOP_HANDOFF=runs/s1/handoff.json SCHOLARLOOP_OUT=runs/s1 python examples/run_to_paper.py
+
+Knobs (environment):
+    SCHOLARLOOP_OUT=runs/live            output directory (the shipped examples/sample_run* are captures;
+                                         point here to overwrite one on purpose)
+    SCHOLARLOOP_PROFILE=digits-mlp       profiles/<name>.yaml
+    SCHOLARLOOP_MODEL=claude-opus-4-8    SCHOLARLOOP_TOPIC="..."   SCHOLARLOOP_STEPS=3
+    SCHOLARLOOP_POPULATION=1             >1: parallel population funnel, with SCHOLARLOOP_MAX_WORKERS
+    SCHOLARLOOP_DRY_PATIENCE=2           loop-until-dry convergence (Governor)
+    SCHOLARLOOP_MAX_COST=1.0             USD ceiling (Governor; needs a priced model)
+    SCHOLARLOOP_WRITING=session|auto|oneshot   session = interactive if a tty else auto;
+                                         oneshot = the single-call Writer + Reviewer (paper.py)
+    SCHOLARLOOP_PAPER_ONLY=1             skip the campaign; write up the saved ledger in SCHOLARLOOP_OUT
+    SCHOLARLOOP_PERSIST_SKILLS=1         ~/.scholarloop/skills/<domain>, so lessons compound across runs
 """
 
 from __future__ import annotations
@@ -31,9 +48,10 @@ from scholarloop.paper import PaperPipeline
 from scholarloop.profile import load_profile
 from scholarloop.reflector import Reflector
 from scholarloop.skills import SkillLibrary
+from scholarloop.writing import WritingSession
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "examples" / "sample_run"
+OUT = ROOT / "runs" / "live"
 
 
 def _cost(model, usage):
@@ -68,7 +86,7 @@ def _unit(profile) -> str:
 
 
 def fmt_run(profile, entries, skills, usage, model, trace, calibration: str = "",
-            handoff: dict | None = None) -> str:
+            handoff: dict | None = None, stop_reason: str | None = None) -> str:
     d, lit = _first(trace, "director"), _first(trace, "lit_scout")
     cost = _cost(model, usage)
     u = _unit(profile)
@@ -104,6 +122,8 @@ def fmt_run(profile, entries, skills, usage, model, trace, calibration: str = ""
             skills.render() or "_(none recorded)_", ""]
     if calibration:
         out += ["## 🎯 Agent calibration (predict-then-verify)", "", calibration, ""]
+    if stop_reason:
+        out += ["## 🛑 Governor", "", f"The campaign stopped itself: {stop_reason}.", ""]
     out += ["## 🔁 Agent trace (every call, auditable)", "",
             "`" + " · ".join(f"{a}:{n}" for a, n in sorted(Counter(c.agent for c in trace.calls).items())) + "`", "",
             "See [`paper.md`](paper.md) for the write-up this run produced, and "
@@ -126,11 +146,13 @@ def main() -> int:
     max_cost = os.environ.get("SCHOLARLOOP_MAX_COST")                 # USD budget ceiling
     handoff_path = os.environ.get("SCHOLARLOOP_HANDOFF")              # a research session's chosen idea
     handoff = json.loads(Path(handoff_path).read_text()) if handoff_path else None
+    research_dir = Path(handoff_path).parent if handoff_path else None   # lit_review.json lives beside it
+    writing_mode = os.environ.get("SCHOLARLOOP_WRITING", "session")
     out = Path(os.environ.get("SCHOLARLOOP_OUT", "")) if os.environ.get("SCHOLARLOOP_OUT") else OUT
 
     out.mkdir(parents=True, exist_ok=True)
     ledger_path = out / "experiments.jsonl"
-    registry_dir = Path(tempfile.mkdtemp(prefix="paper_reg_"))
+    registry_dir = out / "registry"                 # kept: the write-up grounds its numbers here
     skills_dir = Path(tempfile.mkdtemp(prefix="paper_skl_"))
     llm = AnthropicLLM(model=model)
     profile = load_profile(ROOT / "profiles" / f"{profile_name}.yaml")
@@ -145,6 +167,9 @@ def main() -> int:
     else:
         if ledger_path.exists():
             ledger_path.unlink()                   # fresh run
+        shutil.rmtree(registry_dir, ignore_errors=True)
+        for stale in ("writing.json", "outline.md", "key_points.md", "paper.md", "review.md"):
+            (out / stale).unlink(missing_ok=True)
         orch = Orchestrator(
             llm, profile,
             lit_scout=LitScout(llm, sources=[OpenAlexClient(), ArxivClient()]),  # impact-ranked, multi-source
@@ -170,20 +195,37 @@ def main() -> int:
         kept = [e for e in entries if e.verdict == "kept"]
         print(f"   {len(entries)} experiments, {len(kept)} kept. writing the paper ...")
 
-    paper = PaperPipeline(llm, llm, registry_dir=registry_dir).run(
-        entries, extra_grounded=[profile.best_baseline()])
-    (out / "paper.md").write_text(
-        fmt_paper(paper["draft"], paper["grounded"], paper["ungrounded"], paper["review"]))
     if orch is not None:                            # run.md reflects the campaign; keep it on paper-only re-runs
         (out / "run.md").write_text(fmt_run(profile, entries, skills, llm.usage, model, orch.trace,
-                                            calibration=orch.calibration.render(), handoff=handoff))
+                                            calibration=orch.calibration.render(), handoff=handoff,
+                                            stop_reason=orch.stop_reason))
 
-    shutil.rmtree(registry_dir, ignore_errors=True)
+    if writing_mode == "oneshot":                   # the single-call fallback
+        paper = PaperPipeline(llm, llm, registry_dir=registry_dir).run(
+            entries, extra_grounded=[profile.best_baseline()])
+        (out / "paper.md").write_text(
+            fmt_paper(paper["draft"], paper["grounded"], paper["ungrounded"], paper["review"]))
+        artifacts = "paper.md · run.md · experiments.jsonl · registry/"
+    else:                                           # step by step, with the author in the loop
+        session = WritingSession(llm, profile, out, ledger_path=ledger_path, registry_dir=registry_dir,
+                                 research_dir=research_dir, trace=orch.trace if orch else None)
+        if writing_mode == "session" and sys.stdin.isatty():
+            if session.interactive() is None:
+                print(f"   writing paused at stage {session.stage!r}; resume with "
+                      f"python -m scholarloop.writing --out {out} ...")
+        else:
+            steps = {"new": session.outline, "outlined": session.key_points,
+                     "keypointed": session.draft, "drafted": session.review}
+            while session.stage in steps:
+                steps[session.stage]()
+                print(f"   writing: stage {session.stage}")
+        artifacts = "outline.md · key_points.md · paper.md · review.md · run.md · experiments.jsonl · registry/"
+
     shutil.rmtree(skills_dir, ignore_errors=True)
 
     cost = _cost(model, llm.usage)
     print(f"\n=== done. artifacts in {out} ===")
-    print(f"   paper.md · run.md · experiments.jsonl")
+    print(f"   {artifacts}")
     print(f"   {llm.usage['calls']} LLM calls"
           + (f" · ≈ ${cost:.3f}" if cost is not None else ""))
     return 0

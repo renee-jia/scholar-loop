@@ -1,8 +1,9 @@
 # Writing skills
 
 Prompt-level guidance the writing agents load as system-prompt overlays. Each file is one concern,
-so an agent gets only what its job needs (an outliner reads `narrative.md`, a drafter reads
-`style.md` + `sections.md`, a reviewer reads `review.md`).
+so an agent gets only what its job needs: the Outliner and KeyPointer read `narrative.md` +
+`sections.md`, the SectionDrafter `style.md` + `sections.md`, the Panelists and PaperReviewers
+`review.md`; the one-shot Writer reads `narrative.md` + `style.md` and its Reviewer `review.md`.
 
 Distilled from public advice by Neel Nanda ("How to write ML papers"), Sebastian Farquhar
 (5-sentence abstract), Gopen & Swan ("The Science of Scientific Writing"), Zachary Lipton

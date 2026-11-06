@@ -15,7 +15,7 @@
 - Be specific: "error", "RMSE", "wall-clock", never "performance".
 - Pick one term per concept and keep it for the whole paper.
 - Delete intensifiers and fillers: very, really, quite, actually, basically, essentially,
-  extensive, comprehensive, numerous, various, "in order to", "it is worth noting that".
+  extensive, comprehensive, numerous, various.
 - Minimize bare pronouns: "this result shows", not "this shows".
 - Prefer short words: use, show, help.
 
@@ -25,19 +25,24 @@ with"). Never hedge a number ("may improve by 1.2") and never assert a cause you
 Empirical work *shows* and *provides evidence*; it does not *prove* or *demonstrate* universal
 truths. "Significantly" only with a test or a stated spread.
 
-## Not allowed (reads as machine-written; the linter rejects these)
-- Vocabulary: delve, leverage (as a verb), landscape (abstract sense), tapestry, testament,
-  underscore(s), pivotal, showcase, foster, realm, seamless, multifaceted, paradigm shift,
-  groundbreaking, intricate, crucial/vital (as hollow intensifiers).
+## Rejected by the linter (the draft is sent back with the error)
+- Vocabulary, in any sense: delve, leverage, tapestry, testament, pivotal, showcase, realm,
+  seamless, multifaceted, paradigm shift, groundbreaking, intricate(ly), crucial(ly), vital(ly).
+- Machine-sense phrases: "underscores the", "fosters a", "the landscape of".
 - Em-dashes. Recast with a comma, colon, parentheses or a new sentence.
 - "not X, but Y" / "not only … but also" contrast frames. State Y.
 - Consecutive sentences opening with Moreover / Furthermore / Additionally / Notably / Importantly.
-- Formulaic openers: "In recent years", "With the rapid development of", "Despite recent advances".
-- Significance hype: paves the way, sheds light on, bridges the gap, opens new avenues, a crucial
-  step toward, has the potential to revolutionize.
-- Novelty padding: "novel" more than once per section, "to the best of our knowledge",
-  "for the first time".
-- Contribution clichés: "extensive experiments", "strong results", "a novel framework".
+- Formulaic openers: "In recent years", "With the rapid development", "Despite recent advances".
+- Significance hype: paves the way, sheds light on, bridges the gap, opens new avenues, crucial
+  step, potential to revolutionize.
+- Novelty and contribution padding: "to the best of our knowledge", "for the first time",
+  "extensive experiments".
+- Fillers: "in order to", "it is worth noting", "it should be noted", "it is important to note".
+
+## Also avoid (advisory; surfaced as drafting notes, not rejected)
+- "novel" more than once in a section; "strong results", "a novel framework"; "landscape" in the
+  abstract sense; "performance" where a metric name would do.
+- "significantly" without a test or a stated spread; sentences past ~40 words.
 
 ## Numbers
 Every number in the text is a recorded measurement, a logged configuration value, or the stated

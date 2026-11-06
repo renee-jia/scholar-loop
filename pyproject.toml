@@ -1,7 +1,7 @@
 [project]
 name = "scholarloop"
 version = "0.0.1"
-description = "An auto-research framework that replicates a PhD's experiment workflow on a small-GPU budget."
+description = "An auto-research framework that replicates a PhD's research workflow (literature review, ideas, experiments, writing) on a small-GPU budget."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

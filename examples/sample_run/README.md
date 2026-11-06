@@ -22,10 +22,15 @@ written-up, peer-reviewed paper. Produced by [`../run_to_paper.py`](../run_to_pa
 | **[`paper.md`](paper.md)** | the paper the L5 Writer produced + the Reviewer's assessment. Every number is checked against the experiment registry (grounding ✅) |
 | **[`experiments.jsonl`](experiments.jsonl)** | the raw ledger — one real torch training run per record |
 
+Captured 2026-06-15 with the one-shot Writer + Reviewer; the step-by-step writing session
+(`outline.md` / `key_points.md` / `review.md`, now the default) postdates this run, which is why
+those files are absent here.
+
 Reproduce (non-deterministic — a fresh run yields different experiments and a different paper):
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-... \
+  SCHOLARLOOP_OUT=examples/sample_run SCHOLARLOOP_WRITING=oneshot \
   SCHOLARLOOP_POPULATION=3 SCHOLARLOOP_MAX_WORKERS=3 \
   SCHOLARLOOP_DRY_PATIENCE=2 SCHOLARLOOP_STEPS=4 \
   python examples/run_to_paper.py

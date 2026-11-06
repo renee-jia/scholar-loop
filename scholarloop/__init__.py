@@ -5,7 +5,8 @@ Two halves, joined by a handoff:
   ideation (human-in-the-loop)         experiment loop (autonomous)
     scholarloop.session   review → ideas → choice    scholarloop.orchestrator  funnel / population / governor
     scholarloop.litreview QueryPlanner + LitReviewer  scholarloop.runner        frozen-scored real runs
-    scholarloop.ideation  Ideator + novelty check     scholarloop.paper         grounded write-up + review
+    scholarloop.ideation  Ideator + novelty check     scholarloop.writing       outline → key points → draft → review
+                                                                                (author-approved; paper = one-shot fallback)
 
 Foundational contracts: scholarloop.profile (pluggable domains), scholarloop.ledger (cross-run
 memory), scholarloop.registry (VerifiedRegistry number grounding). Import modules directly, e.g.:

@@ -2,7 +2,7 @@
 
 ScholarLoop runs as a standalone process, so it can NOT call Claude Code skills at
 runtime — it needs its own LLM client. Everything that needs a model (the Reasoner,
-the Lit Scout, the code-editing agent) depends on the `LLMClient` interface here, so:
+the Lit Scout, the writing agents) depends on the `LLMClient` interface here, so:
   - tests run against `MockLLM` (deterministic, no API, no cost),
   - real runs use `AnthropicLLM` (Anthropic SDK, default model claude-opus-4-8).
 
