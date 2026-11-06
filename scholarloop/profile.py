@@ -1,7 +1,8 @@
 """Domain Profile: the declarative contract that makes the framework domain-agnostic.
 
-A profile is a YAML file under `profiles/` validated against the schema bundled with the
-package (`scholarloop/profile.schema.yaml`).
+A profile is a YAML file (conventionally under `profiles/`) validated against the schema bundled
+with the package (`scholarloop/profile.schema.yaml`). Engine paths in it are resolved from the
+profile's own location (`Profile.root`), never from where scholarloop is installed.
 The orchestrator reads a Profile to learn which file to edit, which metric is ground truth,
 what the per-fidelity budgets are, and which edits are forbidden (the anti reward-hacking
 boundary). It never hard-codes anything about the domain itself.

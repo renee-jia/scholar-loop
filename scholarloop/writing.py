@@ -25,6 +25,18 @@ What is enforced in code, not asked for in a prompt:
   - **coverage** — a drafted section that drops one of its agreed key points is flagged.
 The LLM does only the open-ended work: arguing, organizing, and writing sentences. The bundled
 `writing_skills/*.md` files are the agents' system-prompt overlays (see that folder's README).
+
+State lives in `writing.json` under the output directory (`new → outlined → keypointed → drafted →
+reviewed`), so a session runs interactively (`WritingSession.interactive()`), from the CLI across
+invocations, or from another program. `examples/run_to_paper.py` ends every live campaign in it.
+
+    python -m scholarloop.writing --profile profiles/digits-mlp.yaml \
+        --ledger runs/s1/experiments.jsonl --registry runs/s1/registry \
+        --research runs/s1 --out runs/s1            # interactive
+    ... --approve                                   # advance one stage, non-interactive
+    ... --feedback "lead with the negative result"  # revise the current stage (after the draft:
+                                                    #   the key points; the outline is kept)
+    ... --auto                                      # every stage, no sign-off
 """
 
 from __future__ import annotations

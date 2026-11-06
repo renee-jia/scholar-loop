@@ -11,6 +11,11 @@ step():
 This is the first point where the system actually researches by itself: it invents a
 literature-grounded config, edits, validates, and remembers — with no human in the loop. It
 runs end-to-end against MockLLM (no API, no GPU), so the whole cycle is unit-testable.
+
+Above step(): `funnel_step` climbs one idea smoke → verify → full; `population_step(k)` screens k
+ideas in parallel and climbs the survivors; `run(governor=...)` repeats rounds until the Governor
+stops it (budget / round cap / convergence; `stop_reason` records why). `adopt(handoff)` starts
+from a human-chosen idea (a ResearchSession handoff) instead of asking the Director.
 """
 
 from __future__ import annotations

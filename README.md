@@ -97,8 +97,8 @@ argument first, lets different agents fight over it, and asks you before moving 
 ```
 
 ```bash
-# run_to_paper.py ends in this session (interactive on a terminal, unattended otherwise);
-# the same directory can be resumed or revised later:
+# run_to_paper.py ends in this session (interactive on a terminal, unattended otherwise;
+# SCHOLARLOOP_WRITING=oneshot keeps the single-call writer). The same directory resumes or revises later:
 python -m scholarloop.writing --profile profiles/digits-mlp.yaml \
     --ledger runs/s1/experiments.jsonl --registry runs/s1/registry \
     --research runs/s1 --out runs/s1                 # interactive; --approve / --feedback "…" / --auto for scripts

@@ -161,10 +161,10 @@ def idea_chains(entries: list[LedgerEntry]) -> list[dict]:
 
 
 def _main(argv: list[str]) -> int:
-    if not argv:
+    if not argv or argv[0] in ("-h", "--help"):
         print("usage: python -m scholarloop.ledger {show|best} <ledger.jsonl> [--domain D] [--direction minimize|maximize]",
               file=sys.stderr)
-        return 2
+        return 0 if argv else 2
     cmd, path = argv[0], argv[1] if len(argv) > 1 else "ledger.jsonl"
     ledger = Ledger(path)
     if cmd == "show":

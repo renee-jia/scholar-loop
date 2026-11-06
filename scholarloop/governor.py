@@ -17,7 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 # USD per 1M tokens (input, output). Mirrors the public price list; unknown models cost None,
-# which disables the budget gate (e.g. the free MockLLM used in tests).
+# which disables the budget gate (fine for the free MockLLM in tests; for a real model the
+# Orchestrator prints a loud warning when max_cost is set and the model is not listed here).
 MODEL_PRICES = {
     "claude-opus-4-8": (5.0, 25.0),
     "claude-opus-4-7": (5.0, 25.0),

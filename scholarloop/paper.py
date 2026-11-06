@@ -1,4 +1,8 @@
-"""L5 Writer + Reviewer — turn confirmed findings into a draft, grounded and peer-reviewed.
+"""One-shot Writer + Reviewer — turn confirmed findings into a draft, grounded and peer-reviewed.
+
+This is the unattended fallback (`SCHOLARLOOP_WRITING=oneshot` in `examples/run_to_paper.py`);
+the primary path is the step-by-step, author-approved `scholarloop.writing` session. Both load the
+same `writing_skills` overlays.
 
 Three pieces, on the agent harness:
   - `Writer` drafts a short paper from the kept ledger findings.
