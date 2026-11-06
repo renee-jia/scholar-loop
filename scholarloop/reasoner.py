@@ -150,7 +150,7 @@ class Reasoner(Agent):
         hypothesis = Hypothesis(claim=h.get("claim", ""), source=h.get("source", ""),
                                 predicted_effect=h.get("predicted_effect", ""))
 
-        violations = constraints.violations(config)
+        violations = constraints.violations(config, defaults=self.profile.knobs)   # effective config, as the engine runs it
         if edits:   # an edit makes the experiment novel even at a repeated config — drop config-dedup
             violations = [v for v in violations if v != "config already tried"]
         edit_paths = [e["path"] for e in edits]

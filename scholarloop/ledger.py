@@ -102,6 +102,7 @@ class Ledger:
         line = entry.to_json() + "\n"
         # O_APPEND writes are atomic for a single line below PIPE_BUF, so concurrent
         # workers cannot interleave partial records.
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         with _WRITE_LOCK:
             fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
             try:

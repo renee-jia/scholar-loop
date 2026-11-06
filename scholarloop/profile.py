@@ -1,6 +1,7 @@
 """Domain Profile: the declarative contract that makes the framework domain-agnostic.
 
-A profile is a YAML file under `profiles/` validated against `profiles/profile.schema.yaml`.
+A profile is a YAML file under `profiles/` validated against the schema bundled with the
+package (`scholarloop/profile.schema.yaml`).
 The orchestrator reads a Profile to learn which file to edit, which metric is ground truth,
 what the per-fidelity budgets are, and which edits are forbidden (the anti reward-hacking
 boundary). It never hard-codes anything about the domain itself.
@@ -20,7 +21,7 @@ from pathlib import Path
 import yaml
 from jsonschema import Draft7Validator
 
-_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "profiles" / "profile.schema.yaml"
+_SCHEMA_PATH = Path(__file__).resolve().parent / "profile.schema.yaml"   # ships inside the package
 
 
 class ProfileError(ValueError):
@@ -68,6 +69,16 @@ class Profile:
     knobs: dict = field(default_factory=dict)   # tunable hyperparameters (name → default value)
     debate_roles: tuple[str, ...] = ("Innovator", "Pragmatist", "Contrarian")
     source_path: Path | None = field(default=None, compare=False)
+
+    @property
+    def root(self) -> Path:
+        """The directory `train_entrypoint` / `fixed_module` are relative to: the parent of the
+        `profiles/` folder this profile was loaded from (the repo layout), else the cwd. Resolved from
+        the profile, not from the installed package, so a pip-installed scholarloop still finds a
+        project's engines."""
+        if self.source_path is not None:
+            return Path(self.source_path).resolve().parent.parent
+        return Path.cwd()
 
     def best_baseline(self) -> float | None:
         """The hardest must-beat baseline score (best under the metric direction), or None."""

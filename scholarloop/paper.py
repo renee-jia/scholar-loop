@@ -18,6 +18,7 @@ from scholarloop.agent import Agent, AgentTrace
 from scholarloop.ledger import LedgerEntry
 from scholarloop.llm import LLMClient
 from scholarloop.registry import VerifiedRegistry
+from scholarloop.writing import load_skill
 
 WRITER_SCHEMA = {
     "type": "object", "additionalProperties": False,
@@ -65,7 +66,8 @@ def grounded_registry(entries: list[LedgerEntry], registry_dir: str | Path,
     audit then rejects any number not in this set."""
     reg = VerifiedRegistry(path=":grounded:", exp_id="paper")
     for v in (extra or []):
-        reg.capture(f"extra.{v}", float(v))
+        if v is not None:                       # a profile with no baseline contributes nothing
+            reg.capture(f"extra.{v}", float(v))
     for e in entries:
         if e.verdict != "kept":
             continue
@@ -97,7 +99,8 @@ class Writer(Agent):
     name = "writer"
     system = ("You write concise ML research papers from confirmed experimental findings. Use "
               "ONLY the numbers given to you (scores and config values) — never invent a result. "
-              "Cite the arXiv source for each idea. Keep it short: abstract + method + results.")
+              "Cite the arXiv source for each idea. Keep it short: abstract + method + results.\n\n"
+              + load_skill("narrative", "style"))      # the one-shot path gets the same writing discipline
     schema = WRITER_SCHEMA
 
     def build_prompt(self, ctx: dict) -> str:
@@ -114,7 +117,8 @@ class Writer(Agent):
 class Reviewer(Agent):
     name = "reviewer"
     system = ("You are a peer reviewer. Critique the draft for soundness, clarity, and "
-              "significance. Give strengths, weaknesses, a score in 1-10, and a recommendation.")
+              "significance. Give strengths, weaknesses, a score in 1-10, and a recommendation.\n\n"
+              + load_skill("review"))
     schema = REVIEWER_SCHEMA
 
     def postcheck(self, output: dict, ctx: dict) -> list[str]:

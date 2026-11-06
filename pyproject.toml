@@ -31,5 +31,8 @@ Repository = "https://github.com/renee-jia/scholar-loop"
 [tool.setuptools.packages.find]
 include = ["scholarloop*"]
 
+[tool.setuptools.package-data]
+scholarloop = ["writing_skills/*.md", "profile.schema.yaml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

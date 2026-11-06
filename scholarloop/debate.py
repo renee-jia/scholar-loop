@@ -76,7 +76,8 @@ class PanelVerdict:
 
 
 class DebatePanel:
-    """A panel of persona critics. Rejects a proposal only on a strict majority of rejects."""
+    """A panel of persona critics. Rejects a proposal when at least half the panel rejects
+    (fail-closed on an even split); one skeptic on a 3+ panel cannot veto."""
 
     def __init__(self, llm: LLMClient, roles, *, trace: AgentTrace | None = None):
         self.critics = [Critic(llm, r, trace=trace) for r in roles]

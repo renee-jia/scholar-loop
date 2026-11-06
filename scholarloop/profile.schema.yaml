@@ -6,6 +6,7 @@
 # this schema. Adding a new domain = one profile + one train/prepare pair, with
 # zero orchestrator changes.
 #
+# Bundled with the package (package-data) so an installed scholarloop can validate profiles.
 # Validate a profile with:  python -m scholarloop.profile validate profiles/<name>.yaml
 $schema: "http://json-schema.org/draft-07/schema#"
 title: DomainProfile

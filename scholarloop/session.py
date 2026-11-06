@@ -34,7 +34,7 @@ from scholarloop.agent import AgentTrace
 from scholarloop.ideation import Idea, Ideator, novelty_check, tried_claims
 from scholarloop.ledger import Ledger
 from scholarloop.litreview import LitReview, LitReviewer, QueryPlanner
-from scholarloop.litscout import ArxivClient, OpenAlexClient, retrieve
+from scholarloop.litscout import ArxivClient, OpenAlexClient, dedup_key, retrieve
 from scholarloop.llm import LLMClient
 from scholarloop.profile import Profile
 
@@ -135,8 +135,8 @@ class ResearchSession:
                                     previous=previous_queries, feedback=feedback)
         fresh = retrieve(self.sources, queries, per_query=self.per_query, max_total=self.max_papers)
         papers = list(prev.papers) if prev else []
-        known = {p.arxiv_id for p in papers}
-        papers += [p for p in fresh if p.arxiv_id not in known]
+        known = {dedup_key(p) for p in papers}               # version-insensitive, like merge_papers
+        papers += [p for p in fresh if dedup_key(p) not in known]
         all_feedback = "\n".join(f"- {t}" for t in self._feedback_for("review"))
         rev = self.reviewer.review(self.topic, papers, queries=previous_queries + queries,
                                    domain=_domain_blurb(self.profile), feedback=all_feedback)

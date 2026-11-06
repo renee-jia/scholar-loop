@@ -200,7 +200,7 @@ class SemanticScholarClient:
         return papers
 
 
-def _dedup_key(p: Paper) -> str:
+def dedup_key(p: Paper) -> str:
     """Same paper across sources collapses to one row: prefer the arXiv id (version-stripped),
     else the normalized title."""
     cid = (p.arxiv_id or "").lower()
@@ -224,7 +224,7 @@ def merge_papers(groups: list[list[Paper]], max_results: int) -> list[Paper]:
     best: dict[str, Paper] = {}
     for group in groups:
         for p in group:
-            k = _dedup_key(p)
+            k = dedup_key(p)
             cur = best.get(k)
             if cur is None:
                 best[k] = p
@@ -257,7 +257,7 @@ def retrieve(sources: list, queries: list[str], *, per_query: int = 8, max_total
     merged = merge_papers(groups, max_results=10 ** 9)          # everything, ranked
     cited = [p for p in merged if p.citations is not None]
     uncited = [p for p in merged if p.citations is None]
-    n_recent = min(len(uncited), int(round(max_total * recent_share))) if cited else len(uncited)
+    n_recent = min(len(uncited), int(round(max_total * recent_share))) if cited else min(len(uncited), max_total)
     out = cited[:max_total - n_recent] + uncited[:n_recent]
     if len(out) < max_total:                                   # backfill from whichever pool has more
         rest = [p for p in merged if p not in out]

@@ -37,19 +37,23 @@ class SearchSpaceConstraints:
         return {"ruled_out": self.ruled_out, "ruled_out_bounds": self.ruled_out_bounds,
                 "focus": self.focus, "priors": self.priors, "tried": self.tried}
 
-    def violations(self, config: dict) -> list[str]:
+    def violations(self, config: dict, defaults: dict | None = None) -> list[str]:
         """Return the reasons `config` violates the constraints (empty == admissible).
 
-        This is what makes search-space limitation actually BIND: a proposed
-        config inside a ruled-out region — or already tried — is rejected, not merely discouraged.
+        This is what makes search-space limitation actually BIND: a proposed config inside a
+        ruled-out region — or already tried — is rejected, not merely discouraged. `config` is the
+        agent's override; pass the profile's knob `defaults` so the check runs on the EFFECTIVE
+        config the engine would run (the ledger records effective configs): omitting a knob that
+        defaults into a ruled-out region, or re-proposing the defaults, is caught.
         """
+        effective = {**(defaults or {}), **config}
         out = []
         for b in self.ruled_out_bounds:
-            if b["knob"] in config:
-                v = config[b["knob"]]
+            if b["knob"] in effective:
+                v = effective[b["knob"]]
                 if (b["op"] == ">" and v > b["value"]) or (b["op"] == "<" and v < b["value"]):
                     out.append(f"{b['knob']}{b['op']}{b['value']} is ruled out")
-        if any(config == t for t in self.tried):
+        if any(same_config(effective, t) for t in self.tried):
             out.append("config already tried")
         return out
 
@@ -150,9 +154,18 @@ def analyze_search_space(
     return constraints
 
 
-def is_duplicate_config(config: dict, entries: list[LedgerEntry]) -> bool:
-    """True if this exact config was already evaluated (config-level novelty check)."""
-    return any(e.config == config for e in entries if e.config)
+def same_config(a: dict, b: dict) -> bool:
+    """Two configs name the same experiment when they agree on every knob they share. Keys only one
+    side carries are ignored: an engine may log knobs the profile does not declare, and a profile
+    may declare knobs an older ledger line never set."""
+    shared = set(a) & set(b)
+    return bool(shared) and all(a[k] == b[k] for k in shared)
+
+
+def is_duplicate_config(config: dict, entries: list[LedgerEntry], defaults: dict | None = None) -> bool:
+    """True if this config (made effective with `defaults`) was already evaluated."""
+    effective = {**(defaults or {}), **config}
+    return any(same_config(effective, e.config) for e in entries if e.config)
 
 
 def confidence_bound(values, direction: str, z: float = 1.0) -> float:

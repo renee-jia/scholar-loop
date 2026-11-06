@@ -91,7 +91,8 @@ class Agent(ABC):
             errors = []
             if validator is not None:
                 errors += [f"schema: {e.message}" for e in validator.iter_errors(output)]
-            errors += self.postcheck(output, ctx)
+            if not errors:                   # postchecks assume a well-formed shape; never run them on a broken one
+                errors += self.postcheck(output, ctx)
             if not errors:
                 if self.trace is not None:
                     self.trace.record(AgentCall(self.name, attempt + 1, output))

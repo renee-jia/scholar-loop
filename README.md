@@ -16,10 +16,10 @@
 ---
 
 ScholarLoop runs the loop a PhD actually runs: it reads the literature and **writes you a review**,
-proposes **novelty-checked ideas** and lets **you pick**, then **runs real ML experiments** on the
-chosen one, scores them against a frozen ground-truth metric, learns from its failures, and drafts a
-peer-reviewed write-up — with a deterministic harness that keeps the agents honest and
-**impossible to reward-hack**.
+proposes **novelty-checked ideas** and lets **you pick**, **runs real ML experiments** on the chosen
+one, scores them against a frozen ground-truth metric, learns from its failures, and then writes it
+up **the slow way** — outline, key points, prose — with AI panels arguing each step and **you signing
+off** before the next. A deterministic harness keeps the agents honest and **impossible to reward-hack**.
 
 | Stage | What it does |
 |---|---|
@@ -34,7 +34,8 @@ peer-reviewed write-up — with a deterministic harness that keeps the agents ho
 | ⚙️ **Runner** | runs a **real** torch experiment, scored by a **frozen** metric |
 | 🪞 **Reflector** | turns the outcome into a lesson in a decaying skill library |
 | 🚦 **Advisor** | **PROCEED · REFINE · PIVOT** — steers the loop |
-| ✍️ **Writer + Reviewer** | confirmed findings → number-grounded draft → peer review |
+| ✍️ **Writing session** | outline → key points → prose, each argued by a Skeptic · Editor · Methodologist panel and **approved by you**; every number, citation and sentence checked in code |
+| 🧑‍⚖️ **Reviewer panel** | three persona reviewers score the draft against a NeurIPS-style checklist → `review.md` |
 | 🗄️ **Ledger + Skills** | the durable memory every step reads from |
 
 ## 🧑‍🔬 Ideation first — a review you can read, ideas you can choose
@@ -75,19 +76,58 @@ What keeps it honest, in deterministic code rather than prompts:
 | ⚙️ **Testable by construction** | the Ideator sees the engine's metric, baseline, knobs and editable surfaces, so each idea comes with an experiment plan the loop can actually run |
 | 🧭 **Recency × impact** | retrieval fills the corpus with the highest-cited papers but reserves slots for fresh, uncited preprints |
 
+## ✍️ Writing, step by step — argue the outline before anyone writes a sentence
+
+A one-shot "write the paper" call gives fluent prose over a weak argument. ScholarLoop builds the
+argument first, lets different agents fight over it, and asks you before moving on:
+
+```text
+  evidence bank ──▶ [1] outline      Outliner proposes ─▶ Skeptic · Editor · Methodologist argue
+  (runs · papers ·      │             ─▶ Outliner revises … until the panel accepts ──▶ outline.md
+   baseline)            │                                                         ◀── you: approve / feedback
+                        ▼
+                   [2] key points   per section: claim + the evidence ids behind it, same debate
+                        │                                                         ◀── you: approve / feedback
+                        ▼
+                   [3] draft        one call per section from the agreed points, under the bundled
+                        │           style guide ──▶ paper.md
+                        ▼
+                   [4] review       three persona reviewers ──▶ review.md
+```
+
+```bash
+python -m scholarloop.writing --profile profiles/digits-mlp.yaml \
+    --ledger runs/s1/experiments.jsonl --registry runs/s1/registry \
+    --research runs/s1 --out runs/s1/paper          # interactive; --approve / --feedback "…" / --auto for scripts
+python examples/writing_demo.py                     # the whole flow, free and deterministic
+```
+
+The writing discipline ships **in the repo**, not in a chat window: `scholarloop/writing_skills/`
+holds the guidance the agents load as system prompts — the one-sentence question test and the
+nugget, Farquhar's five-sentence abstract, Gopen & Swan sentence mechanics, Lipton's word choice,
+claim-evidence calibration, the AI-tell catalogue, and a NeurIPS-style review checklist. What can be
+checked is checked in code, and rejected + retried:
+
+| | |
+|---|---|
+| 🔢 **Number grounding** | every number in a key point or a section traces to a run, a logged config value, the budget, or the baseline |
+| 📎 **Evidence grounding** | every evidence id behind a claim is a real run id, a reviewed paper id, or `baseline`; result/method/comparison claims must cite one |
+| 🧹 **Prose lint** | em-dashes, "not X, but Y", stacked *Moreover/Furthermore*, hype ("paves the way"), and the usual machine vocabulary are rejected before the text reaches you |
+| 🗂️ **Coverage** | a drafted section that drops one of its agreed key points is flagged in the draft's notes |
+
 ## ✨ Highlights
 
 | | |
 |---|---|
 | 🧪 **Real, pluggable experiments** | Drives real PyTorch runs (CPU-fast, no download). Two domains ship today — **digit classification** (error %) and **diabetes regression** (RMSE) — and a new one is just a YAML profile + an engine pair, **zero orchestrator changes**. |
-| 🤖 **11 agents, one harness** | QueryPlanner · LitReviewer · Ideator · Director · Lit Scout · Reasoner · Debate · Reflector · Advisor · Writer · Reviewer — typed JSON-schema I/O, validate→retry, one shared audit trace. |
+| 🤖 **16 agents, one harness** | QueryPlanner · LitReviewer · Ideator · Director · Lit Scout · Reasoner · Debate · Reflector · Advisor · Outliner · Panelists · KeyPointer · SectionDrafter · Reviewer panel (+ the one-shot Writer/Reviewer) — typed JSON-schema I/O, validate→retry, one shared audit trace. |
 | 🔭 **Literature-grounded** | The Lit Scout pulls real papers from arXiv + OpenAlex, ranks them by citation impact, and distills *cited* techniques — so ideas aren't blind hill-climbing. |
 | 💸 **Budget-aware funnel** | One idea climbs **smoke → verify → full**, each tier gated. Bad ideas die after one cheap run; marginal ones never burn a full run. |
 | ⚙️ **Engineered loop** | A **parallel population funnel** — propose N ideas, smoke-screen them all at once, climb only the survivors — under a **self-stopping governor** that halts on budget, round cap, or convergence (*loop-until-dry*). |
 | 🧠 **Self-improving** | Predicts each idea's effect, scores the prediction against reality, and distills failures into a **relevance-ranked, time-decaying skill library** re-injected next round. |
 | 🎯 **Calibrated agents** | **Universal predict-then-verify** — every agent's checkable claims (Reasoner deltas, Debate go/no-go) are scored against ground truth, so the loop learns *which of its own agents to trust*. |
 | 🛡️ **Can't be reward-hacked** | Two-phase **frozen scoring** (`train.py` can't fake the metric or see the val set) + edit **allowlist** + **VerifiedRegistry** number-grounding — proven by a bundled `cheater` engine. |
-| ✅ **Honest & testable** | 129 tests, **no API key or GPU needed** — the whole loop, the research session included, runs against a deterministic `MockLLM`. |
+| ✅ **Honest & testable** | 154 tests, **no API key or GPU needed** — the whole loop, the research and writing sessions included, runs against a deterministic `MockLLM`. |
 
 > The LLM does only the open-ended reasoning. Everything checkable — search-space pruning, dedup,
 > calibration, number-grounding, promotion gates — is deterministic, unit-tested code, and the
@@ -138,6 +178,7 @@ Four pillars, each a few lines of deterministic code — and each pinned by test
 pip install -e ".[dev]"             # pyyaml + jsonschema + pytest
 python examples/quickstart.py       # the whole loop in <1s — no GPU, no API key
 python examples/ideation_demo.py    # review → feedback → ideas → you pick → the loop runs it (<1s, free)
+python examples/writing_demo.py     # outline → panel debate → you approve → key points → prose → review (<1s, free)
 
 pip install -e ".[dev,engines]"     # adds torch + scikit-learn for the real experiment engines
 python examples/campaign_demo.py    # a full campaign on real torch, MockLLM-scripted
@@ -194,8 +235,9 @@ raw **ledger** — every number reproducible from the jsonl.
 ## 📊 Status
 
 **Research preview** — the full PhD-workflow skeleton runs end-to-end on real experiments, with the
-anti-reward-hacking guards in place and adversarially reviewed, and an ideation-first research
-session (literature review → novelty-checked ideas → your choice) in front of the loop. It has been **run live against the
+anti-reward-hacking guards in place and adversarially reviewed, an ideation-first research
+session (literature review → novelty-checked ideas → your choice) in front of the loop, and a
+step-by-step writing session (outline → key points → prose, panel-argued and author-approved) after it. It has been **run live against the
 real Anthropic API** across **two domains** — captured verbatim for both
 [classification](examples/sample_run/) and [regression](examples/sample_run_diabetes/), each a
 real Opus campaign that beats its baseline and writes itself up. Next: a per-idea second retrieval

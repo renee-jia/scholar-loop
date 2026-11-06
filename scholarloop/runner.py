@@ -43,7 +43,7 @@ _RESULT_RE = re.compile(r"^SCHOLARLOOP_RESULT (\{.*\})\s*$", re.MULTILINE)
 # would make the final tier a vacuous repeat) so the terminal number is the tightest estimate.
 SEEDS_PER_FIDELITY = {"smoke": [0], "verify": [0, 1, 2], "full": [0, 1, 2, 3, 4]}
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent   # the checkout root; real runs use profile.root (same thing here)
 
 
 class RunError(RuntimeError):
@@ -55,7 +55,7 @@ def _module_from_entrypoint(entrypoint: str) -> str:
     return entrypoint.removesuffix(".py").replace("/", ".")
 
 
-def _engine_root(train_entrypoint: str, edits: list[dict]) -> Path:
+def _engine_root(train_entrypoint: str, edits: list[dict], src_root: Path = ROOT) -> Path:
     """Copy the engine package into a throwaway temp root and apply the agent's edits there.
 
     This is the source-diff edit channel under per-run isolation: architecture
@@ -65,7 +65,7 @@ def _engine_root(train_entrypoint: str, edits: list[dict]) -> Path:
     """
     pkg_rel = Path(train_entrypoint).parent           # e.g. engines/torch_vision
     root = Path(tempfile.mkdtemp(prefix="scholarloop_engine_"))
-    shutil.copytree(ROOT / pkg_rel, root / pkg_rel)
+    shutil.copytree(src_root / pkg_rel, root / pkg_rel)
     anc = pkg_rel.parent                              # make ancestor packages importable
     while str(anc) not in (".", ""):
         init = root / anc / "__init__.py"
@@ -97,14 +97,15 @@ def _run(module_args: list[str], cwd: Path, timeout_sec: int, extra_env: dict, s
 
 def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: int,
                   config_override: dict | None, engine_cwd: Path,
-                  frozen_guard: tuple = (None, None)) -> dict:
+                  frozen_guard: tuple = (None, None), pristine: Path = ROOT) -> dict:
     """Two-phase run for one seed — the reward-hacking guard.
 
     Phase 1 runs the EDITABLE train module, which must write a model artifact to
     $SCHOLARLOOP_ARTIFACT. Its stdout is intentionally ignored. Phase 2 runs the FROZEN
     `<fixed_module> score <artifact>` step; only ITS emitted number is trusted. So an edited
     train.py cannot fabricate the metric — it can only produce a model the frozen scorer judges.
-    Both phases run from `engine_cwd` (the repo root, or an isolated engine copy when editing).
+    Phase 1 runs from `engine_cwd` (the project root, or an isolated engine copy when editing);
+    phase 2 always runs from `pristine` (the untouched project root).
     """
     extra = {"SCHOLARLOOP_SEED": str(seed)}
     if config_override:
@@ -123,7 +124,7 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
         # edited / runtime-tampered) engine copy. Plus: verify the scorer file wasn't tampered
         # at runtime before we trust it.
         _verify_frozen(*frozen_guard)
-        p2 = _run([score_module, "score", artifact], ROOT, max(120, timeout_sec), extra, seed, "score")
+        p2 = _run([score_module, "score", artifact], pristine, max(120, timeout_sec), extra, seed, "score")
         if p2.returncode != 0:
             raise RunError(f"seed {seed}: score exit {p2.returncode}\n{p2.stderr[-500:]}")
         matches = _RESULT_RE.findall(p2.stdout)
@@ -200,22 +201,23 @@ def run_experiment(
     if illegal:
         raise ValueError(f"edits may only replace {profile.train_entrypoint!r}; refused: {illegal}")
 
+    root = profile.root                                              # where the engines live
     train_module = _module_from_entrypoint(profile.train_entrypoint)
     score_module = _module_from_entrypoint(profile.fixed_module)   # frozen scorer owns the metric
-    frozen_file = ROOT / profile.fixed_module
+    frozen_file = root / profile.fixed_module
     frozen_hash = _file_hash(frozen_file) if frozen_file.exists() else None
     budget = profile.budget.seconds_for(fidelity)
     seeds = SEEDS_PER_FIDELITY[fidelity]
-    engine_root = _engine_root(profile.train_entrypoint, edits) if edits else None
-    engine_cwd = engine_root if engine_root is not None else ROOT
+    engine_root = _engine_root(profile.train_entrypoint, edits, root) if edits else None
+    engine_cwd = engine_root if engine_root is not None else root
 
     config: dict = {}
     agg: float | None = None
     registry = VerifiedRegistry(Path(registry_dir) / f"{exp_id}.json", exp_id=exp_id)
     try:
         results, failures = _run_seeds(
-            seeds, lambda s: _run_one_seed(train_module, score_module, s, budget,
-                                           config_override, engine_cwd, (frozen_file, frozen_hash)))
+            seeds, lambda s: _run_one_seed(train_module, score_module, s, budget, config_override,
+                                           engine_cwd, (frozen_file, frozen_hash), pristine=root))
         per_seed = [float(r["value"]) for r in results]
         config = results[0].get("config", {})   # hparams are fixed across seeds for one run
         agg = round(mean(per_seed), 4)

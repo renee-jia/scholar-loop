@@ -29,7 +29,7 @@ from scholarloop.profile import Profile
 from scholarloop.reasoner import Reasoner
 from scholarloop.calibration import CalibrationLog, score_binary, score_delta
 from scholarloop.governor import Governor, cost_of
-from scholarloop.reasoning import confidence_bound
+from scholarloop.reasoning import confidence_bound, same_config
 from scholarloop.reflector import Reflector
 from scholarloop.skills import SkillLibrary
 
@@ -197,7 +197,7 @@ class Orchestrator:
                                parent.primary_score() if parent else None,
                                proposal.predicted_delta)
         self._calibrate(entry)                          # entry carries the prediction at this single tier
-        self._post_run(entry, parent, entries)
+        self._post_run(entry, parent, entries + [entry])
         return entry
 
     def _climb_from(self, smoke_entry, proposal, reasoning, tiers, gate, known) -> list[LedgerEntry]:
@@ -256,9 +256,10 @@ class Orchestrator:
             if prepared is None:
                 continue
             proposal, reasoning = prepared
-            if any(proposal.config == c for c in seen):
+            effective = {**self.profile.knobs, **proposal.config}
+            if any(same_config(effective, c) for c in seen):
                 continue                                # don't smoke the same config twice in one round
-            seen.append(proposal.config)
+            seen.append(effective)
             batch.append((proposal, reasoning))
         if not batch:
             return []
@@ -327,6 +328,9 @@ class Orchestrator:
         score = entry.primary_score()
         if score is None:                                  # killed
             return False
+        seeds = entry.metric.get("seeds") or [score]
+        if fidelity == "verify" and len(seeds) < 2:        # a degraded verify (seeds crashed) isn't the
+            return False                                   # multi-seed robustness check full deserves
         if gate is None:
             return True                                    # nothing to gate on yet — climb
         if fidelity == "smoke":                            # coarse screen: only kill the clearly-worse
@@ -334,9 +338,6 @@ class Orchestrator:
         if not self.profile.metric.is_better(score, gate):
             return False                                   # didn't clear the bar — drop it cheaply
         if fidelity == "verify":                           # statistical-significance gate (not just the mean)
-            seeds = entry.metric.get("seeds") or [score]
-            if len(seeds) < 2:                             # a degraded verify (seeds crashed) isn't the
-                return False                               # multi-seed robustness check full deserves
             bound = confidence_bound(seeds, self.profile.metric.direction, self.promote_z)
             return self.profile.metric.is_better(bound, gate)   # promote only if robust to seed noise
         return False                                       # default-deny: only smoke/verify ever climb
@@ -434,7 +435,7 @@ class Orchestrator:
 
             if governor is not None:
                 kept = [e for e in produced if e.verdict == "kept"]
-                improved = any(governor.update_frontier(e.primary_score(), direction) for e in kept)
+                improved = any([governor.update_frontier(e.primary_score(), direction) for e in kept])   # list: no short-circuit
                 governor.record_round(improved)
                 for alert in governor.alerts(self._spent()):
                     print(f"governor: {alert}", file=sys.stderr)
