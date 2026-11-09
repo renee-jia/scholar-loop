@@ -165,6 +165,19 @@ def fmt_run(profile, entries, skills, usage, model, trace, calibration: str = ""
     return "\n".join(out)
 
 
+def make_orchestrator(llm, profile, out: Path, *, topic: str, skills: SkillLibrary) -> Orchestrator:
+    """The full agent loop as the live flow runs it, with its campaign state in `out`. Shared with
+    examples/compare_search.py, so the agent arm compared against random search is this system."""
+    return Orchestrator(
+        llm, profile,
+        lit_scout=LitScout(llm, sources=[OpenAlexClient(), ArxivClient()]),  # impact-ranked, multi-source
+        debate_panel=DebatePanel(llm, profile.debate_roles),
+        reflector=Reflector(llm), advisor=Advisor(llm), director=Director(llm, profile),
+        skill_library=skills, topic=topic,
+        ledger_path=out / "experiments.jsonl", registry_dir=out / "registry",
+        calibration_path=out / "calibration.json")
+
+
 def main() -> int:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("ANTHROPIC_API_KEY is not set.", file=sys.stderr)
@@ -205,14 +218,7 @@ def main() -> int:
         prior = sum(1 for _ in Ledger(ledger_path).read_all()) if ledger_path.exists() else 0
         if resume:
             print(f"=== resuming: {prior} saved experiments in {out} ===")
-        orch = Orchestrator(
-            llm, profile,
-            lit_scout=LitScout(llm, sources=[OpenAlexClient(), ArxivClient()]),  # impact-ranked, multi-source
-            debate_panel=DebatePanel(llm, profile.debate_roles),
-            reflector=Reflector(llm), advisor=Advisor(llm), director=Director(llm, profile),
-            skill_library=skills, topic=topic,
-            ledger_path=ledger_path, registry_dir=registry_dir,
-            calibration_path=out / "calibration.json")
+        orch = make_orchestrator(llm, profile, out, topic=topic, skills=skills)
         if handoff:                                   # the human already chose the direction
             orch.adopt(handoff)
             print(f"=== adopting the chosen idea: {handoff['topic']!r} ===")
