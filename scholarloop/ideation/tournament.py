@@ -15,7 +15,8 @@ code.
   - **Pairing** (code): round-robin while the pair count fits `max_pairs`; past that, Swiss
     rounds (sort by current rating, pair neighbours, skip repeats).
   - **Elo** (code): ratings start at 1200 and update with K=32 after each match, in a fixed order,
-    so the same judgements always give the same ratings.
+    so the same judgements always give the same ratings. A match whose judge fails (schema
+    retries exhausted) is recorded as void and leaves the ratings alone.
   - **Proximity** (code): ideas whose title + claim overlap past a threshold are grouped into one
     cluster and marked as near-duplicates. Advisory, like the novelty check: the human decides.
 
@@ -27,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from itertools import combinations
 
-from scholarloop.core.agent import Agent
+from scholarloop.core.agent import Agent, AgentError
 from scholarloop.core.profile import Profile
 from scholarloop.core.text import jaccard
 
@@ -198,8 +199,13 @@ class Tournament:
 
     def _match(self, topic: str, ideas, a: int, b: int, res: TournamentResult) -> None:
         judge = self.judges[len(res.matches) % len(self.judges)]
-        first = judge.compare(topic, ideas[a], ideas[b])              # a shown as A
-        second = judge.compare(topic, ideas[b], ideas[a])             # a shown as B
+        try:
+            first = judge.compare(topic, ideas[a], ideas[b])          # a shown as A
+            second = judge.compare(topic, ideas[b], ideas[a])         # a shown as B
+        except AgentError as e:                # one bad judge reply voids this match, not the round
+            res.matches.append({"a": a + 1, "b": b + 1, "judge": judge.persona, "result": "void",
+                                "rationale_a_first": f"judge failed: {e}", "rationale_b_first": ""})
+            return
         a_first, a_second = first["winner"] == "A", second["winner"] == "B"
         score_a = 1.0 if a_first and a_second else 0.0 if not (a_first or a_second) else 0.5
         res.ratings[a], res.ratings[b] = elo_update(res.ratings[a], res.ratings[b], score_a)

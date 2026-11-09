@@ -136,20 +136,31 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
             raise RunError(f"seed {seed}: frozen scorer emitted no result")
         result = json.loads(matches[-1])
         if holdout:
-            _verify_frozen(*frozen_guard)
-            p3 = _run([score_module, "score", artifact, "test"], pristine, max(120, timeout_sec),
-                      extra, seed, "holdout score")
-            held = _RESULT_RE.findall(p3.stdout) if p3.returncode == 0 else []
-            if not held:
-                raise RunError(f"seed {seed}: frozen scorer served no holdout result "
-                               f"(exit {p3.returncode}; does the engine support `score <artifact> test`?)")
-            result["holdout_value"] = float(json.loads(held[-1])["value"])
+            _verify_frozen(*frozen_guard)          # tampering still kills the seed, as for val
+            result.update(_score_holdout(score_module, artifact, pristine, timeout_sec, extra, seed))
         return result
     finally:
         try:
             os.remove(artifact)
         except OSError:
             pass
+
+
+def _score_holdout(score_module: str, artifact: str, pristine: Path, timeout_sec: int,
+                   extra: dict, seed: int) -> dict:
+    """Score the artifact on the held-out test split: {"holdout_value": v} or {"holdout_error": msg}.
+    Never raises on a scoring failure. The holdout is a reporting number, so a crash or a missing
+    `test` split must not cost the seed its val score (which would change the selection metric)."""
+    try:
+        p3 = _run([score_module, "score", artifact, "test"], pristine, max(120, timeout_sec),
+                  extra, seed, "holdout score")
+    except RunError as e:
+        return {"holdout_error": str(e)}
+    held = _RESULT_RE.findall(p3.stdout) if p3.returncode == 0 else []
+    if not held:
+        return {"holdout_error": f"seed {seed}: frozen scorer served no holdout result (exit "
+                                 f"{p3.returncode}; does the engine support `score <artifact> test`?)"}
+    return {"holdout_value": float(json.loads(held[-1])["value"])}
 
 
 def _file_hash(path: Path) -> str:
@@ -181,6 +192,25 @@ def _run_seeds(seeds: list[int], run_one):
     if not results:
         raise RunError("; ".join(failures) or "no seeds ran")
     return results, failures
+
+
+def _aggregate_holdout(results: list[dict], registry: VerifiedRegistry, metric: str, exp_id: str) -> dict:
+    """The held-out blob over the seeds whose test scoring succeeded; errors are kept, and when no
+    seed has a holdout score the blob carries only the error (warned on stderr: usually an engine
+    without `test` support on a `holdout: true` profile, a configuration problem)."""
+    held = [r["holdout_value"] for r in results if "holdout_value" in r]
+    errors = [r["holdout_error"] for r in results if "holdout_error" in r]
+    if not held:
+        print(f"warning: {exp_id}: no held-out score ({errors[0]})", file=sys.stderr)
+        return {"error": errors[0]}
+    h_agg = round(mean(held), 4)
+    h_std = round(stdev(held), 4) if len(held) > 1 else 0.0
+    registry.capture(f"{metric}.holdout", h_agg, seeds=held, std=h_std)
+    registry.save()
+    blob = {"value": h_agg, "seeds": held, "std": h_std}
+    if errors:
+        blob["seeds_failed"] = len(errors)
+    return blob
 
 
 def run_experiment(
@@ -250,12 +280,7 @@ def run_experiment(
             verdict = "kept" if profile.metric.is_better(agg, baseline) else "discarded"
         metric_blob = {"name": profile.metric.name, fidelity: agg, "seeds": per_seed}
         if holdout:
-            held = [r["holdout_value"] for r in results]
-            h_agg = round(mean(held), 4)
-            h_std = round(stdev(held), 4) if len(held) > 1 else 0.0
-            registry.capture(f"{profile.metric.name}.holdout", h_agg, seeds=held, std=h_std)
-            registry.save()
-            metric_blob["holdout"] = {"value": h_agg, "seeds": held, "std": h_std}
+            metric_blob["holdout"] = _aggregate_holdout(results, registry, profile.metric.name, exp_id)
         if failures:                            # partial run: some seeds crashed but enough survived
             metric_blob["seeds_failed"] = len(failures)
     except RunError as e:

@@ -48,10 +48,23 @@ def test_holdout_off_by_default(tmp_path):
     assert e.holdout_score() is None
 
 
-def test_engine_without_holdout_support_fails_loudly(tmp_path):
+def test_engine_without_holdout_support_warns_but_keeps_the_val_result(tmp_path, capsys):
+    # a misconfigured profile must not turn an idea into a "killed" run the loop learns from
     cheater = dataclasses.replace(load_profile(ROOT / "profiles" / "cheater.yaml"), holdout=True)
-    e = _run(cheater, "full", "exp_0001", tmp_path, config=None)
-    assert e.verdict == "killed" and "holdout" in e.metric["error"]
+    honest = _run(dataclasses.replace(cheater, holdout=False), "full", "exp_0001", tmp_path, config=None)
+    e = _run(cheater, "full", "exp_0002", tmp_path, config=None)
+    assert e.verdict == honest.verdict != "killed" and e.primary_score() == honest.primary_score()
+    assert e.holdout_score() is None and "test" in e.metric["holdout"]["error"]
+    assert "no held-out score" in capsys.readouterr().err
+
+
+def test_one_failed_holdout_seed_keeps_every_val_seed(tmp_path):
+    from scholarloop.experiment import runner
+    from scholarloop.core.registry import VerifiedRegistry as Reg
+    results = [{"value": 4.0, "holdout_value": 5.0}, {"value": 4.2, "holdout_error": "seed 1: timeout"},
+               {"value": 4.1, "holdout_value": 5.2}]
+    blob = runner._aggregate_holdout(results, Reg(tmp_path / "r.json", exp_id="x"), "err", "x")
+    assert blob == {"value": 5.1, "seeds": [5.0, 5.2], "std": 0.1414, "seeds_failed": 1}
 
 
 def test_no_agent_prompt_ever_contains_the_holdout_number(tmp_path):

@@ -11,8 +11,11 @@ its playbook with incremental edits, not full rewrites, so the playbook doesn't 
     an updated list: keep, sharpen, merge or drop each old one, add new ones;
   - code enforces the contract: at most `max_recs` recommendations, each backed by evidence. A
     new recommendation must cite at least `min_support` distinct matches (that is what makes it
-    *recurring*); a carried-over one cites its previous id (`prev:k`). Unknown ids are rejected
-    and the agent retried.
+    *recurring*); a carried-over one cites its previous id (`prev:k`), and each `prev:k` may be
+    carried once, so it cannot launder new, unsupported text. Unknown ids are rejected and the
+    agent retried.
+  - the stored support is a resolvable audit trail: this round's `m<k>` become `r<round>:m<k>`
+    (rounds are kept in tournament.json) and a `prev:k` inherits that recommendation's support.
 
 The session stores the list, renders it in ideas.md and feeds it to the Ideator on the next round.
 """
@@ -39,6 +42,9 @@ def match_lines(matches: list[dict], titles: list[str]) -> list[str]:
     out = []
     for k, m in enumerate(matches, 1):
         a, b = titles[m["a"] - 1], titles[m["b"] - 1]
+        if m["result"] == "void":
+            out.append(f"m{k}: {a!r} vs {b!r} is void (the judge failed to answer); no evidence.")
+            continue
         verdict = {"a": f"preferred {a!r}", "b": f"preferred {b!r}", "draw": "split (a draw)"}[m["result"]]
         out.append(f"m{k}: {m['judge']} judged {a!r} vs {b!r}, {verdict}. "
                    f"Shown {a!r} first: {m['rationale_a_first']} Shown {b!r} first: {m['rationale_b_first']}")
@@ -76,6 +82,11 @@ class MetaReviewer(Agent):
         known = {f"m{k}" for k in range(1, len(ctx["lines"]) + 1)} | \
                 {f"prev:{k}" for k in range(1, len(ctx["previous"]) + 1)}
         errs = []
+        carried = [s for r in recs for s in set(r.get("support", [])) if s.startswith("prev:")]
+        twice = sorted({s for s in carried if carried.count(s) > 1})
+        if twice:
+            errs.append(f"each standing recommendation may be carried once; {twice} are cited by "
+                        "several (merge them, or support the new text with matches)")
         if len(recs) > self.max_recs:
             errs.append(f"at most {self.max_recs} recommendations (got {len(recs)}); merge or drop")
         for i, r in enumerate(recs, 1):
@@ -91,12 +102,23 @@ class MetaReviewer(Agent):
                 errs.append(f"recommendation {i}: empty text")
         return errs
 
-    def update(self, topic: str, previous: list[str], matches: list[dict],
-               titles: list[str]) -> list[dict]:
-        """The new standing list: [{text, support}], support ids as the agent cited them."""
-        lines = match_lines(matches, titles)
-        if not lines:
-            return [{"text": t, "support": [f"prev:{k}"]} for k, t in enumerate(previous, 1)]
-        out = self.run({"topic": topic, "previous": list(previous), "lines": lines})
-        return [{"text": r["text"].strip(), "support": sorted(set(r["support"]))}
+    def update(self, topic: str, previous: list[dict], matches: list[dict], titles: list[str],
+               *, round_no: int = 1) -> list[dict]:
+        """The new standing list [{text, support}] after tournament round `round_no`. `previous`
+        is the standing list; support ids are stored resolved (see the module docstring). With no
+        evidence this round (no matches, or fewer usable ones than a new recommendation needs and
+        nothing standing) the standing list is returned without a call."""
+        prev = [r if isinstance(r, dict) else {"text": r, "support": []} for r in previous]
+        usable = sum(m["result"] != "void" for m in matches)
+        if usable == 0 or (usable < self.min_support and not prev):
+            return prev
+        out = self.run({"topic": topic, "previous": [r["text"] for r in prev],
+                        "lines": match_lines(matches, titles)})
+
+        def resolve(sid: str) -> list[str]:
+            if sid.startswith("prev:"):
+                return list(prev[int(sid.split(":")[1]) - 1]["support"])
+            return [f"r{round_no}:{sid}"]
+        return [{"text": r["text"].strip(),
+                 "support": sorted({x for sid in set(r["support"]) for x in resolve(sid)})}
                 for r in out["recommendations"]]

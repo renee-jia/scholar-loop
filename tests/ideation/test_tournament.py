@@ -121,13 +121,43 @@ def test_session_orders_ideas_by_tournament_and_auto_selects_its_winner(tmp_path
     assert ranked[0].tournament["rank"] == 1 and ranked[0].tournament["wins"] == 2
     md = (s.out / "ideas.md").read_text()
     assert "pairwise Elo tournament" in md and "| 1 | **Gamma**" in md
-    log = json.loads((s.out / "tournament.json").read_text())
-    assert log["ideas"] == ["Gamma", "Beta", "Alpha"] and len(log["matches"]) == 3
-    assert all(1 <= m["a"] <= 3 and 1 <= m["b"] <= 3 for m in log["matches"])   # renumbered to ideas.md
+    (rnd,) = json.loads((s.out / "tournament.json").read_text())["rounds"]
+    assert rnd["round"] == 1 and rnd["ideas"] == ["Gamma", "Beta", "Alpha"] and len(rnd["matches"]) == 3
+    assert all(1 <= m["a"] <= 3 and 1 <= m["b"] <= 3 for m in rnd["matches"])   # renumbered to ideas.md
     assert s.auto_select()["topic"] == "Gamma"
 
     resumed = ResearchSession(MockLLM(), PROFILE, tmp_path / "s")              # persisted standings
     assert resumed.ideas[0].tournament["elo"] == ranked[0].tournament["elo"]
+
+
+def test_stored_rank_is_the_displayed_position_even_for_a_flagged_winner(tmp_path):
+    scripted = iter([QUERIES, REVIEW, {"ideas": [_raw("Alpha", 3, 3), _raw("Beta", 3, 3)]}])
+    judge = strength_judge({"Alpha": 2, "Beta": 1})                    # Alpha wins on Elo ...
+    llm = MockLLM(router=lambda p: judge(p) if "Idea A:" in p else next(scripted))
+    s = ResearchSession(llm, PROFILE, tmp_path / "s", topic="t", tournament=Tournament(llm, PROFILE),
+                        sources=[ArxivClient(fetcher=lambda q, n: ATOM)])
+    s.review()
+    import scholarloop.ideation.session as sess
+    real = sess.novelty_check
+    sess.novelty_check = lambda idea, *a, **k: {**real(idea, *a, **k), "flag": idea.title == "Alpha"}
+    try:
+        ranked = s.ideate(2)                                           # ... but Alpha is flagged
+    finally:
+        sess.novelty_check = real
+    assert [i.title for i in ranked] == ["Beta", "Alpha"]
+    assert [i.tournament["rank"] for i in ranked] == [1, 2]
+
+
+def test_a_failing_judge_voids_its_match_not_the_round():
+    def route(prompt):
+        if "Title: broken" in prompt:
+            return {"winner": "C", "rationale": "r"}                   # never schema-valid
+        return strength_judge({"x": 2, "y": 1})(prompt)
+    ideas = [_idea("x"), _idea("y"), _idea("broken")]
+    res = Tournament(MockLLM(router=route), PROFILE).run("t", ideas)
+    results = {(m["a"], m["b"]): m["result"] for m in res.matches}
+    assert results == {(1, 2): "a", (1, 3): "void", (2, 3): "void"}
+    assert res.ratings[2] == ELO_START                                 # a void match moves no rating
 
 
 def test_flagged_idea_sinks_below_unflagged_even_with_top_elo():

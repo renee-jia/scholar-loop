@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from scholarloop.ideation import ideator, litreview
-from scholarloop.core.agent import AgentTrace
+from scholarloop.core.agent import AgentError, AgentTrace
 from scholarloop.ideation.ideator import Idea, Ideator, novelty_check, tried_claims
 from scholarloop.core.ledger import Ledger
 from scholarloop.ideation.litreview import LitReview, LitReviewer, QueryPlanner
@@ -57,11 +57,13 @@ class SessionState:
     feedback: list[dict] = field(default_factory=list)   # [{stage, text, ts}]
     handoff: dict | None = None
     meta_review: list[dict] = field(default_factory=list)   # standing [{text, support}] across rounds
+    tournament_rounds: int = 0                               # rounds logged in tournament.json
 
     def to_dict(self) -> dict:
         return {"topic": self.topic, "stage": self.stage, "review": self.review,
                 "ideas": self.ideas, "selected": self.selected, "feedback": self.feedback,
-                "handoff": self.handoff, "meta_review": self.meta_review}
+                "handoff": self.handoff, "meta_review": self.meta_review,
+                "tournament_rounds": self.tournament_rounds}
 
     @classmethod
     def from_dict(cls, d: dict) -> "SessionState":
@@ -188,22 +190,32 @@ class ResearchSession:
 
     def _rank(self, ideas: list[Idea]) -> list[Idea]:
         """Run the tournament, store each idea's standing, and return the ideas best-first (flagged
-        novelty last), so idea 1 in ideas.md is the tournament's pick. The match log goes to
-        tournament.json for audit."""
+        novelty last), so idea 1 in ideas.md is the tournament's pick. Every round's match log is
+        appended to tournament.json for audit (meta-review support ids point into it)."""
         res = self.tournament.run(self.topic, ideas)
         for i, idea in enumerate(ideas):
             idea.tournament = res.summary(i)
         order = sorted(range(len(ideas)), key=lambda i: (-ideas[i].rank_key(), i))
         new_pos = {old: new + 1 for new, old in enumerate(order)}   # renumber for the human
-        for idea in ideas:
+        for i, idea in enumerate(ideas):
+            idea.tournament["rank"] = new_pos[i]                     # the position shown, flags included
             idea.tournament["near_duplicates"] = sorted(new_pos[j - 1] for j in idea.tournament["near_duplicates"])
         matches = [{**m, "a": new_pos[m["a"] - 1], "b": new_pos[m["b"] - 1]} for m in res.matches]
         titles = [ideas[i].title for i in order]
-        (self.out / "tournament.json").write_text(json.dumps(
-            {"ideas": titles, "matches": matches}, indent=2, ensure_ascii=False))
+        self.state.tournament_rounds += 1
+        rnd = self.state.tournament_rounds
+        log_path = self.out / "tournament.json"
+        log = json.loads(log_path.read_text()) if log_path.exists() else {}
+        rounds = [r for r in log.get("rounds", []) if r.get("round") != rnd]
+        rounds.append({"round": rnd, "ideas": titles, "matches": matches})
+        log_path.write_text(json.dumps({"rounds": rounds}, indent=2, ensure_ascii=False))
         if self.meta_reviewer is not None:       # incremental: the standing list is revised, not rewritten
-            self.state.meta_review = self.meta_reviewer.update(
-                self.topic, [r["text"] for r in self.state.meta_review], matches, titles)
+            try:
+                self.state.meta_review = self.meta_reviewer.update(
+                    self.topic, self.state.meta_review, matches, titles, round_no=rnd)
+            except AgentError as e:              # keep the ranked ideas; the standing list stays as it was
+                print(f"session: meta-review skipped this round ({e}); keeping the standing list",
+                      file=sys.stderr)
         return [ideas[i] for i in order]
 
     def _write_ideas(self) -> None:

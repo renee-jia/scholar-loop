@@ -76,7 +76,7 @@ def _main(argv: list[str]) -> int:
     if len(argv) in (2, 3) and argv[0] == "score" and (argv[2:] or ["val"])[0] in ("val", "test"):
         score(argv[1], *argv[2:])
         return 0
-    print("usage: python -m engines.vision.prepare score <artifact>", file=sys.stderr)
+    print("usage: python -m engines.vision.prepare score <artifact> [val|test]", file=sys.stderr)
     return 2
 
 
