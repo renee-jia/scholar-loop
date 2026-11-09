@@ -67,6 +67,7 @@ class Idea:
     feasibility: float                    # 1-5, the agent's own estimate
     impact: float                         # 1-5, the agent's own estimate
     novelty: dict = field(default_factory=dict)   # filled by novelty_check(): {closest, overlap, flag, ...}
+    tournament: dict = field(default_factory=dict)   # filled by Tournament: {elo, rank, wins, ...}
     selected: bool = False
 
     def to_dict(self) -> dict:
@@ -74,15 +75,18 @@ class Idea:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Idea":
-        return cls(**d)
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
     @property
     def flagged(self) -> bool:
         return bool(self.novelty.get("flag"))
 
     def rank_key(self) -> float:
-        """Deterministic ranking used by non-interactive selection: the agent's own feasibility +
-        impact, with a flagged novelty check pushed down."""
+        """Deterministic ranking used by non-interactive selection, with a flagged novelty check
+        pushed below every unflagged idea. The tournament's Elo when one ran (pairwise judgement
+        by other agents); otherwise the Ideator's own feasibility + impact (a self-score)."""
+        if "elo" in self.tournament:
+            return float(self.tournament["elo"]) - (1e6 if self.flagged else 0.0)
         return self.feasibility + self.impact - (10.0 if self.flagged else 0.0)
 
 
@@ -212,12 +216,16 @@ def novelty_check(idea: Idea, review: LitReview, tried: list[str] | None = None,
 
 def render_markdown(topic: str, ideas: list[Idea], *, feedback: list[str] | None = None) -> str:
     """`ideas.md` — the human-facing candidate list for the second checkpoint."""
+    ranked = any("elo" in i.tournament for i in ideas)
+    how = ("ranked by a pairwise Elo tournament (each pair judged twice, order swapped)" if ranked
+           else "ranked by the Ideator's own feasibility + impact")
     out = [f"# Research ideas — {topic}", "",
-           f"_{len(ideas)} candidates · ranked by the Ideator's own feasibility + impact · "
-           "novelty check is lexical and advisory_", ""]
+           f"_{len(ideas)} candidates · {how} · novelty check is lexical and advisory_", ""]
     if feedback:
         out += ["> Feedback applied: " + " / ".join(feedback), ""]
-    out += ["| # | idea | gap | feasibility | impact | novelty check |", "|---|---|---|---|---|---|"]
+    elo_h, elo_sep = (" Elo (W-D-L) |", "---|") if ranked else ("", "")
+    out += [f"| # | idea | gap |{elo_h} feasibility | impact | novelty check |",
+            f"|---|---|---|{elo_sep}---|---|---|"]
     for i, idea in enumerate(ideas, 1):
         nov = idea.novelty
         if not nov:
@@ -227,7 +235,10 @@ def render_markdown(topic: str, ideas: list[Idea], *, feedback: list[str] | None
         else:
             n = f"ok (closest {nov.get('closest_paper')}, {nov.get('paper_overlap', 0):.0%})"
         mark = "✅ " if idea.selected else ""
-        out.append(f"| {i} | {mark}**{idea.title}** | {idea.gap} | {idea.feasibility:g} | "
+        t = idea.tournament
+        elo = (f" {t['elo']:g} ({t['wins']}-{t['draws']}-{t['losses']}) |" if "elo" in t
+               else " — |") if ranked else ""
+        out.append(f"| {i} | {mark}**{idea.title}** | {idea.gap} |{elo} {idea.feasibility:g} | "
                    f"{idea.impact:g} | {n} |")
     out.append("")
     for i, idea in enumerate(ideas, 1):
@@ -238,6 +249,9 @@ def render_markdown(topic: str, ideas: list[Idea], *, feedback: list[str] | None
                 f"- **Experiment:** {idea.experiment_plan}",
                 f"- **Builds on:** {', '.join(f'`{s}`' for s in idea.sources)}",
                 f"- **Why novel (agent):** {idea.novelty_rationale}"]
+        if idea.tournament.get("near_duplicates"):
+            out.append("- **Near-duplicate of:** " + ", ".join(
+                f"#{j}" for j in idea.tournament["near_duplicates"]) + " (title + claim overlap)")
         if idea.novelty:
             nov = idea.novelty
             line = (f"- **Novelty check (lexical):** closest paper `{nov.get('closest_paper')}` "

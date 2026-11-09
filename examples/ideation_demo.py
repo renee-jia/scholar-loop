@@ -25,6 +25,7 @@ from scholarloop.core.llm import MockLLM
 from scholarloop.experiment.orchestrator import Orchestrator
 from scholarloop.core.profile import load_profile
 from scholarloop.ideation.session import ResearchSession
+from scholarloop.ideation.tournament import Tournament
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -104,10 +105,20 @@ def main() -> int:
         IDEAS,
     ])
     human = iter(["r also cover data-side regularization such as mixup", "a", "s 2"])
+    # the idea tournament's judges: scripted to prefer mixup > warmup+cosine > residual shortcuts,
+    # whichever slot an idea is shown in (the Ideator's self-scores put warmup+cosine first)
+    prefer = ["Residual shortcuts", "Warmup + cosine", "mixup under"]
+
+    def judge(prompt):
+        a = prompt.split("Idea A:\nTitle: ")[1].split("\n")[0]
+        b = prompt.split("Idea B:\nTitle: ")[1].split("\n")[0]
+        rank = lambda t: next(i for i, k in enumerate(prefer) if t.startswith(k))
+        return {"winner": "A" if rank(a) > rank(b) else "B", "rationale": "scripted preference"}
 
     print("=== IDEATION-FIRST SESSION · image-classification (stub engine) ===\n")
     s = ResearchSession(session_llm, profile, tmp / "session", topic="training recipes for small nets",
-                        sources=[ArxivClient(fetcher=lambda q, n: next(feeds))])
+                        sources=[ArxivClient(fetcher=lambda q, n: next(feeds))],
+                        tournament=Tournament(MockLLM(router=judge), profile))
 
     def ask(prompt):
         answer = next(human)
@@ -129,7 +140,7 @@ def main() -> int:
     for e in produced:
         print(f"    {e.fidelity[0]:<6} {e.metric_name}={e.primary_score()}%  [{e.verdict}]")
     print(f"\n  the idea climbed {len(produced)} tier(s); every run cites {produced[0].hypothesis.source}.")
-    print(f"  session artifacts: {tmp / 'session'}  (lit_review.md · ideas.md · handoff.json · session.json)")
+    print(f"  session artifacts: {tmp / 'session'}  (lit_review.md · ideas.md · tournament.json · handoff.json · session.json)")
     shutil.rmtree(tmp, ignore_errors=True)
     return 0
 

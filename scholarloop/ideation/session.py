@@ -12,7 +12,10 @@ of the loop and persists everything between them:
                      ▼
               [3] handoff.json ──▶ Orchestrator.adopt(handoff) ──▶ smoke → verify → full …
 
-Control flow is deterministic code; the agents (QueryPlanner, LitReviewer, Ideator) are stateless
+With a `Tournament`, step [2] also ranks the ideas by pairwise, position-swapped judgement
+(tournament.py), so idea 1 in ideas.md is the panel's pick rather than the Ideator's self-score.
+
+Control flow is deterministic code; the agents (QueryPlanner, LitReviewer, Ideator, Judge) are stateless
 and schema-checked; all state lives in `session.json` under the output directory, so a session can
 be driven interactively (`interactive()`), from the CLI across separate invocations
 (`python -m scholarloop.ideation ... --feedback/--select`), or by another program.
@@ -37,6 +40,7 @@ from scholarloop.ideation.litreview import LitReview, LitReviewer, QueryPlanner
 from scholarloop.ideation.litscout import ArxivClient, OpenAlexClient, dedup_key, retrieve
 from scholarloop.core.llm import LLMClient
 from scholarloop.core.profile import Profile
+from scholarloop.ideation.tournament import Tournament
 
 STAGES = ("new", "reviewed", "ideated", "selected")
 
@@ -72,7 +76,7 @@ class ResearchSession:
     def __init__(self, llm: LLMClient, profile: Profile, out_dir: str | Path, *,
                  topic: str | None = None, sources: list | None = None,
                  ledger_path: str | Path | None = None, trace: AgentTrace | None = None,
-                 max_papers: int = 20, per_query: int = 8):
+                 max_papers: int = 20, per_query: int = 8, tournament: Tournament | None = None):
         self.llm, self.profile = llm, profile
         self.out = Path(out_dir)
         self.out.mkdir(parents=True, exist_ok=True)
@@ -83,6 +87,7 @@ class ResearchSession:
         self.planner = QueryPlanner(llm, trace=self.trace)
         self.reviewer = LitReviewer(llm, trace=self.trace)
         self.ideator = Ideator(llm, profile, trace=self.trace)
+        self.tournament = tournament            # None: rank by the Ideator's self-scores
         state_path = self.out / self.STATE_FILE
         if state_path.exists():
             self.state = SessionState.from_dict(json.loads(state_path.read_text()))
@@ -163,12 +168,30 @@ class ResearchSession:
                                     feedback="\n".join(f"- {t}" for t in self._feedback_for("ideas")))
         for idea in ideas:
             idea.novelty = novelty_check(idea, rev, tried)
+        if self.tournament is not None and len(ideas) > 1:
+            ideas = self._rank(ideas)
         self.state.ideas = [i.to_dict() for i in ideas]
         self.state.stage = "ideated"
         self.state.selected, self.state.handoff = None, None
         self._save()
         self._write_ideas()
         return ideas
+
+    def _rank(self, ideas: list[Idea]) -> list[Idea]:
+        """Run the tournament, store each idea's standing, and return the ideas best-first (flagged
+        novelty last), so idea 1 in ideas.md is the tournament's pick. The match log goes to
+        tournament.json for audit."""
+        res = self.tournament.run(self.topic, ideas)
+        for i, idea in enumerate(ideas):
+            idea.tournament = res.summary(i)
+        order = sorted(range(len(ideas)), key=lambda i: (-ideas[i].rank_key(), i))
+        new_pos = {old: new + 1 for new, old in enumerate(order)}   # renumber for the human
+        for idea in ideas:
+            idea.tournament["near_duplicates"] = sorted(new_pos[j - 1] for j in idea.tournament["near_duplicates"])
+        matches = [{**m, "a": new_pos[m["a"] - 1], "b": new_pos[m["b"] - 1]} for m in res.matches]
+        (self.out / "tournament.json").write_text(json.dumps(
+            {"ideas": [ideas[i].title for i in order], "matches": matches}, indent=2, ensure_ascii=False))
+        return [ideas[i] for i in order]
 
     def _write_ideas(self) -> None:
         (self.out / "ideas.md").write_text(
@@ -195,8 +218,8 @@ class ResearchSession:
         return self.state.handoff
 
     def auto_select(self) -> dict:
-        """Non-interactive: the top idea by the deterministic rank (feasibility + impact, flagged
-        novelty pushed down)."""
+        """Non-interactive: the top idea by the deterministic rank (tournament Elo when one ran,
+        else feasibility + impact; flagged novelty pushed down)."""
         ideas = self.ideas
         if not ideas:
             raise RuntimeError("run ideate() before auto_select()")
@@ -236,7 +259,9 @@ class ResearchSession:
             say(f"[2/3] ideas → {self.out / 'ideas.md'}")
             for i, idea in enumerate(self.ideas, 1):
                 flag = "  ⚠️ " + idea.novelty.get("reason", "") if idea.flagged else ""
-                say(f"      {i}. {idea.title}  (feasibility {idea.feasibility:g} · impact {idea.impact:g}){flag}")
+                t = idea.tournament
+                elo = f"Elo {t['elo']:g} · " if "elo" in t else ""
+                say(f"      {i}. {idea.title}  ({elo}feasibility {idea.feasibility:g} · impact {idea.impact:g}){flag}")
             cmd, arg = _parse(input_fn("      (s)elect <n> · (r)efine <feedback> · (q)uit > "))
             if cmd == "s" and arg.isdigit() and 1 <= int(arg) <= len(self.ideas):
                 self.select(int(arg))
@@ -299,6 +324,8 @@ def _main(argv: list[str]) -> int:
     ap.add_argument("--model", default=os.environ.get("SCHOLARLOOP_MODEL", "claude-opus-4-8"))
     ap.add_argument("--ledger", help="an existing ledger.jsonl, so ideas avoid what was already tested")
     ap.add_argument("--n-ideas", type=int, default=5)
+    ap.add_argument("--no-tournament", action="store_true",
+                    help="skip the pairwise idea tournament; rank by the Ideator's self-scores")
     ap.add_argument("--max-papers", type=int, default=20)
     ap.add_argument("--feedback", help="non-interactive: feedback for the CURRENT stage, then advance")
     ap.add_argument("--select", type=int, help="non-interactive: pick this idea (1-based)")
@@ -311,8 +338,10 @@ def _main(argv: list[str]) -> int:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("ANTHROPIC_API_KEY is not set.", file=sys.stderr)
         return 1
-    s = ResearchSession(AnthropicLLM(model=a.model), load_profile(a.profile), a.out,
-                        topic=a.topic, ledger_path=a.ledger, max_papers=a.max_papers)
+    llm, profile = AnthropicLLM(model=a.model), load_profile(a.profile)
+    s = ResearchSession(llm, profile, a.out, topic=a.topic, ledger_path=a.ledger,
+                        max_papers=a.max_papers,
+                        tournament=None if a.no_tournament else Tournament(llm, profile))
 
     non_interactive = any([a.feedback, a.select, a.auto, a.stop_after])
     if not non_interactive:

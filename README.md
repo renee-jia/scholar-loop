@@ -48,7 +48,8 @@ deserves them. So the loop has a front half that stops and asks:
                    │                                       (new queries · corpus grows · review rewritten)
                    ▼
             [2] candidate ideas ──▶ ideas.md          ◀── you: pick #2, or "be bolder"
-                   │                                       (re-ideate on the same corpus)
+                   │                                       (ranked by a pairwise Elo tournament ·
+                   │                                        re-ideate on the same corpus)
                    ▼
             [3] handoff.json ──▶ Orchestrator.adopt() ──▶ smoke → verify → full …
 ```
@@ -65,7 +66,8 @@ SCHOLARLOOP_HANDOFF=runs/s1/handoff.json SCHOLARLOOP_OUT=runs/s1 \
 
 Non-interactive too: `--stop-after review` writes the report and exits for a human; `--feedback "…"`
 and `--select 2` resume a session from another process (all state lives in `session.json`);
-`--auto` picks the top idea for unattended use. See it end to end, free and deterministic, in
+`--auto` picks the tournament's top idea for unattended use (`--no-tournament` falls back to the
+Ideator's self-scores). See it end to end, free and deterministic, in
 [`examples/ideation_demo.py`](examples/ideation_demo.py).
 
 What keeps it honest, in deterministic code rather than prompts:
@@ -73,6 +75,7 @@ What keeps it honest, in deterministic code rather than prompts:
 | | |
 |---|---|
 | 📎 **Citation grounding** | every paper id the review or an idea cites must be in the retrieved corpus — a hallucinated reference is rejected and the agent retried (the literature analogue of number grounding) |
+| 🏆 **Idea tournament** | ideas are ranked by pairwise matches, not by the Ideator grading its own work: a rotating persona panel compares every pair **twice, order swapped** (a win in only one order is a draw, which cancels position bias), Elo is computed in code, near-duplicates are grouped, and the match log lands in `tournament.json` |
 | 🔍 **Novelty check** | each idea is lexically compared to every reviewed paper and every hypothesis already in the ledger; the closest match is shown and flagged past a threshold — advisory, so *you* judge |
 | ⚙️ **Testable by construction** | the Ideator sees the engine's metric, baseline, knobs and editable surfaces, so each idea comes with an experiment plan the loop can actually run |
 | 🧭 **Recency × impact** | retrieval fills the corpus with the highest-cited papers but reserves slots for fresh, uncited preprints |
@@ -182,7 +185,7 @@ The package is split by stage; each subpackage's `__init__.py` lists what its mo
 ```
 scholarloop/
 ├── core/          shared contracts: Agent harness, LLM clients, Profile (+ schema), Ledger, VerifiedRegistry
-├── ideation/      front half, human-in-the-loop: litscout → litreview → ideator → session   (python -m scholarloop.ideation)
+├── ideation/      front half, human-in-the-loop: litscout → litreview → ideator → tournament → session   (python -m scholarloop.ideation)
 ├── experiment/    autonomous loop: orchestrator, runner, reasoner, debate, reflector, advisor, director, governor, …
 └── writing/       back half, author-approved: session, paper (one-shot fallback), skills/*.md   (python -m scholarloop.writing)
 engines/           L1 experiment engines: a frozen prepare.py + an editable train.py per domain
