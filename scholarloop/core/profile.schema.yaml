@@ -98,6 +98,16 @@ properties:
       True if the frozen scorer accepts `score <artifact> test` and serves a held-out test split.
       The runner then scores the test split on full-tier runs only and stores it apart from the
       metric the loop selects on, so the reported number is free of selection bias. No agent sees it.
+  cv_folds:
+    type: integer
+    default: 0
+    not: {const: 1}
+    minimum: 0
+    description: >
+      K-fold cross-validation for small datasets, where one val split is too noisy to select on.
+      With K >= 2 the runner pairs seed s with fold s % K: train.py receives $SCHOLARLOOP_FOLD and
+      the frozen scorer is called as `score <artifact> val <k>`, so the full tier's seeds cover the
+      folds at no extra compute. The engine must support it. 0 (default) means one fixed val split.
   debate_roles:
     type: array
     description: Persona names for the hypothesis-generation debate panel.

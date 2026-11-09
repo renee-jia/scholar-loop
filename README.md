@@ -133,7 +133,7 @@ checked is checked in code, and rejected + retried:
 | ⚙️ **Engineered loop** | A **parallel population funnel** — propose N ideas, smoke-screen them all at once, climb only the survivors — under a **self-stopping governor** that halts on budget, round cap, or convergence (*loop-until-dry*). |
 | 🧠 **Self-improving** | Predicts each idea's effect, scores the prediction against reality, and distills failures into a **relevance-ranked, time-decaying skill library** re-injected next round. |
 | 🎯 **Calibrated agents** | **Universal predict-then-verify** — every agent's checkable claims (Reasoner deltas, Debate go/no-go) are scored against ground truth, so the loop learns *which of its own agents to trust*. |
-| 🛡️ **Can't be reward-hacked** | Two-phase **frozen scoring** (`train.py` can't fake the metric or see the val set) + edit **allowlist** + **VerifiedRegistry** number-grounding — proven by a bundled `cheater` engine. A **held-out test split**, scored only on full-tier runs and never shown to an agent, gives the paper a number free of the bias that selecting on val every round adds. |
+| 🛡️ **Can't be reward-hacked** | Two-phase **frozen scoring** (`train.py` can't fake the metric or see the val set) + edit **allowlist** + **VerifiedRegistry** number-grounding — proven by a bundled `cheater` engine. A **held-out test split**, scored only on full-tier runs and never shown to an agent, gives the paper a number free of the bias that selecting on val every round adds; small datasets cross-validate (`cv_folds`), each seed on its own fold. |
 | ✅ **Honest & testable** | 160 tests, **no API key or GPU needed** — the whole loop, the research and writing sessions included, runs against a deterministic `MockLLM`. |
 
 > The LLM does only the open-ended reasoning. Everything checkable — search-space pruning, dedup,
@@ -248,7 +248,7 @@ A single run shows the system
 | [**digits-mlp**](examples/sample_runs/digits/) | val error | 5.0% | **3.82%** | population → verify → full, governed | ≈ $0.45 | reject 2/10 |
 | [**diabetes-mlp**](examples/sample_runs/diabetes/) | val RMSE | 56.5 *(linear model)* | **55.27** | population → verify → full, governed | ≈ $0.77 | reject 3/10 |
 
-*These captures predate the val/test split: the engines now halve the old val set into val and a held-out test, so re-running them gives different numbers (the diabetes bar moved to 61.8, the linear model on the new val half).*
+*These captures predate the current data layout: the engines now hold out a fixed 20% test split and cross-validate on 5 folds of the rest (`cv_folds: 5`), so re-running them gives different numbers (the bars are now the CV means of a linear model: logreg@3.8 on digits, linear@53.9 on diabetes).*
 
 Both are **governed population funnels** — each round fans out several ideas, smoke-screens them in
 parallel, and climbs only the survivors, while the loop halts itself (on convergence or a round cap)

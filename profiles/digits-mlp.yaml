@@ -18,15 +18,18 @@ datasets:
   - sklearn-digits
 
 baselines:
-  # Must-beat val error (%). Calibrated to this engine: the default MLP gets ~7.6% on the val half,
-  # and a strong wide/long-trained config reaches ~1.7% (~3.8% on the held-out test half), so 5.0
-  # is a real bar that separates good recipes from mediocre ones without being unreachable. Smoke screens with slack (Orchestrator
-  # smoke_slack) so a borderline ~6% idea still earns a multi-seed verify before this gate decides.
-  - logreg@5.0
+  # Must-beat val error (%) = sklearn LogisticRegression on the same frozen folds (5-fold CV mean
+  # 3.8, std 0.8; 3.9 on the held-out test). The profile's default MLP knobs get ~4.6 and a wide,
+  # long-trained config ~3.5, so beating a linear model takes a real recipe. Smoke screens with
+  # slack (Orchestrator smoke_slack), so a borderline idea still earns a multi-seed verify.
+  - logreg@3.8
 
 # The loop selects on val every round, so the best val number is optimistically biased. The frozen
 # scorer also holds out a test split; full-tier runs are scored on it once, and only the paper sees it.
 holdout: true
+# 1797 images: one val fold is 288 of them, so a single split moves ~1 point between folds. Seed s
+# validates on fold s % 5; the full tier's five seeds are a 5-fold CV estimate.
+cv_folds: 5
 
 knobs:                        # tunable hyperparameters (name → default) the agent sets in `config`
   lr: 0.05

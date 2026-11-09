@@ -25,6 +25,7 @@ METRIC_NAME = "val_top1_err"
 # A frozen "ground-truth" optimum the stub rewards configs for approaching. The agent
 # cannot see this; it can only observe the returned error. Acts as a hidden objective.
 _IDEAL = {"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5}
+N_FOLDS = 5        # CV folds the stub accepts (`score <artifact> val <fold>`); each has its own noise
 
 
 def _seed_noise(seed: int, hparams: dict) -> float:
@@ -59,7 +60,7 @@ def emit_result(value: float, seeds: list[float] | None = None, config: dict | N
     print("SCHOLARLOOP_RESULT " + json.dumps(payload))
 
 
-def score(artifact_path: str, split: str = "val") -> None:
+def score(artifact_path: str, split: str = "val", fold: int = 0) -> None:
     """Trusted metric path: recompute the (frozen) evaluate from the saved config+seed.
 
     For this stub the 'model' is just the config the agent chose; the score is recomputed
@@ -68,15 +69,19 @@ def score(artifact_path: str, split: str = "val") -> None:
     data = json.loads(Path(artifact_path).read_text())
     cfg = data.get("config", {})
     seed = int(data.get("seed", 0))
-    # the stub's "held-out test" is the same hidden objective under independent noise
-    emit_result(evaluate(cfg, seed if split == "val" else seed + 10_000), config=cfg)
+    # the stub's "held-out test" is the same hidden objective under independent noise; each CV
+    # fold is a different val split, so it also gets its own noise (fold 0 is the plain val split)
+    emit_result(evaluate(cfg, seed + 1000 * fold if split == "val" else seed + 10_000), config=cfg)
 
 
 def _main(argv: list[str]) -> int:
-    if len(argv) in (2, 3) and argv[0] == "score" and (argv[2:] or ["val"])[0] in ("val", "test"):
-        score(argv[1], *argv[2:])
+    split = argv[2] if len(argv) > 2 else "val"
+    fold = argv[3] if len(argv) > 3 else "0"
+    if 2 <= len(argv) <= 4 and argv[0] == "score" and split in ("val", "test") \
+            and fold.isdigit() and int(fold) < N_FOLDS:
+        score(argv[1], split, int(fold))
         return 0
-    print("usage: python -m engines.vision.prepare score <artifact> [val|test]", file=sys.stderr)
+    print("usage: python -m engines.vision.prepare score <artifact> [val|test] [fold]", file=sys.stderr)
     return 2
 
 

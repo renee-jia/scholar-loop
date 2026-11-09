@@ -70,6 +70,7 @@ class Profile:
     knobs: dict = field(default_factory=dict)   # tunable hyperparameters (name → default value)
     debate_roles: tuple[str, ...] = ("Innovator", "Pragmatist", "Contrarian")
     holdout: bool = False   # the engine's frozen scorer also serves a held-out test split (see runner)
+    cv_folds: int = 0       # >= 2: seed s is trained/validated on fold s % cv_folds (see runner)
     source_path: Path | None = field(default=None, compare=False)
 
     @property
@@ -159,6 +160,7 @@ def load_profile(path: str | Path) -> Profile:
         knobs=dict(raw.get("knobs", {})),
         debate_roles=tuple(raw.get("debate_roles", ["Innovator", "Pragmatist", "Contrarian"])),
         holdout=bool(raw.get("holdout", False)),
+        cv_folds=int(raw.get("cv_folds", 0)),
         source_path=path,
     )
 

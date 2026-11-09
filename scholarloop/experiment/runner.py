@@ -43,6 +43,17 @@ _RESULT_RE = re.compile(r"^SCHOLARLOOP_RESULT (\{.*\})\s*$", re.MULTILINE)
 # would make the final tier a vacuous repeat) so the terminal number is the tightest estimate.
 SEEDS_PER_FIDELITY = {"smoke": [0], "verify": [0, 1, 2], "full": [0, 1, 2, 3, 4]}
 
+
+def fold_for_seed(seed: int, cv_folds: int) -> int | None:
+    """The CV fold seed `seed` trains and validates on, or None without cross-validation.
+
+    On a small dataset one fixed val split is too noisy to select on (diabetes has ~70 val
+    samples). Pairing seed s with fold s % K reuses the seeds the funnel already runs: the full
+    tier's five seeds cover all five folds, so the reported mean is a K-fold estimate and its std
+    carries split noise as well as seed noise, at no extra compute. Every run at one tier sees the
+    same folds, so runs stay comparable. The held-out test split is outside every fold."""
+    return seed % cv_folds if cv_folds >= 2 else None
+
 ROOT = Path(__file__).resolve().parents[2]  # the checkout root; real runs use profile.root (same thing here)
 
 
@@ -98,7 +109,7 @@ def _run(module_args: list[str], cwd: Path, timeout_sec: int, extra_env: dict, s
 def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: int,
                   config_override: dict | None, engine_cwd: Path,
                   frozen_guard: tuple = (None, None), pristine: Path = ROOT,
-                  holdout: bool = False) -> dict:
+                  holdout: bool = False, fold: int | None = None) -> dict:
     """Two-phase run for one seed — the reward-hacking guard.
 
     Phase 1 runs the EDITABLE train module, which must write a model artifact to
@@ -110,8 +121,14 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
 
     With `holdout`, the same artifact is scored a second time on the frozen held-out test split and
     returned as `holdout_value`. The caller stores it apart from the selection metric.
+
+    With a CV `fold`, train.py gets $SCHOLARLOOP_FOLD (the engine's load_train() leaves that fold
+    out) and the scorer is called as `score <artifact> val <fold>`. The fold the scorer evaluates
+    comes from the runner's argv, never from the environment train.py ran in.
     """
     extra = {"SCHOLARLOOP_SEED": str(seed)}
+    if fold is not None:
+        extra["SCHOLARLOOP_FOLD"] = str(fold)
     if config_override:
         extra["SCHOLARLOOP_CONFIG"] = json.dumps(config_override)
     fd, artifact = tempfile.mkstemp(prefix="scholarloop_art_")
@@ -128,16 +145,20 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
         # edited / runtime-tampered) engine copy. Plus: verify the scorer file wasn't tampered
         # at runtime before we trust it.
         _verify_frozen(*frozen_guard)
-        p2 = _run([score_module, "score", artifact], pristine, max(120, timeout_sec), extra, seed, "score")
+        val_args = ["val", str(fold)] if fold is not None else []
+        p2 = _run([score_module, "score", artifact, *val_args], pristine, max(120, timeout_sec), extra, seed, "score")
         if p2.returncode != 0:
             raise RunError(f"seed {seed}: score exit {p2.returncode}\n{p2.stderr[-500:]}")
         matches = _RESULT_RE.findall(p2.stdout)
         if not matches:
             raise RunError(f"seed {seed}: frozen scorer emitted no result")
         result = json.loads(matches[-1])
+        if fold is not None:
+            result["fold"] = fold
         if holdout:
             _verify_frozen(*frozen_guard)          # tampering still kills the seed, as for val
-            result.update(_score_holdout(score_module, artifact, pristine, timeout_sec, extra, seed))
+            result.update(_score_holdout(score_module, artifact, pristine, timeout_sec, extra, seed,
+                                         fold))
         return result
     finally:
         try:
@@ -147,12 +168,13 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
 
 
 def _score_holdout(score_module: str, artifact: str, pristine: Path, timeout_sec: int,
-                   extra: dict, seed: int) -> dict:
+                   extra: dict, seed: int, fold: int | None = None) -> dict:
     """Score the artifact on the held-out test split: {"holdout_value": v} or {"holdout_error": msg}.
     Never raises on a scoring failure. The holdout is a reporting number, so a crash or a missing
     `test` split must not cost the seed its val score (which would change the selection metric)."""
     try:
-        p3 = _run([score_module, "score", artifact, "test"], pristine, max(120, timeout_sec),
+        fold_arg = [str(fold)] if fold is not None else []
+        p3 = _run([score_module, "score", artifact, "test", *fold_arg], pristine, max(120, timeout_sec),
                   extra, seed, "holdout score")
     except RunError as e:
         return {"holdout_error": str(e)}
@@ -266,7 +288,7 @@ def run_experiment(
         results, failures = _run_seeds(
             seeds, lambda s: _run_one_seed(train_module, score_module, s, budget, config_override,
                                            engine_cwd, (frozen_file, frozen_hash), pristine=root,
-                                           holdout=holdout))
+                                           holdout=holdout, fold=fold_for_seed(s, profile.cv_folds)))
         per_seed = [float(r["value"]) for r in results]
         config = results[0].get("config", {})   # hparams are fixed across seeds for one run
         agg = round(mean(per_seed), 4)
@@ -279,6 +301,8 @@ def run_experiment(
         else:
             verdict = "kept" if profile.metric.is_better(agg, baseline) else "discarded"
         metric_blob = {"name": profile.metric.name, fidelity: agg, "seeds": per_seed}
+        if profile.cv_folds >= 2:               # which fold each surviving seed was validated on
+            metric_blob["folds"] = [r["fold"] for r in results]
         if holdout:
             metric_blob["holdout"] = _aggregate_holdout(results, registry, profile.metric.name, exp_id)
         if failures:                            # partial run: some seeds crashed but enough survived
