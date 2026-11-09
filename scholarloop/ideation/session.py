@@ -339,7 +339,7 @@ def _main(argv: list[str]) -> int:
     import argparse
     import os
 
-    from scholarloop.core.llm import AnthropicLLM
+    from scholarloop.core.llm import AnthropicLLM, model_from_env
     from scholarloop.core.profile import load_profile
 
     ap = argparse.ArgumentParser(prog="scholarloop.ideation",
@@ -347,7 +347,7 @@ def _main(argv: list[str]) -> int:
     ap.add_argument("--profile", required=True)
     ap.add_argument("--out", required=True, help="session directory (resumes if session.json exists)")
     ap.add_argument("--topic", help="required for a new session")
-    ap.add_argument("--model", default=os.environ.get("SCHOLARLOOP_MODEL", "claude-opus-4-8"))
+    ap.add_argument("--model", default=model_from_env())
     ap.add_argument("--ledger", help="an existing ledger.jsonl, so ideas avoid what was already tested")
     ap.add_argument("--n-ideas", type=int, default=5)
     ap.add_argument("--no-tournament", action="store_true",

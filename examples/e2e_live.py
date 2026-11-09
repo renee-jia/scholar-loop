@@ -24,7 +24,8 @@ from scholarloop.experiment.debate import DebatePanel
 from scholarloop.experiment.director import Director
 from scholarloop.core.ledger import Ledger
 from scholarloop.ideation.litscout import ArxivClient, LitScout, OpenAlexClient
-from scholarloop.core.llm import AnthropicLLM
+from scholarloop.core.llm import AnthropicLLM, model_from_env
+from scholarloop.experiment.governor import cost_of
 from scholarloop.experiment.orchestrator import Orchestrator
 from scholarloop.core.profile import load_profile
 from scholarloop.experiment.reflector import Reflector
@@ -32,9 +33,6 @@ from scholarloop.experiment.skills import SkillLibrary
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# rough $/1M tokens for cost estimate (Opus 4.8); override-friendly
-_PRICE = {"claude-opus-4-8": (5.0, 25.0), "claude-sonnet-4-6": (3.0, 15.0),
-          "claude-haiku-4-5": (1.0, 5.0)}
 
 
 def main() -> int:
@@ -44,7 +42,7 @@ def main() -> int:
               "  python examples/e2e_live.py", file=sys.stderr)
         return 1
 
-    model = os.environ.get("SCHOLARLOOP_MODEL", "claude-opus-4-8")
+    model = model_from_env()
     steps = int(os.environ.get("SCHOLARLOOP_STEPS", "2"))
     topic = os.environ.get("SCHOLARLOOP_TOPIC", "small MLP image classification regularization")
 
@@ -81,10 +79,8 @@ def main() -> int:
           f"{dict(Counter(c.agent for c in orch.trace.calls))}")
 
     u = llm.usage
-    cost = ""
-    if model in _PRICE:
-        pin, pout = _PRICE[model]
-        cost = f"  ≈ ${u['input_tokens']/1e6*pin + u['output_tokens']/1e6*pout:.3f}"
+    usd = cost_of(u, model)                  # the one price table (experiment/governor.py)
+    cost = f"  ≈ ${usd:.3f}" if usd is not None else ""
     print(f"\n--- cost ---\n  {u['calls']} LLM calls · "
           f"{u['input_tokens']} in + {u['output_tokens']} out tokens{cost}")
 

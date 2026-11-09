@@ -22,7 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
-llm = ["anthropic>=0.92"]                       # only needed for real runs (AnthropicLLM); tests use MockLLM
+llm = ["anthropic>=0.109"]                      # only needed for real runs (AnthropicLLM); tests use MockLLM
 engines = ["torch>=2.0", "numpy>=1.23", "scikit-learn>=1.1"]  # the real torch experiment engines
 
 [project.urls]

@@ -16,7 +16,7 @@ Knobs (environment):
     SCHOLARLOOP_OUT=runs/live            output directory (the shipped examples/sample_runs/* are captures;
                                          point here to overwrite one on purpose)
     SCHOLARLOOP_PROFILE=digits-mlp       profiles/<name>.yaml
-    SCHOLARLOOP_MODEL=claude-opus-4-8    SCHOLARLOOP_TOPIC="..."   SCHOLARLOOP_STEPS=3
+    SCHOLARLOOP_MODEL=claude-opus-5-5    SCHOLARLOOP_TOPIC="..."   SCHOLARLOOP_STEPS=3
     SCHOLARLOOP_POPULATION=1             >1: parallel population funnel, with SCHOLARLOOP_MAX_WORKERS
     SCHOLARLOOP_DRY_PATIENCE=2           loop-until-dry convergence (Governor)
     SCHOLARLOOP_MAX_COST=1.0             USD ceiling (Governor; needs a priced model)
@@ -42,7 +42,7 @@ from scholarloop.experiment.director import Director
 from scholarloop.experiment.governor import cost_of
 from scholarloop.core.ledger import Ledger
 from scholarloop.ideation.litscout import ArxivClient, LitScout, OpenAlexClient
-from scholarloop.core.llm import AnthropicLLM
+from scholarloop.core.llm import AnthropicLLM, model_from_env
 from scholarloop.experiment.orchestrator import Orchestrator
 from scholarloop.writing.paper import PaperPipeline
 from scholarloop.core.profile import load_profile
@@ -139,7 +139,7 @@ def main() -> int:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("ANTHROPIC_API_KEY is not set.", file=sys.stderr)
         return 1
-    model = os.environ.get("SCHOLARLOOP_MODEL", "claude-opus-4-8")
+    model = model_from_env()
     steps = int(os.environ.get("SCHOLARLOOP_STEPS", "3"))
     topic = os.environ.get("SCHOLARLOOP_TOPIC", "small MLP image classification regularization")
     paper_only = bool(os.environ.get("SCHOLARLOOP_PAPER_ONLY"))   # regenerate paper.md from a saved ledger

@@ -869,7 +869,7 @@ def _main(argv: list[str]) -> int:
     import argparse
     import os
 
-    from scholarloop.core.llm import AnthropicLLM
+    from scholarloop.core.llm import AnthropicLLM, model_from_env
     from scholarloop.core.profile import load_profile
 
     ap = argparse.ArgumentParser(prog="scholarloop.writing",
@@ -879,7 +879,7 @@ def _main(argv: list[str]) -> int:
     ap.add_argument("--registry", required=True, help="registry dir with the per-run measurements")
     ap.add_argument("--out", required=True, help="writing directory (resumes if writing.json exists)")
     ap.add_argument("--research", help="a ResearchSession dir (lit_review.json + handoff.json) to cite from")
-    ap.add_argument("--model", default=os.environ.get("SCHOLARLOOP_MODEL", "claude-opus-4-8"))
+    ap.add_argument("--model", default=model_from_env())
     ap.add_argument("--max-rounds", type=int, default=2)
     ap.add_argument("--feedback", help="non-interactive: feedback for the CURRENT stage, then stop")
     ap.add_argument("--approve", action="store_true", help="non-interactive: advance one stage")

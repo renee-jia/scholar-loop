@@ -4,7 +4,7 @@ ScholarLoop runs as a standalone process, so it can NOT call Claude Code skills 
 runtime — it needs its own LLM client. Everything that needs a model (the Reasoner,
 the Lit Scout, the writing agents) depends on the `LLMClient` interface here, so:
   - tests run against `MockLLM` (deterministic, no API, no cost),
-  - real runs use `AnthropicLLM` (Anthropic SDK, default model claude-opus-4-8).
+  - real runs use `AnthropicLLM` (Anthropic SDK, default model `DEFAULT_MODEL`).
 
 `complete()` returns free text; `complete_json()` constrains the response to a JSON
 schema (via the Messages API `output_config.format`) and returns the parsed dict — so
@@ -16,8 +16,25 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 
-# Default model: the most capable Opus-tier model. See the claude-api reference.
-DEFAULT_MODEL = "claude-opus-4-8"
+# The one place the default model is named: every CLI and example reads it from here (or from
+# $SCHOLARLOOP_MODEL via `model_from_env`). Prices for the cost gate live in governor.MODEL_PRICES.
+DEFAULT_MODEL = "claude-opus-5-5"
+
+# Models that accept the server-side refusal fallback (`fallbacks: "default"`): on a policy decline
+# the API re-runs the same request on a fallback model inside the same call.
+_FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+_FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
+
+def model_from_env() -> str:
+    """$SCHOLARLOOP_MODEL if set, else DEFAULT_MODEL."""
+    import os
+    return os.environ.get("SCHOLARLOOP_MODEL") or DEFAULT_MODEL
+
+
+class RefusalError(ValueError):
+    """The model (and any fallback) declined the request. A ValueError, so the agent harness
+    treats it like any other unusable reply: retried with feedback, then surfaced as AgentError."""
 
 
 class LLMClient(ABC):
@@ -77,8 +94,14 @@ class AnthropicLLM(LLMClient):
     never hardcode a key.
     """
 
-    def __init__(self, model: str = DEFAULT_MODEL, *, client=None):
+    def __init__(self, model: str = DEFAULT_MODEL, *, client=None, effort: str | None = None,
+                 fallbacks: bool = True):
+        """`effort` sets output_config.effort (None = the model's default; Opus 5.5 defaults to
+        medium). `fallbacks` opts supported models into the server-side refusal fallback; the
+        cost gate still prices every call at `model`'s rate."""
         self.model = model
+        self.effort = effort
+        self.fallbacks = fallbacks and model in _FALLBACK_MODELS
         self.usage = {"input_tokens": 0, "output_tokens": 0, "calls": 0}   # cumulative, for cost tracking
         if client is not None:
             self._client = client
@@ -92,12 +115,21 @@ class AnthropicLLM(LLMClient):
             self._client = anthropic.Anthropic()
 
     def _create(self, **kwargs):
-        resp = self._client.messages.create(**kwargs)
+        if self.effort is not None:
+            kwargs["output_config"] = {**kwargs.get("output_config", {}), "effort": self.effort}
+        if self.fallbacks:
+            resp = self._client.beta.messages.create(betas=[_FALLBACK_BETA], fallbacks="default", **kwargs)
+        else:
+            resp = self._client.messages.create(**kwargs)
         u = getattr(resp, "usage", None)
         if u is not None:
             self.usage["input_tokens"] += getattr(u, "input_tokens", 0) or 0
             self.usage["output_tokens"] += getattr(u, "output_tokens", 0) or 0
         self.usage["calls"] += 1
+        if getattr(resp, "stop_reason", None) == "refusal":
+            details = getattr(resp, "stop_details", None)
+            raise RefusalError(f"the model declined the request (category "
+                               f"{getattr(details, 'category', None)!r})")
         return resp
 
     def _text_of(self, response) -> str:

@@ -16,10 +16,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# USD per 1M tokens (input, output). Mirrors the public price list; unknown models cost None,
-# which disables the budget gate (fine for the free MockLLM in tests; for a real model the
-# Orchestrator prints a loud warning when max_cost is set and the model is not listed here).
+# USD per 1M tokens (input, output), first-party API rates as of 2026-10 (claude-api reference;
+# Haiku 5.5 is the <=100K-token prompt rate). Unknown models cost None, which disables the budget
+# gate (fine for the free MockLLM in tests; for a real model the Orchestrator prints a loud
+# warning when max_cost is set and the model is not listed here).
 MODEL_PRICES = {
+    "claude-fable-5-1": (10.0, 50.0),
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-opus-5": (5.0, 25.0),
+    "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-sonnet-5": (2.0, 10.0),
+    "claude-haiku-5-5": (0.1, 0.5),
     "claude-opus-4-8": (5.0, 25.0),
     "claude-opus-4-7": (5.0, 25.0),
     "claude-sonnet-4-6": (3.0, 15.0),
