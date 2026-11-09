@@ -17,7 +17,9 @@ of approved ideas produced a baseline-beating result" — the verifier loop, clo
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -49,10 +51,22 @@ def score_binary(agent: str, predicted_true: bool, actual_true: bool) -> Verdict
 @dataclass
 class CalibrationLog:
     verdicts: list = field(default_factory=list)
+    path: Path | None = field(default=None, compare=False)   # set: every record is saved here
+
+    @classmethod
+    def open(cls, path: str | Path) -> "CalibrationLog":
+        """A log persisted at `path` (JSON), loading what an earlier process recorded there, so a
+        resumed campaign keeps each agent's track record instead of starting it from zero."""
+        path = Path(path)
+        raw = json.loads(path.read_text()) if path.exists() else []
+        return cls([Verdict(**v) for v in raw], path=path)
 
     def record(self, verdict: Verdict | None) -> None:
         if verdict is not None:
             self.verdicts.append(verdict)
+            if self.path is not None:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                self.path.write_text(json.dumps([asdict(v) for v in self.verdicts], indent=1))
 
     def by_agent(self) -> dict:
         """Per-agent {n, hit_rate, mean_error}, computed over all recorded verdicts."""

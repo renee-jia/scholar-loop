@@ -23,6 +23,11 @@ Knobs (environment):
     SCHOLARLOOP_WRITING=session|auto|oneshot   session = interactive if a tty else auto;
                                          oneshot = the single-call Writer + Reviewer (paper.py)
     SCHOLARLOOP_PAPER_ONLY=1             skip the campaign; write up the saved ledger in SCHOLARLOOP_OUT
+    SCHOLARLOOP_RESUME=1                 continue the campaign saved in SCHOLARLOOP_OUT for SCHOLARLOOP_STEPS
+                                         more rounds (ledger, registry, skills, calibration and the LLM
+                                         spend carry over; the write-up is redone on the larger ledger).
+                                         Without it a run starts fresh and clears SCHOLARLOOP_OUT's campaign.
+                                         SCHOLARLOOP_MAX_COST caps this invocation's spend.
     SCHOLARLOOP_PERSIST_SKILLS=1         ~/.scholarloop/skills/<domain>, so lessons compound across runs
 """
 
@@ -32,7 +37,6 @@ import json
 import os
 import shutil
 import sys
-import tempfile
 from collections import Counter
 from pathlib import Path
 
@@ -56,6 +60,32 @@ OUT = ROOT / "runs" / "live"
 
 def _cost(model, usage):
     return cost_of(usage, model)          # one price table (scholarloop.experiment.governor), not a copy
+
+
+# Campaign state in SCHOLARLOOP_OUT: a fresh run clears it, SCHOLARLOOP_RESUME=1 continues from it.
+CAMPAIGN_STATE = ("experiments.jsonl", "registry", "skills", "calibration.json", "usage.json")
+# The write-up is derived from the ledger, so any run that adds experiments redoes it.
+WRITING_ARTIFACTS = ("writing.json", "outline.md", "key_points.md", "paper.md", "review.md")
+
+
+def reset_campaign(out: Path, *, resume: bool) -> None:
+    """Prepare `out` for a campaign: clear the stale write-up always, and the campaign state too
+    unless resuming."""
+    for name in WRITING_ARTIFACTS + (() if resume else CAMPAIGN_STATE):
+        target = out / name
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink(missing_ok=True)
+
+
+def total_usage(out: Path, usage: dict) -> dict:
+    """This invocation's LLM usage plus what earlier (resumed) invocations recorded in usage.json."""
+    path = out / "usage.json"
+    prior = json.loads(path.read_text()) if path.exists() else {}
+    keys = set(prior) | set(usage)
+    return {k: prior.get(k, 0) + usage.get(k, 0) for k in sorted(keys)
+            if isinstance(prior.get(k, 0), (int, float)) and isinstance(usage.get(k, 0), (int, float))}
 
 
 def _first(trace, agent):
@@ -143,6 +173,7 @@ def main() -> int:
     steps = int(os.environ.get("SCHOLARLOOP_STEPS", "3"))
     topic = os.environ.get("SCHOLARLOOP_TOPIC", "small MLP image classification regularization")
     paper_only = bool(os.environ.get("SCHOLARLOOP_PAPER_ONLY"))   # regenerate paper.md from a saved ledger
+    resume = bool(os.environ.get("SCHOLARLOOP_RESUME"))           # continue the saved campaign
     profile_name = os.environ.get("SCHOLARLOOP_PROFILE", "digits-mlp")
     population = int(os.environ.get("SCHOLARLOOP_POPULATION", "1"))   # >1 -> parallel population funnel
     max_workers = int(os.environ.get("SCHOLARLOOP_MAX_WORKERS", "1"))
@@ -157,30 +188,31 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     ledger_path = out / "experiments.jsonl"
     registry_dir = out / "registry"                 # kept: the write-up grounds its numbers here
-    skills_dir = Path(tempfile.mkdtemp(prefix="paper_skl_"))
     llm = AnthropicLLM(model=model)
     profile = load_profile(ROOT / "profiles" / f"{profile_name}.yaml")
-    # SCHOLARLOOP_PERSIST_SKILLS=1 -> ~/.scholarloop/skills/<domain>, so lessons compound across runs
+    if not paper_only:
+        reset_campaign(out, resume=resume)
+    # the campaign's skills live with it (so a resume keeps them); SCHOLARLOOP_PERSIST_SKILLS=1 uses
+    # ~/.scholarloop/skills/<domain> instead, so lessons compound across campaigns
     skills = (SkillLibrary.for_domain(profile.name) if os.environ.get("SCHOLARLOOP_PERSIST_SKILLS")
-              else SkillLibrary(skills_dir))
+              else SkillLibrary(out / "skills"))
 
     if paper_only:
         entries = list(Ledger(ledger_path).read_all())
         print(f"=== paper-only: writing the paper from {len(entries)} saved experiments ... ===")
         orch = None
     else:
-        if ledger_path.exists():
-            ledger_path.unlink()                   # fresh run
-        shutil.rmtree(registry_dir, ignore_errors=True)
-        for stale in ("writing.json", "outline.md", "key_points.md", "paper.md", "review.md"):
-            (out / stale).unlink(missing_ok=True)
+        prior = sum(1 for _ in Ledger(ledger_path).read_all()) if ledger_path.exists() else 0
+        if resume:
+            print(f"=== resuming: {prior} saved experiments in {out} ===")
         orch = Orchestrator(
             llm, profile,
             lit_scout=LitScout(llm, sources=[OpenAlexClient(), ArxivClient()]),  # impact-ranked, multi-source
             debate_panel=DebatePanel(llm, profile.debate_roles),
             reflector=Reflector(llm), advisor=Advisor(llm), director=Director(llm, profile),
             skill_library=skills, topic=topic,
-            ledger_path=ledger_path, registry_dir=registry_dir)
+            ledger_path=ledger_path, registry_dir=registry_dir,
+            calibration_path=out / "calibration.json")
         if handoff:                                   # the human already chose the direction
             orch.adopt(handoff)
             print(f"=== adopting the chosen idea: {handoff['topic']!r} ===")
@@ -200,7 +232,8 @@ def main() -> int:
         print(f"   {len(entries)} experiments, {len(kept)} kept. writing the paper ...")
 
     if orch is not None:                            # run.md reflects the campaign; keep it on paper-only re-runs
-        (out / "run.md").write_text(fmt_run(profile, entries, skills, llm.usage, model, orch.trace,
+        (out / "run.md").write_text(fmt_run(profile, entries, skills, total_usage(out, llm.usage), model,
+                                            orch.trace,
                                             calibration=orch.calibration.render(), handoff=handoff,
                                             stop_reason=orch.stop_reason))
 
@@ -225,12 +258,12 @@ def main() -> int:
                 print(f"   writing: stage {session.stage}")
         artifacts = "outline.md · key_points.md · paper.md · review.md · run.md · experiments.jsonl · registry/"
 
-    shutil.rmtree(skills_dir, ignore_errors=True)
-
-    cost = _cost(model, llm.usage)
+    usage = total_usage(out, llm.usage)
+    (out / "usage.json").write_text(json.dumps(usage, indent=1))   # a later resume adds to it
+    cost = _cost(model, usage)
     print(f"\n=== done. artifacts in {out} ===")
     print(f"   {artifacts}")
-    print(f"   {llm.usage['calls']} LLM calls"
+    print(f"   {usage.get('calls', 0)} LLM calls in total"
           + (f" · ≈ ${cost:.3f}" if cost is not None else ""))
     return 0
 

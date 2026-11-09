@@ -52,7 +52,8 @@ class Orchestrator:
                  smoke_slack: float = 0.25,  # smoke is single-seed & noisy: promote within this band of the gate
                  trace: AgentTrace | None = None,
                  ledger_path: str | Path = "ledger.jsonl",
-                 registry_dir: str | Path = "registry"):
+                 registry_dir: str | Path = "registry",
+                 calibration_path: str | Path | None = None):
         self.profile = profile
         self.llm = llm                           # shared client; usage accumulates here for the Governor
         self.trace = trace or AgentTrace()       # one shared trace: every agent call is logged
@@ -84,7 +85,9 @@ class Orchestrator:
         self.adopted: dict | None = None     # a human-chosen idea (ResearchSession handoff), if any
         self._base_guidance = ""             # standing guidance a "proceed" falls back to (the adopted plan)
         self.stop_reason: str | None = None  # why the last governed `run()` ended, for run logs
-        self.calibration = CalibrationLog()   # universal predict-then-verify across agents (B)
+        # universal predict-then-verify across agents (B); with a path it survives a resumed campaign
+        self.calibration = (CalibrationLog.open(calibration_path) if calibration_path is not None
+                            else CalibrationLog())
 
     def adopt(self, handoff: dict) -> None:
         """Start the loop from a human-chosen idea (a `ResearchSession` handoff): its title becomes
