@@ -77,6 +77,12 @@ class LedgerEntry:
                 return float(self.metric[fid])
         return None
 
+    def holdout_score(self) -> float | None:
+        """Held-out test score, or None. Only full-tier runs on a `holdout: true` profile carry one.
+        The loop never selects on it; it exists so the paper can report an unbiased number."""
+        h = self.metric.get("holdout")
+        return float(h["value"]) if isinstance(h, dict) and "value" in h else None
+
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False)
 

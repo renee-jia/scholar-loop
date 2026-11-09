@@ -91,6 +91,13 @@ properties:
       "*/prepare.py", "prepare.py"). Matched on path components / basenames, not raw
       substrings. Violations are discarded before any run.
     items: {type: string}
+  holdout:
+    type: boolean
+    default: false
+    description: >
+      True if the frozen scorer accepts `score <artifact> test` and serves a held-out test split.
+      The runner then scores the test split on full-tier runs only and stores it apart from the
+      metric the loop selects on, so the reported number is free of selection bias. No agent sees it.
   debate_roles:
     type: array
     description: Persona names for the hypothesis-generation debate panel.

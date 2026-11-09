@@ -177,10 +177,12 @@ class EvidenceBank:
                    "score": score, "seeds": list(e.metric.get("seeds") or []), "std": None,
                    "config": dict(e.config or {}), "claim": e.hypothesis.claim,
                    "source": e.hypothesis.source, "parent": e.parent,
-                   "error": e.metric.get("error")}
+                   "error": e.metric.get("error"), "holdout": e.holdout_score()}
             for k, v in (e.config or {}).items():
                 if isinstance(v, (int, float)) and not isinstance(v, bool):
                     reg.capture(f"{e.id}.cfg.{k}", float(v))
+            if row["holdout"] is not None:
+                reg.capture(f"{e.id}.holdout", row["holdout"])
             if score is not None:
                 reg.capture(f"{e.id}.score", score, seeds=row["seeds"])
                 reg.capture(f"{e.id}.n_seeds", float(len(row["seeds"])))
@@ -220,8 +222,10 @@ class EvidenceBank:
         if r["score"] is None:
             return f"{eid} ({r['fidelity']}): killed — {r['error']}"
         spread = f" ± {r['std']} std" if r["std"] is not None else ""
-        return (f"{eid} ({r['fidelity']}, {len(r['seeds'])} seed(s)): {self.metric_name}={r['score']}{spread}, "
-                f"verdict {r['verdict']}, config {r['config']}, idea: {r['claim']} (source {r['source']})")
+        held = (f", held-out test {self.metric_name}={r['holdout']} (scored once on unseen data, never "
+                f"selected on: report it as the final number)") if r.get("holdout") is not None else ""
+        return (f"{eid} ({r['fidelity']}, {len(r['seeds'])} seed(s)): {self.metric_name}={r['score']}{spread}"
+                f"{held}, verdict {r['verdict']}, config {r['config']}, idea: {r['claim']} (source {r['source']})")
 
     def to_prompt_block(self) -> str:
         lines = [f"Metric: {self.metric_name} ({self.direction}). Baseline to beat: {self.baseline} "

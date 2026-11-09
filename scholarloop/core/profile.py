@@ -69,6 +69,7 @@ class Profile:
     baselines: tuple[str, ...] = ()
     knobs: dict = field(default_factory=dict)   # tunable hyperparameters (name → default value)
     debate_roles: tuple[str, ...] = ("Innovator", "Pragmatist", "Contrarian")
+    holdout: bool = False   # the engine's frozen scorer also serves a held-out test split (see runner)
     source_path: Path | None = field(default=None, compare=False)
 
     @property
@@ -157,6 +158,7 @@ def load_profile(path: str | Path) -> Profile:
         baselines=tuple(raw.get("baselines", [])),
         knobs=dict(raw.get("knobs", {})),
         debate_roles=tuple(raw.get("debate_roles", ["Innovator", "Pragmatist", "Contrarian"])),
+        holdout=bool(raw.get("holdout", False)),
         source_path=path,
     )
 

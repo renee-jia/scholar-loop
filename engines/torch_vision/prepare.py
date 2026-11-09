@@ -25,21 +25,25 @@ _N_CLASSES = 10
 
 
 def _split():
+    """Train / val / held-out test. The 25% split off the data is halved into val (the metric the
+    loop selects on, every run) and test (scored only on full-tier runs, never selected on)."""
     d = load_digits()
     x = (d.data.astype("float32") / 16.0)
     y = d.target.astype("int64")
-    return train_test_split(x, y, test_size=0.25, random_state=0, stratify=y)  # Xtr,Xval,ytr,yval
+    x_tr, x_ev, y_tr, y_ev = train_test_split(x, y, test_size=0.25, random_state=0, stratify=y)
+    x_val, x_te, y_val, y_te = train_test_split(x_ev, y_ev, test_size=0.5, random_state=0, stratify=y_ev)
+    return x_tr, x_val, x_te, y_tr, y_val, y_te
 
 
 def load_train():
     """Training data only — the agent never receives the validation split."""
-    x_tr, _x_val, y_tr, _y_val = _split()
+    x_tr, _x_val, _x_te, y_tr, _y_val, _y_te = _split()
     return x_tr, y_tr
 
 
-def _val():
-    _x_tr, x_val, _y_tr, y_val = _split()
-    return x_val, y_val
+def _eval_split(split: str = "val"):
+    _x_tr, x_val, x_te, _y_tr, y_val, y_te = _split()
+    return (x_te, y_te) if split == "test" else (x_val, y_val)
 
 
 def build_model(hparams: dict):
@@ -54,11 +58,11 @@ def build_model(hparams: dict):
     return nn.Sequential(*layers)
 
 
-def evaluate(model) -> float:
-    """Top-1 validation error (%) of `model` on the frozen val split. Lower is better."""
+def evaluate(model, split: str = "val") -> float:
+    """Top-1 error (%) of `model` on a frozen split (val, or the held-out test). Lower is better."""
     import torch
 
-    x_val, y_val = _val()
+    x_val, y_val = _eval_split(split)
     model.eval()
     with torch.no_grad():
         pred = model(torch.from_numpy(x_val)).argmax(1).numpy()
@@ -71,7 +75,7 @@ def emit_result(value: float, seeds: list[float] | None = None, config: dict | N
          "seeds": seeds or [value], "config": config or {}}))
 
 
-def score(artifact_path: str) -> None:
+def score(artifact_path: str, split: str = "val") -> None:
     """Trusted metric: rebuild the frozen model from config, load the agent's weights (safely),
     and score on the frozen val set."""
     import torch
@@ -80,14 +84,14 @@ def score(artifact_path: str) -> None:
     cfg = bundle["config"]
     model = build_model(cfg)
     model.load_state_dict(bundle["state_dict"])
-    emit_result(evaluate(model), config=cfg)
+    emit_result(evaluate(model, split), config=cfg)
 
 
 def _main(argv: list[str]) -> int:
-    if len(argv) == 2 and argv[0] == "score":
-        score(argv[1])
+    if len(argv) in (2, 3) and argv[0] == "score" and (argv[2:] or ["val"])[0] in ("val", "test"):
+        score(argv[1], *argv[2:])
         return 0
-    print("usage: python -m engines.torch_vision.prepare score <artifact>", file=sys.stderr)
+    print("usage: python -m engines.torch_vision.prepare score <artifact> [val|test]", file=sys.stderr)
     return 2
 
 

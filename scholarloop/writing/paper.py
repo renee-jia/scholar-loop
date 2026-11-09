@@ -57,9 +57,12 @@ def gather_findings(entries: list[LedgerEntry]) -> list[dict]:
     out = []
     for e in entries:
         if e.verdict == "kept" and e.primary_score() is not None:
-            out.append({"id": e.id, "score": e.primary_score(), "metric": e.metric_name,
-                        "config": e.config, "source": e.hypothesis.source,
-                        "claim": e.hypothesis.claim})
+            row = {"id": e.id, "score": e.primary_score(), "metric": e.metric_name,
+                   "config": e.config, "source": e.hypothesis.source,
+                   "claim": e.hypothesis.claim}
+            if e.holdout_score() is not None:    # unbiased: scored once, never selected on
+                row["heldout_test_score"] = e.holdout_score()
+            out.append(row)
     return out
 
 
@@ -109,8 +112,11 @@ class Writer(Agent):
 
     def build_prompt(self, ctx: dict) -> str:
         rows = "\n".join(
-            f"- {f['id']}: {f['metric']}={f['score']} with config {f['config']} "
-            f"(idea: {f['claim']}, source {f['source']})" for f in ctx["findings"])
+            f"- {f['id']}: {f['metric']}={f['score']}"
+            + (f", held-out test {f['metric']}={f['heldout_test_score']} (never selected on; report it as "
+               f"the final number)" if f.get("heldout_test_score") is not None else "")
+            + f" with config {f['config']} (idea: {f['claim']}, source {f['source']})"
+            for f in ctx["findings"])
         return ("Write a short paper from these confirmed findings. Report only these numbers; "
                 "do not fabricate any value.\n\nFindings:\n" + rows)
 

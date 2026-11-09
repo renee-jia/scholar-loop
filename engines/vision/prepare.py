@@ -59,7 +59,7 @@ def emit_result(value: float, seeds: list[float] | None = None, config: dict | N
     print("SCHOLARLOOP_RESULT " + json.dumps(payload))
 
 
-def score(artifact_path: str) -> None:
+def score(artifact_path: str, split: str = "val") -> None:
     """Trusted metric path: recompute the (frozen) evaluate from the saved config+seed.
 
     For this stub the 'model' is just the config the agent chose; the score is recomputed
@@ -67,12 +67,14 @@ def score(artifact_path: str) -> None:
     """
     data = json.loads(Path(artifact_path).read_text())
     cfg = data.get("config", {})
-    emit_result(evaluate(cfg, int(data.get("seed", 0))), config=cfg)
+    seed = int(data.get("seed", 0))
+    # the stub's "held-out test" is the same hidden objective under independent noise
+    emit_result(evaluate(cfg, seed if split == "val" else seed + 10_000), config=cfg)
 
 
 def _main(argv: list[str]) -> int:
-    if len(argv) == 2 and argv[0] == "score":
-        score(argv[1])
+    if len(argv) in (2, 3) and argv[0] == "score" and (argv[2:] or ["val"])[0] in ("val", "test"):
+        score(argv[1], *argv[2:])
         return 0
     print("usage: python -m engines.vision.prepare score <artifact>", file=sys.stderr)
     return 2

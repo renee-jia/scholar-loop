@@ -97,7 +97,8 @@ def _run(module_args: list[str], cwd: Path, timeout_sec: int, extra_env: dict, s
 
 def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: int,
                   config_override: dict | None, engine_cwd: Path,
-                  frozen_guard: tuple = (None, None), pristine: Path = ROOT) -> dict:
+                  frozen_guard: tuple = (None, None), pristine: Path = ROOT,
+                  holdout: bool = False) -> dict:
     """Two-phase run for one seed — the reward-hacking guard.
 
     Phase 1 runs the EDITABLE train module, which must write a model artifact to
@@ -106,6 +107,9 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
     train.py cannot fabricate the metric — it can only produce a model the frozen scorer judges.
     Phase 1 runs from `engine_cwd` (the project root, or an isolated engine copy when editing);
     phase 2 always runs from `pristine` (the untouched project root).
+
+    With `holdout`, the same artifact is scored a second time on the frozen held-out test split and
+    returned as `holdout_value`. The caller stores it apart from the selection metric.
     """
     extra = {"SCHOLARLOOP_SEED": str(seed)}
     if config_override:
@@ -130,7 +134,17 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
         matches = _RESULT_RE.findall(p2.stdout)
         if not matches:
             raise RunError(f"seed {seed}: frozen scorer emitted no result")
-        return json.loads(matches[-1])
+        result = json.loads(matches[-1])
+        if holdout:
+            _verify_frozen(*frozen_guard)
+            p3 = _run([score_module, "score", artifact, "test"], pristine, max(120, timeout_sec),
+                      extra, seed, "holdout score")
+            held = _RESULT_RE.findall(p3.stdout) if p3.returncode == 0 else []
+            if not held:
+                raise RunError(f"seed {seed}: frozen scorer served no holdout result "
+                               f"(exit {p3.returncode}; does the engine support `score <artifact> test`?)")
+            result["holdout_value"] = float(json.loads(held[-1])["value"])
+        return result
     finally:
         try:
             os.remove(artifact)
@@ -208,6 +222,10 @@ def run_experiment(
     frozen_hash = _file_hash(frozen_file) if frozen_file.exists() else None
     budget = profile.budget.seconds_for(fidelity)
     seeds = SEEDS_PER_FIDELITY[fidelity]
+    # Held-out test: scored on the terminal tier only, so the loop (which selects on val at every
+    # tier) never sees it and it carries no selection bias. Stored under metric["holdout"], which
+    # primary_score() and every agent prompt ignore; only the writing stage reads it.
+    holdout = profile.holdout and fidelity == "full"
     engine_root = _engine_root(profile.train_entrypoint, edits, root) if edits else None
     engine_cwd = engine_root if engine_root is not None else root
 
@@ -217,7 +235,8 @@ def run_experiment(
     try:
         results, failures = _run_seeds(
             seeds, lambda s: _run_one_seed(train_module, score_module, s, budget, config_override,
-                                           engine_cwd, (frozen_file, frozen_hash), pristine=root))
+                                           engine_cwd, (frozen_file, frozen_hash), pristine=root,
+                                           holdout=holdout))
         per_seed = [float(r["value"]) for r in results]
         config = results[0].get("config", {})   # hparams are fixed across seeds for one run
         agg = round(mean(per_seed), 4)
@@ -230,6 +249,13 @@ def run_experiment(
         else:
             verdict = "kept" if profile.metric.is_better(agg, baseline) else "discarded"
         metric_blob = {"name": profile.metric.name, fidelity: agg, "seeds": per_seed}
+        if holdout:
+            held = [r["holdout_value"] for r in results]
+            h_agg = round(mean(held), 4)
+            h_std = round(stdev(held), 4) if len(held) > 1 else 0.0
+            registry.capture(f"{profile.metric.name}.holdout", h_agg, seeds=held, std=h_std)
+            registry.save()
+            metric_blob["holdout"] = {"value": h_agg, "seeds": held, "std": h_std}
         if failures:                            # partial run: some seeds crashed but enough survived
             metric_blob["seeds_failed"] = len(failures)
     except RunError as e:

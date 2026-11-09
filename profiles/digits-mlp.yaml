@@ -18,11 +18,15 @@ datasets:
   - sklearn-digits
 
 baselines:
-  # Must-beat val error (%). Calibrated to this engine: the default MLP gets ~8%, modest tunes ~6%,
-  # and a strong wide/long-trained config reaches ~3.1% — so 5.0 is a real bar that separates good
-  # recipes from mediocre ones without being unreachable. Smoke screens with slack (Orchestrator
+  # Must-beat val error (%). Calibrated to this engine: the default MLP gets ~7.6% on the val half,
+  # and a strong wide/long-trained config reaches ~1.7% (~3.8% on the held-out test half), so 5.0
+  # is a real bar that separates good recipes from mediocre ones without being unreachable. Smoke screens with slack (Orchestrator
   # smoke_slack) so a borderline ~6% idea still earns a multi-seed verify before this gate decides.
   - logreg@5.0
+
+# The loop selects on val every round, so the best val number is optimistically biased. The frozen
+# scorer also holds out a test split; full-tier runs are scored on it once, and only the paper sees it.
+holdout: true
 
 knobs:                        # tunable hyperparameters (name → default) the agent sets in `config`
   lr: 0.05

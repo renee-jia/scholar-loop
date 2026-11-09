@@ -21,24 +21,27 @@ def _split():
     d = load_diabetes()
     x = d.data.astype("float32")          # sklearn diabetes features are already mean-centered/scaled
     y = d.target.astype("float32")        # continuous disease-progression score (~25–346)
-    return train_test_split(x, y, test_size=0.25, random_state=0)
+    # train / val (selected on) / held-out test (full tier only, never selected on)
+    x_tr, x_ev, y_tr, y_ev = train_test_split(x, y, test_size=0.25, random_state=0)
+    x_val, x_te, y_val, y_te = train_test_split(x_ev, y_ev, test_size=0.5, random_state=0)
+    return x_tr, x_val, x_te, y_tr, y_val, y_te
 
 
 def _y_stats():
     """Mean/std of the training target — used to standardize for stable training."""
-    _x_tr, _x_val, y_tr, _y_val = _split()
+    y_tr = _split()[3]
     return float(y_tr.mean()), float(y_tr.std())
 
 
 def load_train():
-    x_tr, _x_val, y_tr, _y_val = _split()
+    x_tr, y_tr = _split()[0], _split()[3]
     m, s = _y_stats()
     return x_tr, ((y_tr - m) / s).astype("float32")   # standardized target → stable gradients
 
 
-def _val():
-    _x_tr, x_val, _y_tr, y_val = _split()
-    return x_val, y_val                                # original-unit target for the metric
+def _eval_split(split: str = "val"):
+    _x_tr, x_val, x_te, _y_tr, y_val, y_te = _split()
+    return (x_te, y_te) if split == "test" else (x_val, y_val)   # original-unit target
 
 
 def build_model(hparams: dict):
@@ -53,11 +56,11 @@ def build_model(hparams: dict):
     return nn.Sequential(*layers)
 
 
-def evaluate(model) -> float:
-    """Validation RMSE on the frozen val split. Lower is better."""
+def evaluate(model, split: str = "val") -> float:
+    """RMSE on a frozen split (val, or the held-out test). Lower is better."""
     import torch
 
-    x_val, y_val = _val()
+    x_val, y_val = _eval_split(split)
     m, s = _y_stats()
     model.eval()
     with torch.no_grad():
@@ -71,21 +74,21 @@ def emit_result(value: float, seeds: list[float] | None = None, config: dict | N
          "seeds": seeds or [value], "config": config or {}}))
 
 
-def score(artifact_path: str) -> None:
+def score(artifact_path: str, split: str = "val") -> None:
     import torch
 
     bundle = torch.load(artifact_path, weights_only=True)
     cfg = bundle["config"]
     model = build_model(cfg)
     model.load_state_dict(bundle["state_dict"])
-    emit_result(evaluate(model), config=cfg)
+    emit_result(evaluate(model, split), config=cfg)
 
 
 def _main(argv: list[str]) -> int:
-    if len(argv) == 2 and argv[0] == "score":
-        score(argv[1])
+    if len(argv) in (2, 3) and argv[0] == "score" and (argv[2:] or ["val"])[0] in ("val", "test"):
+        score(argv[1], *argv[2:])
         return 0
-    print("usage: python -m engines.torch_regression.prepare score <artifact>", file=sys.stderr)
+    print("usage: python -m engines.torch_regression.prepare score <artifact> [val|test]", file=sys.stderr)
     return 2
 
 

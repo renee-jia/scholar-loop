@@ -18,11 +18,11 @@ datasets:
   - sklearn-diabetes
 
 baselines:
-  # Must-beat val RMSE = the linear-model reference on this exact frozen split:
-  # OLS/Ridge both reach ~56.4 (mean-predictor is 70.5). The bundled MLP roughly TIES this
-  # (~56.5 across configs), so beating it takes a real improvement — an honest, negative-leaning
-  # domain that exercises the system's truthful reporting rather than a loose bar everything clears.
-  - linear@56.5
+  # Must-beat val RMSE = the OLS reference on this exact frozen val split (61.8; it scores 50.5 on
+  # the held-out test half). The bundled MLP lands near it (~59-63 across configs), so beating it
+  # takes a real improvement: an honest, negative-leaning domain that exercises truthful reporting
+  # rather than a loose bar everything clears. (Before the val/test split the bar was 56.5.)
+  - linear@61.8
 
 allowed_edits:
   - architecture
@@ -33,6 +33,10 @@ allowed_edits:
 forbidden_edits:
   - "**/prepare.py"
   - prepare.py
+
+# The loop selects on val every round, so the best val number is optimistically biased. The frozen
+# scorer also holds out a test split; full-tier runs are scored on it once, and only the paper sees it.
+holdout: true
 
 knobs:                        # tunable hyperparameters (name → default) the agent sets in `config`
   lr: 0.1
