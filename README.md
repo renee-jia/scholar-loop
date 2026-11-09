@@ -76,6 +76,7 @@ What keeps it honest, in deterministic code rather than prompts:
 |---|---|
 | 📎 **Citation grounding** | every paper id the review or an idea cites must be in the retrieved corpus — a hallucinated reference is rejected and the agent retried (the literature analogue of number grounding) |
 | 🏆 **Idea tournament** | ideas are ranked by pairwise matches, not by the Ideator grading its own work: a rotating persona panel compares every pair **twice, order swapped** (a win in only one order is a draw, which cancels position bias), Elo is computed in code, near-duplicates are grouped, and the match log lands in `tournament.json` |
+| 🧾 **Meta-review** | a meta-reviewer turns the judges' *recurring* complaints into at most 5 recommendations, each citing the matches that show it (a one-off remark is rejected in code); the list is revised each round, not rewritten, and the next round's Ideator writes against it, alongside the lessons the experiment loop has learned (`--skills`) |
 | 🔍 **Novelty check** | each idea is lexically compared to every reviewed paper and every hypothesis already in the ledger; the closest match is shown and flagged past a threshold — advisory, so *you* judge |
 | ⚙️ **Testable by construction** | the Ideator sees the engine's metric, baseline, knobs and editable surfaces, so each idea comes with an experiment plan the loop can actually run |
 | 🧭 **Recency × impact** | retrieval fills the corpus with the highest-cited papers but reserves slots for fresh, uncited preprints |

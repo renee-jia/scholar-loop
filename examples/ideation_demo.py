@@ -25,6 +25,7 @@ from scholarloop.core.llm import MockLLM
 from scholarloop.experiment.orchestrator import Orchestrator
 from scholarloop.core.profile import load_profile
 from scholarloop.ideation.session import ResearchSession
+from scholarloop.ideation.metareview import MetaReviewer
 from scholarloop.ideation.tournament import Tournament
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -113,12 +114,19 @@ def main() -> int:
         a = prompt.split("Idea A:\nTitle: ")[1].split("\n")[0]
         b = prompt.split("Idea B:\nTitle: ")[1].split("\n")[0]
         rank = lambda t: next(i for i, k in enumerate(prefer) if t.startswith(k))
-        return {"winner": "A" if rank(a) > rank(b) else "B", "rationale": "scripted preference"}
+        return {"winner": "A" if rank(a) > rank(b) else "B",
+                "rationale": "the loser never says how large its effect is next to seed noise"}
+
+    # the meta-reviewer distills that recurring complaint for the next round of ideas
+    meta_llm = MockLLM(jsons=[{"recommendations": [
+        {"text": "State each predicted effect next to the seed-to-seed spread, so a win is measurable.",
+         "support": ["m1", "m2", "m3"]}]}])
 
     print("=== IDEATION-FIRST SESSION · image-classification (stub engine) ===\n")
     s = ResearchSession(session_llm, profile, tmp / "session", topic="training recipes for small nets",
                         sources=[ArxivClient(fetcher=lambda q, n: next(feeds))],
-                        tournament=Tournament(MockLLM(router=judge), profile))
+                        tournament=Tournament(MockLLM(router=judge), profile),
+                        meta_reviewer=MetaReviewer(meta_llm))
 
     def ask(prompt):
         answer = next(human)
@@ -127,6 +135,8 @@ def main() -> int:
 
     handoff = s.interactive(n_ideas=3, input_fn=ask, print_fn=lambda line: print(f"  {line}"))
     idea = handoff["idea"]
+    for r in s.state.meta_review:
+        print(f"\n  committee's recurring critique (fed to the next round): {r['text']}")
     print(f"\n  chosen: {idea['title']}  ·  builds on {', '.join(idea['sources'])}")
     print(f"  corpus grew to {len(s.review_obj.papers)} papers after the feedback round; "
           f"{len(s.state.feedback)} feedback note(s) recorded\n")

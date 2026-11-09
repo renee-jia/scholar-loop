@@ -40,6 +40,8 @@ from scholarloop.ideation.litreview import LitReview, LitReviewer, QueryPlanner
 from scholarloop.ideation.litscout import ArxivClient, OpenAlexClient, dedup_key, retrieve
 from scholarloop.core.llm import LLMClient
 from scholarloop.core.profile import Profile
+from scholarloop.experiment.skills import SkillLibrary
+from scholarloop.ideation.metareview import MetaReviewer
 from scholarloop.ideation.tournament import Tournament
 
 STAGES = ("new", "reviewed", "ideated", "selected")
@@ -54,11 +56,12 @@ class SessionState:
     selected: int | None = None                      # 1-based index into ideas
     feedback: list[dict] = field(default_factory=list)   # [{stage, text, ts}]
     handoff: dict | None = None
+    meta_review: list[dict] = field(default_factory=list)   # standing [{text, support}] across rounds
 
     def to_dict(self) -> dict:
         return {"topic": self.topic, "stage": self.stage, "review": self.review,
                 "ideas": self.ideas, "selected": self.selected, "feedback": self.feedback,
-                "handoff": self.handoff}
+                "handoff": self.handoff, "meta_review": self.meta_review}
 
     @classmethod
     def from_dict(cls, d: dict) -> "SessionState":
@@ -76,7 +79,8 @@ class ResearchSession:
     def __init__(self, llm: LLMClient, profile: Profile, out_dir: str | Path, *,
                  topic: str | None = None, sources: list | None = None,
                  ledger_path: str | Path | None = None, trace: AgentTrace | None = None,
-                 max_papers: int = 20, per_query: int = 8, tournament: Tournament | None = None):
+                 max_papers: int = 20, per_query: int = 8, tournament: Tournament | None = None,
+                 meta_reviewer: MetaReviewer | None = None, skills: SkillLibrary | None = None):
         self.llm, self.profile = llm, profile
         self.out = Path(out_dir)
         self.out.mkdir(parents=True, exist_ok=True)
@@ -88,6 +92,8 @@ class ResearchSession:
         self.reviewer = LitReviewer(llm, trace=self.trace)
         self.ideator = Ideator(llm, profile, trace=self.trace)
         self.tournament = tournament            # None: rank by the Ideator's self-scores
+        self.meta_reviewer = meta_reviewer      # distills the tournament's rationales; needs a tournament
+        self.skills = skills                    # the experiment loop's lessons, read-only here
         state_path = self.out / self.STATE_FILE
         if state_path.exists():
             self.state = SessionState.from_dict(json.loads(state_path.read_text()))
@@ -164,8 +170,11 @@ class ResearchSession:
         self._note_feedback("ideas", feedback)
         tried = tried_claims(list(Ledger(self.ledger_path).read_all())) if self.ledger_path else []
         previous = [i.title for i in self.ideas]
+        lessons = self.skills.render(query=self.topic) if self.skills is not None else ""
+        standing = [r["text"] for r in self.state.meta_review]
         ideas = self.ideator.ideate(rev, n=n, tried=tried, previous=previous,
-                                    feedback="\n".join(f"- {t}" for t in self._feedback_for("ideas")))
+                                    feedback="\n".join(f"- {t}" for t in self._feedback_for("ideas")),
+                                    meta_review=standing, lessons=lessons)
         for idea in ideas:
             idea.novelty = novelty_check(idea, rev, tried)
         if self.tournament is not None and len(ideas) > 1:
@@ -189,13 +198,18 @@ class ResearchSession:
         for idea in ideas:
             idea.tournament["near_duplicates"] = sorted(new_pos[j - 1] for j in idea.tournament["near_duplicates"])
         matches = [{**m, "a": new_pos[m["a"] - 1], "b": new_pos[m["b"] - 1]} for m in res.matches]
+        titles = [ideas[i].title for i in order]
         (self.out / "tournament.json").write_text(json.dumps(
-            {"ideas": [ideas[i].title for i in order], "matches": matches}, indent=2, ensure_ascii=False))
+            {"ideas": titles, "matches": matches}, indent=2, ensure_ascii=False))
+        if self.meta_reviewer is not None:       # incremental: the standing list is revised, not rewritten
+            self.state.meta_review = self.meta_reviewer.update(
+                self.topic, [r["text"] for r in self.state.meta_review], matches, titles)
         return [ideas[i] for i in order]
 
     def _write_ideas(self) -> None:
         (self.out / "ideas.md").write_text(
-            ideator.render_markdown(self.topic, self.ideas, feedback=self._feedback_for("ideas")))
+            ideator.render_markdown(self.topic, self.ideas, feedback=self._feedback_for("ideas"),
+                                    meta_review=self.state.meta_review))
         (self.out / "ideas.json").write_text(json.dumps(self.state.ideas, indent=2, ensure_ascii=False))
 
     # ---- [3] selection → handoff --------------------------------------------------------------
@@ -325,7 +339,9 @@ def _main(argv: list[str]) -> int:
     ap.add_argument("--ledger", help="an existing ledger.jsonl, so ideas avoid what was already tested")
     ap.add_argument("--n-ideas", type=int, default=5)
     ap.add_argument("--no-tournament", action="store_true",
-                    help="skip the pairwise idea tournament; rank by the Ideator's self-scores")
+                    help="skip the pairwise idea tournament (and its meta-review); rank by self-scores")
+    ap.add_argument("--skills", help="a skill-library dir whose lessons the Ideator reads (default: "
+                    "~/.scholarloop/skills/<domain> when SCHOLARLOOP_PERSIST_SKILLS=1, else none)")
     ap.add_argument("--max-papers", type=int, default=20)
     ap.add_argument("--feedback", help="non-interactive: feedback for the CURRENT stage, then advance")
     ap.add_argument("--select", type=int, help="non-interactive: pick this idea (1-based)")
@@ -339,9 +355,12 @@ def _main(argv: list[str]) -> int:
         print("ANTHROPIC_API_KEY is not set.", file=sys.stderr)
         return 1
     llm, profile = AnthropicLLM(model=a.model), load_profile(a.profile)
+    skills = (SkillLibrary(a.skills) if a.skills else SkillLibrary.for_domain(profile.name)
+              if os.environ.get("SCHOLARLOOP_PERSIST_SKILLS") == "1" else None)
     s = ResearchSession(llm, profile, a.out, topic=a.topic, ledger_path=a.ledger,
-                        max_papers=a.max_papers,
-                        tournament=None if a.no_tournament else Tournament(llm, profile))
+                        max_papers=a.max_papers, skills=skills,
+                        tournament=None if a.no_tournament else Tournament(llm, profile),
+                        meta_reviewer=None if a.no_tournament else MetaReviewer(llm))
 
     non_interactive = any([a.feedback, a.select, a.auto, a.stop_after])
     if not non_interactive:
