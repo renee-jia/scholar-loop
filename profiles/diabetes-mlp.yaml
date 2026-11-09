@@ -1,5 +1,5 @@
 # Second real domain — torch MLP regression on sklearn diabetes (a different metric: RMSE).
-#   python -m scholarloop.profile validate profiles/diabetes-mlp.yaml
+#   python -m scholarloop.core.profile validate profiles/diabetes-mlp.yaml
 name: diabetes-mlp
 paradigm: supervised
 train_entrypoint: engines/torch_regression/train.py

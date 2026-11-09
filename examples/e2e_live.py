@@ -19,16 +19,16 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-from scholarloop.advisor import Advisor
-from scholarloop.debate import DebatePanel
-from scholarloop.director import Director
-from scholarloop.ledger import Ledger
-from scholarloop.litscout import ArxivClient, LitScout, OpenAlexClient
-from scholarloop.llm import AnthropicLLM
-from scholarloop.orchestrator import Orchestrator
-from scholarloop.profile import load_profile
-from scholarloop.reflector import Reflector
-from scholarloop.skills import SkillLibrary
+from scholarloop.experiment.advisor import Advisor
+from scholarloop.experiment.debate import DebatePanel
+from scholarloop.experiment.director import Director
+from scholarloop.core.ledger import Ledger
+from scholarloop.ideation.litscout import ArxivClient, LitScout, OpenAlexClient
+from scholarloop.core.llm import AnthropicLLM
+from scholarloop.experiment.orchestrator import Orchestrator
+from scholarloop.core.profile import load_profile
+from scholarloop.experiment.reflector import Reflector
+from scholarloop.experiment.skills import SkillLibrary
 
 ROOT = Path(__file__).resolve().parent.parent
 

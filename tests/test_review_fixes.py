@@ -3,16 +3,16 @@
 import json
 from pathlib import Path
 
-from scholarloop.agent import Agent
-from scholarloop.governor import Governor
-from scholarloop.ledger import Hypothesis, Ledger, LedgerEntry
-from scholarloop.litscout import ArxivClient, Paper, retrieve
-from scholarloop.llm import MockLLM
-from scholarloop.orchestrator import Orchestrator
-from scholarloop.paper import grounded_registry
-from scholarloop.profile import load_profile
-from scholarloop.reasoner import Reasoner
-from scholarloop.reasoning import SearchSpaceConstraints, is_duplicate_config, same_config
+from scholarloop.core.agent import Agent
+from scholarloop.experiment.governor import Governor
+from scholarloop.core.ledger import Hypothesis, Ledger, LedgerEntry
+from scholarloop.ideation.litscout import ArxivClient, Paper, retrieve
+from scholarloop.core.llm import MockLLM
+from scholarloop.experiment.orchestrator import Orchestrator
+from scholarloop.writing.paper import grounded_registry
+from scholarloop.core.profile import load_profile
+from scholarloop.experiment.reasoner import Reasoner
+from scholarloop.experiment.reasoning import SearchSpaceConstraints, is_duplicate_config, same_config
 
 ROOT = Path(__file__).resolve().parent.parent
 PROFILE = load_profile(ROOT / "profiles" / "image-classification.yaml")   # knobs: lr .05, depth 18, wd 1e-4, warmup 0
@@ -89,7 +89,7 @@ def test_retrieve_caps_uncited_only_corpora():
 
 # 6. the session corpus is version-insensitive across review rounds
 def test_session_corpus_dedups_arxiv_versions(tmp_path):
-    from scholarloop.session import ResearchSession
+    from scholarloop.ideation.session import ResearchSession
     q = {"queries": ["x"], "rationale": "r"}
     rev = {"overview": "o", "themes": [{"name": "t", "summary": "s", "papers": []}],
            "paper_notes": [{"id": "arXiv:1512.03385", "contribution": "c", "limitation": "l"}],
@@ -131,7 +131,7 @@ def test_degraded_verify_never_promotes_without_gate(tmp_path):
 
 # 11. step() shows the advisor the run that just finished
 def test_step_advisor_sees_latest_verdict(tmp_path):
-    from scholarloop.advisor import Advisor
+    from scholarloop.experiment.advisor import Advisor
     adv_llm = MockLLM(jsons=[{"decision": "proceed", "rationale": "ok"}])
     cfg = {"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5}
     orch = Orchestrator(MockLLM(jsons=[_proposal(cfg)]), PROFILE, advisor=Advisor(adv_llm),
@@ -142,8 +142,8 @@ def test_step_advisor_sees_latest_verdict(tmp_path):
 
 # 2. the profile schema ships with the package; engines resolve from the profile's location
 def test_schema_is_package_data_and_root_resolves_from_profile():
-    from scholarloop import profile as pm
-    assert pm._SCHEMA_PATH.parent.name == "scholarloop" and pm._SCHEMA_PATH.exists()
+    from scholarloop.core import profile as pm
+    assert pm._SCHEMA_PATH.parent.name == "core" and pm._SCHEMA_PATH.exists()
     assert PROFILE.root == ROOT
 
 
@@ -151,7 +151,7 @@ def test_schema_is_package_data_and_root_resolves_from_profile():
 
 # 12. scientific-notation tokens are grounded at their real precision, not as integers
 def test_number_grounding_is_not_fooled_by_exponent_notation(tmp_path):
-    from scholarloop.registry import VerifiedRegistry
+    from scholarloop.core.registry import VerifiedRegistry
     reg = VerifiedRegistry(tmp_path / "r.json", "e")
     reg.capture("val_err", 3.8222, seeds=[3.7, 3.9])
     reg.capture("lr", 0.1)
@@ -196,7 +196,7 @@ def test_governor_warns_when_budget_cannot_be_metered(tmp_path, capsys):
 
 # 16. the prose lint does not reject legitimate English
 def test_lint_prose_spares_surnames_and_the_underscore_character():
-    from scholarloop.writing import lint_prose
+    from scholarloop.writing.session import lint_prose
     assert lint_prose("Foster et al. report 3.8 error. Variable names use underscores.") == []
     assert lint_prose("This result underscores the need for more seeds.")        # the machine sense
     assert lint_prose("Crucially, the gap closes.") and lint_prose("It fosters a deeper view.")
@@ -204,7 +204,7 @@ def test_lint_prose_spares_surnames_and_the_underscore_character():
 
 # 17. feedback after the draft keeps the outline and re-derives from the key points
 def test_writing_feedback_after_draft_keeps_outline(monkeypatch, tmp_path):
-    from scholarloop import writing as w
+    from scholarloop.writing import session as w
     calls = []
 
     class Fake:
@@ -215,7 +215,7 @@ def test_writing_feedback_after_draft_keeps_outline(monkeypatch, tmp_path):
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     monkeypatch.setattr(w, "WritingSession", lambda *a, **k: Fake())
-    monkeypatch.setattr("scholarloop.llm.AnthropicLLM", lambda *a, **k: None)
-    monkeypatch.setattr("scholarloop.profile.load_profile", lambda p: None)
+    monkeypatch.setattr("scholarloop.core.llm.AnthropicLLM", lambda *a, **k: None)
+    monkeypatch.setattr("scholarloop.core.profile.load_profile", lambda p: None)
     w._main(["--profile", "p", "--ledger", "l", "--registry", "r", "--out", str(tmp_path), "--feedback", "tighten"])
     assert calls == [("key_points", "tighten")]

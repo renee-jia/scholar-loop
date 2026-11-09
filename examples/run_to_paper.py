@@ -9,11 +9,11 @@ writing.json (resume or revise later with `python -m scholarloop.writing --out <
 
     export ANTHROPIC_API_KEY=sk-ant-...
     python examples/run_to_paper.py
-    # start from a human-chosen idea (python -m scholarloop.session --out runs/s1 ... -> handoff.json):
+    # start from a human-chosen idea (python -m scholarloop.ideation --out runs/s1 ... -> handoff.json):
     SCHOLARLOOP_HANDOFF=runs/s1/handoff.json SCHOLARLOOP_OUT=runs/s1 python examples/run_to_paper.py
 
 Knobs (environment):
-    SCHOLARLOOP_OUT=runs/live            output directory (the shipped examples/sample_run* are captures;
+    SCHOLARLOOP_OUT=runs/live            output directory (the shipped examples/sample_runs/* are captures;
                                          point here to overwrite one on purpose)
     SCHOLARLOOP_PROFILE=digits-mlp       profiles/<name>.yaml
     SCHOLARLOOP_MODEL=claude-opus-4-8    SCHOLARLOOP_TOPIC="..."   SCHOLARLOOP_STEPS=3
@@ -36,26 +36,26 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-from scholarloop.advisor import Advisor
-from scholarloop.debate import DebatePanel
-from scholarloop.director import Director
-from scholarloop.governor import cost_of
-from scholarloop.ledger import Ledger
-from scholarloop.litscout import ArxivClient, LitScout, OpenAlexClient
-from scholarloop.llm import AnthropicLLM
-from scholarloop.orchestrator import Orchestrator
-from scholarloop.paper import PaperPipeline
-from scholarloop.profile import load_profile
-from scholarloop.reflector import Reflector
-from scholarloop.skills import SkillLibrary
-from scholarloop.writing import WritingSession
+from scholarloop.experiment.advisor import Advisor
+from scholarloop.experiment.debate import DebatePanel
+from scholarloop.experiment.director import Director
+from scholarloop.experiment.governor import cost_of
+from scholarloop.core.ledger import Ledger
+from scholarloop.ideation.litscout import ArxivClient, LitScout, OpenAlexClient
+from scholarloop.core.llm import AnthropicLLM
+from scholarloop.experiment.orchestrator import Orchestrator
+from scholarloop.writing.paper import PaperPipeline
+from scholarloop.core.profile import load_profile
+from scholarloop.experiment.reflector import Reflector
+from scholarloop.experiment.skills import SkillLibrary
+from scholarloop.writing.session import WritingSession
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "runs" / "live"
 
 
 def _cost(model, usage):
-    return cost_of(usage, model)          # one price table (scholarloop.governor), not a copy
+    return cost_of(usage, model)          # one price table (scholarloop.experiment.governor), not a copy
 
 
 def _first(trace, agent):
@@ -182,7 +182,7 @@ def main() -> int:
             print(f"=== adopting the chosen idea: {handoff['topic']!r} ===")
         gov = None
         if dry_patience or max_cost:
-            from scholarloop.governor import Governor
+            from scholarloop.experiment.governor import Governor
             gov = Governor(max_rounds=steps,
                            dry_patience=int(dry_patience) if dry_patience else None,
                            max_cost=float(max_cost) if max_cost else None)

@@ -16,10 +16,10 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 
-from scholarloop.governor import Governor
-from scholarloop.llm import MockLLM
-from scholarloop.orchestrator import Orchestrator
-from scholarloop.profile import load_profile
+from scholarloop.experiment.governor import Governor
+from scholarloop.core.llm import MockLLM
+from scholarloop.experiment.orchestrator import Orchestrator
+from scholarloop.core.profile import load_profile
 
 ROOT = Path(__file__).resolve().parent.parent
 

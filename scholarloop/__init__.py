@@ -1,22 +1,23 @@
 """scholarloop: an auto-research framework that replicates a PhD research workflow.
 
-Two halves, joined by a handoff:
+The package is split by stage. Three halves run in order, joined by artifacts on disk; `core`
+holds the contracts all three share:
 
-  ideation (human-in-the-loop)         experiment loop (autonomous)
-    scholarloop.session   review → ideas → choice    scholarloop.orchestrator  funnel / population / governor
-    scholarloop.litreview QueryPlanner + LitReviewer  scholarloop.runner        frozen-scored real runs
-    scholarloop.ideation  Ideator + novelty check     scholarloop.writing       outline → key points → draft → review
-                                                                                (author-approved; paper = one-shot fallback)
+  scholarloop.core         contracts: Agent harness, LLM clients, Profile, Ledger, VerifiedRegistry
+  scholarloop.ideation     human-in-the-loop front half: literature review -> ideas -> choice -> handoff
+  scholarloop.experiment   autonomous loop: Orchestrator, Runner, Reasoner, Debate, Reflector, Governor
+  scholarloop.writing      author-approved back half: outline -> key points -> draft -> reviewer panel
 
-Foundational contracts: scholarloop.profile (pluggable domains), scholarloop.ledger (cross-run
-memory), scholarloop.registry (VerifiedRegistry number grounding). Import modules directly, e.g.:
+Import modules directly, e.g.:
 
-    from scholarloop.session import ResearchSession
-    from scholarloop.orchestrator import Orchestrator
-    from scholarloop.ledger import Ledger, LedgerEntry
+    from scholarloop.ideation.session import ResearchSession
+    from scholarloop.experiment.orchestrator import Orchestrator
+    from scholarloop.core.ledger import Ledger, LedgerEntry
 
-Submodules are intentionally not re-exported here so that `python -m scholarloop.<mod>`
-CLIs run without an import-ordering warning. Each module's docstring documents its role.
+CLIs: `python -m scholarloop.ideation`, `python -m scholarloop.writing`,
+`python -m scholarloop.experiment.runner`, and `python -m scholarloop.core.{profile,ledger,registry}`.
+Submodules are intentionally not re-exported here (nor from the subpackages) so those CLIs run
+without an import-ordering warning. Each module's docstring documents its role.
 """
 
 __version__ = "0.0.1"

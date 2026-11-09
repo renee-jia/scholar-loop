@@ -55,7 +55,7 @@ deserves them. So the loop has a front half that stops and asks:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-python -m scholarloop.session --profile profiles/digits-mlp.yaml \
+python -m scholarloop.ideation --profile profiles/digits-mlp.yaml \
     --topic "regularization recipes for small MLPs" --out runs/s1       # interactive
 #   (a)pprove · (r)efine <feedback> · (q)uit  >  r also cover data-side regularization such as mixup
 #   (s)elect <n> · (r)efine <feedback> · (q)uit >  s 2
@@ -105,7 +105,7 @@ python -m scholarloop.writing --profile profiles/digits-mlp.yaml \
 python examples/writing_demo.py                     # the whole flow, free and deterministic
 ```
 
-The writing discipline ships **in the repo**, not in a chat window: `scholarloop/writing_skills/`
+The writing discipline ships **in the repo**, not in a chat window: `scholarloop/writing/skills/`
 holds the guidance the agents load as system prompts — the one-sentence question test and the
 nugget, Farquhar's five-sentence abstract, Gopen & Swan sentence mechanics, Lipton's word choice,
 claim-evidence calibration, the AI-tell catalogue, and a NeurIPS-style review checklist. What can be
@@ -175,6 +175,22 @@ Four pillars, each a few lines of deterministic code — and each pinned by test
 > stop**. See it live in [`examples/governed_campaign.py`](examples/governed_campaign.py) (free,
 > deterministic) or in the two captured Opus runs at the end.
 
+## 🗂️ Repository layout
+
+The package is split by stage; each subpackage's `__init__.py` lists what its modules do.
+
+```
+scholarloop/
+├── core/          shared contracts: Agent harness, LLM clients, Profile (+ schema), Ledger, VerifiedRegistry
+├── ideation/      front half, human-in-the-loop: litscout → litreview → ideator → session   (python -m scholarloop.ideation)
+├── experiment/    autonomous loop: orchestrator, runner, reasoner, debate, reflector, advisor, director, governor, …
+└── writing/       back half, author-approved: session, paper (one-shot fallback), skills/*.md   (python -m scholarloop.writing)
+engines/           L1 experiment engines: a frozen prepare.py + an editable train.py per domain
+profiles/          domain profiles (YAML) that bind an engine, a metric, budgets and baselines
+examples/          runnable demos; sample_runs/{digits,diabetes} are verbatim live captures
+tests/             mirrors the package: tests/{core,ideation,experiment,writing} + cross-cutting regressions
+```
+
 ## 🚀 Quickstart
 
 ```bash
@@ -225,8 +241,8 @@ A single run shows the system
 
 | domain | metric | baseline | best (confirmed) | the climb | cost | self-review |
 |---|---|---|---|---|---|---|
-| [**digits-mlp**](examples/sample_run/) | val error | 5.0% | **3.82%** | population → verify → full, governed | ≈ $0.45 | reject 2/10 |
-| [**diabetes-mlp**](examples/sample_run_diabetes/) | val RMSE | 56.5 *(linear model)* | **55.27** | population → verify → full, governed | ≈ $0.77 | reject 3/10 |
+| [**digits-mlp**](examples/sample_runs/digits/) | val error | 5.0% | **3.82%** | population → verify → full, governed | ≈ $0.45 | reject 2/10 |
+| [**diabetes-mlp**](examples/sample_runs/diabetes/) | val RMSE | 56.5 *(linear model)* | **55.27** | population → verify → full, governed | ≈ $0.77 | reject 3/10 |
 
 Both are **governed population funnels** — each round fans out several ideas, smoke-screens them in
 parallel, and climbs only the survivors, while the loop halts itself (on convergence or a round cap)
@@ -242,7 +258,7 @@ anti-reward-hacking guards in place and adversarially reviewed, an ideation-firs
 session (literature review → novelty-checked ideas → your choice) in front of the loop, and a
 step-by-step writing session (outline → key points → prose, panel-argued and author-approved) after it. It has been **run live against the
 real Anthropic API** across **two domains** — captured verbatim for both
-[classification](examples/sample_run/) and [regression](examples/sample_run_diabetes/), each a
+[classification](examples/sample_runs/digits/) and [regression](examples/sample_runs/diabetes/), each a
 real Opus campaign that beats its baseline and writes itself up. Next: a per-idea second retrieval
 pass and a critic panel over ideas, then container sandboxing for the residual boundaries and scale.
 

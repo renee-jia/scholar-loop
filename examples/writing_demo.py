@@ -19,11 +19,11 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from scholarloop.ledger import Hypothesis, Ledger, LedgerEntry
-from scholarloop.llm import MockLLM
-from scholarloop.profile import load_profile
-from scholarloop.registry import VerifiedRegistry
-from scholarloop.writing import WritingSession
+from scholarloop.core.ledger import Hypothesis, Ledger, LedgerEntry
+from scholarloop.core.llm import MockLLM
+from scholarloop.core.profile import load_profile
+from scholarloop.core.registry import VerifiedRegistry
+from scholarloop.writing.session import WritingSession
 
 ROOT = Path(__file__).resolve().parent.parent
 

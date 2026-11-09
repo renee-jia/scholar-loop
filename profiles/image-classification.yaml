@@ -1,5 +1,5 @@
 # Example domain profile. Validate with:
-#   python -m scholarloop.profile validate profiles/image-classification.yaml
+#   python -m scholarloop.core.profile validate profiles/image-classification.yaml
 name: image-classification
 paradigm: supervised
 train_entrypoint: engines/vision/train.py     # the only file the agent may edit

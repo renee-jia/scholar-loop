@@ -1,0 +1,98 @@
+# Domain Profile JSON Schema (expressed in YAML).
+#
+# A Domain Profile is the single declarative contract that makes the framework
+# domain-agnostic. The orchestrator never hard-codes anything about CV / NLP / RL;
+# all domain knowledge lives in a `profiles/<domain>.yaml` file validated against
+# this schema. Adding a new domain = one profile + one train/prepare pair, with
+# zero orchestrator changes.
+#
+# Bundled with the package (package-data) so an installed scholarloop can validate profiles.
+# Validate a profile with:  python -m scholarloop.core.profile validate profiles/<name>.yaml
+$schema: "http://json-schema.org/draft-07/schema#"
+title: DomainProfile
+type: object
+additionalProperties: false
+required:
+  - name
+  - paradigm
+  - train_entrypoint
+  - fixed_module
+  - metric
+  - budget
+  - allowed_edits
+  - forbidden_edits
+properties:
+  name:
+    type: string
+    description: Unique domain id, e.g. "image-classification".
+    pattern: "^[a-z0-9][a-z0-9-]*$"
+  paradigm:
+    type: string
+    description: High-level training paradigm.
+    enum: [supervised, self-supervised, reinforcement, generative]
+  train_entrypoint:
+    type: string
+    description: The single file the L1 agent is allowed to edit.
+  fixed_module:
+    type: string
+    description: Data prep + evaluation. NEVER editable by the agent (anti reward-hacking).
+  metric:
+    type: object
+    additionalProperties: false
+    required: [name, direction]
+    properties:
+      name:
+        type: string
+        description: The one ground-truth primary metric, e.g. "val_top1_err".
+      direction:
+        type: string
+        enum: [minimize, maximize]
+      vocab_independent:
+        type: boolean
+        default: false
+        description: True if the metric is comparable across vocab/architecture changes (e.g. bits-per-byte).
+  budget:
+    type: object
+    additionalProperties: false
+    required: [smoke_sec, verify_sec, full_sec]
+    description: Wall-clock budget per fidelity tier. Funnel = smoke -> verify -> full.
+    properties:
+      smoke_sec:  {type: integer, minimum: 1, description: "Coarse screen, single seed."}
+      verify_sec: {type: integer, minimum: 1, description: "Recheck top-k survivors, multi-seed."}
+      full_sec:   {type: integer, minimum: 1, description: "Confirm stable winners. Use sparingly on small clusters."}
+  datasets:
+    type: array
+    items: {type: string}
+    default: []
+  baselines:
+    type: array
+    description: 'Must-beat baselines as "name@score" strings (score is a float, scientific notation ok).'
+    items: {type: string, pattern: "^[^@]+@-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$"}
+    default: []
+  knobs:
+    type: object
+    description: >
+      The concrete tunable hyperparameters (name → default value) the agent may set in its
+      config. Fed into the Reasoner prompt so it proposes real knobs, not edit-category names.
+    additionalProperties: {type: number}
+    default: {}
+  allowed_edits:
+    type: array
+    minItems: 1
+    description: Edit categories the agent may touch in train_entrypoint.
+    items:
+      type: string
+      enum: [architecture, optimizer, schedule, augmentation, loss, regularization, init, tokenizer]
+  forbidden_edits:
+    type: array
+    minItems: 1
+    description: >
+      Path globs the agent must never touch (e.g. "engines/vision/prepare.py",
+      "*/prepare.py", "prepare.py"). Matched on path components / basenames, not raw
+      substrings. Violations are discarded before any run.
+    items: {type: string}
+  debate_roles:
+    type: array
+    description: Persona names for the hypothesis-generation debate panel.
+    items: {type: string}
+    default: [Innovator, Pragmatist, Contrarian]

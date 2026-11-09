@@ -1,5 +1,5 @@
 # Real torch engine profile (sklearn digits + MLP). Validate:
-#   python -m scholarloop.profile validate profiles/digits-mlp.yaml
+#   python -m scholarloop.core.profile validate profiles/digits-mlp.yaml
 name: digits-mlp
 paradigm: supervised
 train_entrypoint: engines/torch_vision/train.py

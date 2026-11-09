@@ -9,7 +9,7 @@ engine — so the whole shape of a human-in-the-loop research session shows in u
   [3/3]  handoff.json    the Orchestrator adopts it and climbs smoke → verify → full
 
 With a real key the same flow runs on real literature and a real LLM:
-    python -m scholarloop.session --profile profiles/digits-mlp.yaml --topic "..." --out runs/s1
+    python -m scholarloop.ideation --profile profiles/digits-mlp.yaml --topic "..." --out runs/s1
 
 Run from the repo root:  python examples/ideation_demo.py
 """
@@ -20,11 +20,11 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from scholarloop.litscout import ArxivClient
-from scholarloop.llm import MockLLM
-from scholarloop.orchestrator import Orchestrator
-from scholarloop.profile import load_profile
-from scholarloop.session import ResearchSession
+from scholarloop.ideation.litscout import ArxivClient
+from scholarloop.core.llm import MockLLM
+from scholarloop.experiment.orchestrator import Orchestrator
+from scholarloop.core.profile import load_profile
+from scholarloop.ideation.session import ResearchSession
 
 ROOT = Path(__file__).resolve().parent.parent
 

@@ -12,10 +12,10 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from scholarloop.ledger import Ledger
-from scholarloop.llm import MockLLM
-from scholarloop.orchestrator import Orchestrator
-from scholarloop.profile import load_profile
+from scholarloop.core.ledger import Ledger
+from scholarloop.core.llm import MockLLM
+from scholarloop.experiment.orchestrator import Orchestrator
+from scholarloop.core.profile import load_profile
 
 ROOT = Path(__file__).resolve().parent.parent
 
