@@ -246,7 +246,7 @@ A single run shows the system
 | run | what | result | cost |
 |---|---|---|---|
 | [**full flow**](examples/sample_runs/digits/) | lit review → 5 ideas → tournament pick → 18 torch runs → staged write-up → 3-reviewer panel | **3.27% val / 3.33% held-out test**, beats logreg@3.8; panel: reject 2.2/10 | ≈ $0.94 campaign + $5.53 write-up |
-| agent vs random | `examples/compare_search.py --arms agent,random --repeats 3 --rounds 6 --match runs` | random search wins: held-out **3.13 ± 0.08** (3/3 reached full) vs agent 4.22 (1/3); after giving the agent the knob ranges and an explore phase (e32f237), agent 3.72 ± 0.24 (3/3), still 0 of 9 pairs | ≈ $1.94 + $1.66 |
+| agent vs random | `examples/compare_search.py --arms agent,random --repeats 3 --rounds 6 --match runs` | random search wins: held-out **3.13 ± 0.08** (3/3 reached full) vs agent 4.22 (1/3); after giving the agent the knob ranges and an explore phase (e32f237), agent 3.72 ± 0.24 (3/3), still 0 of 9 pairs; warm-started on the random arm's first draws (723516c), a tie (3.14 vs 3.13, P = 0.5), but every agent best is one of those random draws: its own ideas never won | ≈ $1.94 + $1.66 + $1.13 |
 
 Both are reported as they came out. The full flow beats its baseline, and every number traces to
 a frozen-scorer measurement. The panel still rejects the paper, for the right reason: the tournament
@@ -254,8 +254,9 @@ picked an augmentation idea, and the campaign only tuned hyperparameters. The co
 uncomfortable one. Given the same number of training runs, plain random search over the profile's
 knobs beats the agent on digits. The first agent stayed close to the defaults and moved one knob a little
 at a time. The second explores, but it lowers lr for wider and deeper nets, a stability prior
-that is wrong here: every random winner sits at lr 0.15-0.2 with one hidden layer. Making the agent win this
-comparison is the next milestone. Until it does, the claim on digits is *a faithful, auditable
+that is wrong here: every random winner sits at lr 0.15-0.2 with one hidden layer. On a five-knob search, an LLM proposing configs does not beat random search. The
+next step is the agent's real advantage: structural edits to the train script, with knob tuning left
+to the search. Until it does, the claim on digits is *a faithful, auditable
 research loop*, not *a better optimizer than random search*. The capture's
 [README](examples/sample_runs/digits/README.md) lists what the run exposed.
 
