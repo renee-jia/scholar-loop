@@ -92,3 +92,31 @@ def test_load_train_follows_the_fold_env(monkeypatch):
     monkeypatch.setenv("SCHOLARLOOP_FOLD", "3")
     x_tr, _ = prepare.load_train()
     assert {r.tobytes() for r in x_tr} == {r.tobytes() for r in prepare._split(3)[0]}
+
+
+def _entry(eid, tier, seeds, verdict="kept"):
+    from scholarloop.core.ledger import LedgerEntry
+    return LedgerEntry(id=eid, domain=STUB.name, hypothesis=Hypothesis(claim="c", source="arXiv:1"),
+                       metric_name=STUB.metric.name, fidelity=[tier], verdict=verdict,
+                       metric={"name": STUB.metric.name, tier: round(sum(seeds) / len(seeds), 4),
+                               "seeds": seeds, "folds": list(range(len(seeds)))})
+
+
+def test_tiers_are_compared_on_shared_folds(tmp_path):
+    """Fold 4 is hard here, as on digits. A 3-fold verify mean never sees it, so comparing it with
+    a 5-fold mean flatters it: the frontier stays the full run, and gates use its first folds."""
+    from scholarloop.core.ledger import Ledger
+    from scholarloop.experiment.orchestrator import Orchestrator
+    cv = dataclasses.replace(STUB, cv_folds=5, baselines=[])
+    ledger = Ledger(tmp_path / "l.jsonl")
+    full = ledger.append(_entry("exp_0001", "full", [3.0, 3.0, 3.0, 3.0, 5.0]))      # mean 3.4
+    ledger.append(_entry("exp_0002", "verify", [3.1, 3.1, 3.1]))                     # 3.1 < 3.4 ...
+    orch = Orchestrator(None, cv, ledger_path=ledger.path, registry_dir=tmp_path / "r")
+    assert orch._parent([]).id == full.id                  # ... but worse than full on folds 0-2
+    candidate = _entry("exp_0003", "verify", [3.05, 3.05, 3.05])
+    assert orch._gate_for(candidate, full) == 3.0          # frontier on folds 0-2, not 3.4
+    assert not orch._promote(candidate, "verify", orch._gate_for(candidate, full))
+    assert orch._gate_for(_entry("exp_0004", "smoke", [2.0]), full) == 3.0
+    plain = Orchestrator(None, dataclasses.replace(cv, cv_folds=0), ledger_path=ledger.path,
+                         registry_dir=tmp_path / "r")
+    assert plain._gate_for(candidate, full) == 3.4         # no CV: the old, unmatched comparison

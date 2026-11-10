@@ -21,8 +21,9 @@ What it shows, good and bad:
   seeds, for example 2.90 → 3.27. The paper reads this as regression to the mean. The ledger
   shows something else. Seed s validates on fold s % 5, so verify sees folds 0-2 and full sees
   all five, and fold 4 is much harder: every full run scores 4.5-5.2 there and about 3 on the
-  others. Most of the rise is fold 4, not selection. Comparing tiers fold by fold would make
-  this visible. That is now an open item.
+  others. Training is deterministic per seed and fold, so each full run's folds 0-2 reproduce
+  its verify mean exactly (exp_0003 on folds 0-2 is 3.2444, the same as exp_0002). All of the
+  rise is folds 3-4. None of it is selection. Promotion now compares tiers on shared folds.
 - **The reviewer caught it.** The panel rejected the paper because "the campaign's actual
   question is untested". The panel also flagged stage-dependent shifts and missing setup detail
   (optimizer, split sizes). The Writer was never given that detail. This is a real gap in the

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from statistics import mean
 
 from scholarloop.experiment.advisor import Advisor
 from scholarloop.core.agent import AgentTrace
@@ -37,6 +38,15 @@ from scholarloop.experiment.governor import Governor, cost_of
 from scholarloop.experiment.reasoning import confidence_bound, same_config
 from scholarloop.experiment.reflector import Reflector
 from scholarloop.experiment.skills import SkillLibrary
+
+
+def _fold_scores(entry: LedgerEntry) -> dict[int, float] | None:
+    """{fold: val score} for a cross-validated entry, or None (no CV, killed, or no fold record).
+    Seeds that crashed are absent from both lists, so they stay aligned."""
+    folds, seeds = (entry.metric or {}).get("folds"), (entry.metric or {}).get("seeds")
+    if not folds or not seeds or len(folds) != len(seeds):
+        return None
+    return dict(zip(folds, seeds))
 
 
 class Orchestrator:
@@ -130,11 +140,41 @@ class Orchestrator:
             else max(scored, key=lambda e: e.primary_score())
 
     def _parent(self, entries: list[LedgerEntry]):
-        """The frontier to iterate from: the current best kept entry, else the last run."""
+        """The frontier to iterate from: the current best kept entry, else the last run.
+
+        With cross-validation a tier's mean covers only its own folds (smoke fold 0, verify 0-2,
+        full 0-4), and folds differ in difficulty, so means from different tiers are not
+        comparable: a 3-fold verify mean that skips a hard fold "beats" a 5-fold full mean. The
+        frontier is then the best kept entry among those that cover the most folds."""
+        if self.profile.cv_folds >= 2:
+            kept = [e for e in Ledger(self.ledger_path).read_all()
+                    if e.domain == self.profile.name and e.verdict == "kept"
+                    and e.primary_score() is not None]
+            if kept:
+                most = max(len(_fold_scores(e) or {}) for e in kept)
+                top = [e for e in kept if len(_fold_scores(e) or {}) == most]
+                key = lambda e: e.primary_score()                        # noqa: E731
+                return min(top, key=key) if self.profile.metric.direction == "minimize" \
+                    else max(top, key=key)
         best = Ledger(self.ledger_path).best(self.profile.name, self.profile.metric.direction)
         if best is not None:
             return best
         return entries[-1] if entries else None
+
+    def _gate_for(self, entry: LedgerEntry, frontier: LedgerEntry | None) -> float | None:
+        """The promotion threshold for `entry`, with the frontier scored on the same folds.
+
+        Without cross-validation this is `_gate_score(frontier.primary_score())`. With it, the
+        frontier's mean is taken over the folds `entry` was validated on, when the frontier has all
+        of them, so a candidate is never compared against a mean that includes folds it did not see.
+        The baseline is a K-fold mean and has no per-fold scores, so it stays as configured."""
+        if frontier is None:
+            return self._gate_score(None)
+        score = frontier.primary_score()
+        mine, theirs = _fold_scores(entry), _fold_scores(frontier)
+        if self.profile.cv_folds >= 2 and mine and theirs and set(mine) <= set(theirs):
+            score = round(mean(theirs[f] for f in mine), 4)
+        return self._gate_score(score)
 
     def _propose(self, entries: list[LedgerEntry], *, lit_context: str = "", skills: str = "",
                  lit_priors: list[str] | None = None):
@@ -210,7 +250,7 @@ class Orchestrator:
         self._post_run(entry, parent, entries + [entry])
         return entry
 
-    def _climb_from(self, smoke_entry, proposal, reasoning, tiers, gate, known) -> list[LedgerEntry]:
+    def _climb_from(self, smoke_entry, proposal, reasoning, tiers, frontier, known) -> list[LedgerEntry]:
         """Climb an already-smoked idea up the remaining tiers (verify→full), chaining via `parent`
         and stopping the moment a tier fails its promotion gate. Returns the entries produced."""
         produced: list[LedgerEntry] = []
@@ -219,7 +259,7 @@ class Orchestrator:
             entry = self._run_tier(proposal, reasoning, fidelity,
                                    self._next_id(known + produced), prev.id, prev.primary_score(), None)
             produced.append(entry)
-            if not self._promote(entry, fidelity, gate):
+            if not self._promote(entry, fidelity, self._gate_for(entry, frontier)):
                 break
             prev = entry
         return produced
@@ -237,12 +277,11 @@ class Orchestrator:
         proposal, reasoning = prepared
         frontier = self._parent(entries)
         frontier_score = frontier.primary_score() if frontier else None
-        gate = self._gate_score(frontier_score)        # must beat the frontier (or baseline) to climb
         smoke = self._run_tier(proposal, reasoning, tiers[0], self._next_id(entries),
                                frontier.id if frontier else None, frontier_score, proposal.predicted_delta)
         produced = [smoke]
-        if self._promote(smoke, tiers[0], gate):
-            produced += self._climb_from(smoke, proposal, reasoning, tiers[1:], gate, entries + produced)
+        if self._promote(smoke, tiers[0], self._gate_for(smoke, frontier)):   # beat the frontier (or baseline)
+            produced += self._climb_from(smoke, proposal, reasoning, tiers[1:], frontier, entries + produced)
         self._calibrate(smoke)                          # the smoke entry carries the idea's prediction
         self._post_run(produced[-1], frontier, entries + produced)
         return produced
@@ -256,7 +295,6 @@ class Orchestrator:
         entries = list(Ledger(self.ledger_path).read_all())
         frontier = self._parent(entries)
         frontier_score = frontier.primary_score() if frontier else None
-        gate = self._gate_score(frontier_score)
 
         # Phase 1 — propose up to k admissible, mutually-distinct ideas.
         batch: list[tuple] = []
@@ -297,11 +335,11 @@ class Orchestrator:
 
         # Phase 3 — climb only the smoke survivors, best-first, through the remaining tiers.
         survivors = [(e, batch[i][0], batch[i][1]) for i, e in enumerate(smoked)
-                     if self._promote(e, smoke_tier, gate)]
+                     if self._promote(e, smoke_tier, self._gate_for(e, frontier))]
         survivors.sort(key=lambda t: t[0].primary_score() if t[0].primary_score() is not None else float("inf"),
                        reverse=(self.profile.metric.direction == "maximize"))
         for smoke_entry, proposal, reasoning in survivors:
-            produced += self._climb_from(smoke_entry, proposal, reasoning, tiers[1:], gate,
+            produced += self._climb_from(smoke_entry, proposal, reasoning, tiers[1:], frontier,
                                          entries + produced)
 
         best = self._best_of(produced)
