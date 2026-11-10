@@ -103,3 +103,14 @@ def test_compare_script_runs_random_offline_and_resumes(tmp_path, monkeypatch):
     assert compare_search.main(args) == 0                  # finished campaigns are kept, not rerun
     assert (tmp_path / "random" / "rep1" / "summary.json").read_text() == first
     assert compare_search.main(args[:3] + ["agent"] + args[4:]) == 1   # the agent arm needs a key
+
+
+def test_reasoner_searches_the_random_arms_space_and_explores_first():
+    from scholarloop.experiment.reasoner import Reasoner
+    from scholarloop.experiment.reasoning import analyze_search_space
+    r = Reasoner(None, DIGITS, explore_ideas=2)
+    prompt = lambda n: r.build_prompt({"constraints": analyze_search_space([], DIGITS), "n_ideas": n})  # noqa: E731
+    lo, hi = knob_range(DIGITS.knobs["lr"])[1:]
+    assert f"lr {lo:.3g}..{hi:.3g} (log scale)" in prompt(0)     # the same range random search samples
+    assert "EXPLORE (idea 2 of the first 2)" in prompt(1)
+    assert "REFINE" in prompt(2) and "EXPLORE" not in prompt(2)
