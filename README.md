@@ -241,20 +241,22 @@ A single run shows the system
 - **kill a bad idea cheaply** at the smoke tier — no full run,
 - **catch its own wrong prediction** via predict-then-verify, then **pivot**.
 
-## 🧪 A live run on Claude Opus 4.8 — real torch, real API, end to end
+## 🧪 Live, on claude-opus-5-5: the whole flow, and a fair test against random search
 
-| domain | metric | baseline | best (confirmed) | the climb | cost | self-review |
-|---|---|---|---|---|---|---|
-| [**digits-mlp**](examples/sample_runs/digits/) | val error | 5.0% | **3.82%** | population → verify → full, governed | ≈ $0.45 | reject 2/10 |
+| run | what | result | cost |
+|---|---|---|---|
+| [**full flow**](examples/sample_runs/digits/) | lit review → 5 ideas → tournament pick → 18 torch runs → staged write-up → 3-reviewer panel | **3.27% val / 3.33% held-out test**, beats logreg@3.8; panel: reject 2.2/10 | ≈ $0.94 campaign + $5.53 write-up |
+| agent vs random | `examples/compare_search.py --arms agent,random --repeats 3 --rounds 6 --match runs` | random search wins: held-out **3.13 ± 0.08** (3/3 reached full) vs agent 4.22 (1/3) | ≈ $1.94 |
 
-*This capture predates the current data layout: the engine now holds out a fixed 20% test split and cross-validates on 5 folds of the rest (`cv_folds: 5`), so re-running it gives different numbers (the bar is now the CV mean of a real logistic regression, logreg@3.8).*
-
-It is a **governed population funnel**: each round fans out several ideas, smoke-screens them in
-parallel, and climbs only the survivors, while the loop halts itself (on convergence or a round cap)
-and scores each agent's predictions against ground truth. An idea beats the baseline, every
-number traces to a frozen-metric measurement, and the system's *own* reviewer still rejects the
-paper as too marginal. (It's not wrong.) The link opens the captured **paper**, **run log**, and
-raw **ledger** — every number reproducible from the jsonl.
+Both are reported as they came out. The full flow beats its baseline, and every number traces to
+a frozen-scorer measurement. The panel still rejects the paper, for the right reason: the tournament
+picked an augmentation idea, and the campaign only tuned hyperparameters. The comparison is the
+uncomfortable one. Given the same number of training runs, plain random search over the profile's
+knobs beats the agent on digits. The agent stays close to the defaults and moves one knob a little
+at a time, and the single-seed smoke tier can't rank ideas that close. Making the agent win this
+comparison is the next milestone. Until it does, the claim on digits is *a faithful, auditable
+research loop*, not *a better optimizer than random search*. The capture's
+[README](examples/sample_runs/digits/README.md) lists what the run exposed.
 
 ## 📊 Status
 
@@ -263,7 +265,9 @@ anti-reward-hacking guards in place and adversarially reviewed, an ideation-firs
 session (literature review → novelty-checked ideas → your choice) in front of the loop, and a
 step-by-step writing session (outline → key points → prose, panel-argued and author-approved) after it. It has been **run live against the
 real Anthropic API**, captured verbatim in [examples/sample_runs/digits](examples/sample_runs/digits/): a
-real Opus campaign that beats its baseline and writes itself up. Next: a per-idea second retrieval
-pass and a critic panel over ideas, then container sandboxing for the residual boundaries and scale.
+real Opus campaign that beats its baseline and writes itself up. It has also been measured against
+random search at a matched budget, and on digits it loses (above). Next: make the agent win that
+comparison (bolder, range-aware proposals; fold-matched tier comparisons), then a per-idea second
+retrieval pass, container sandboxing for the residual boundaries, and scale.
 
 License: [MIT](LICENSE).

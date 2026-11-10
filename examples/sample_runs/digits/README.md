@@ -1,36 +1,51 @@
-# Sample run — a complete flow with a real LLM
+# Sample run: the whole flow with a real LLM
 
-A **verbatim capture** of one autonomous ScholarLoop run: the real `digits-mlp` torch engine,
-with **Claude Opus 4.8** as every agent, taken all the way from *"pick a direction"* to a
-written-up, peer-reviewed paper. Produced by [`../run_to_paper.py`](../run_to_paper.py).
+A **verbatim capture** of one ScholarLoop run on the real `digits-mlp` torch engine, with
+**claude-opus-5-5** as every agent. It covers literature review, ideas, a tournament pick, a governed
+campaign, a staged write-up and a panel review. Captured 2026-11-09.
 
-> **7 experiments · 24 LLM calls · ≈ $0.45.** A **governed population funnel**: each round the loop
-> proposed several literature-grounded ideas and **smoke-screened them in parallel**; the weak one
-> died at smoke, and the survivors climbed **smoke → verify → full** to a confirmed **3.82% val error,
-> below the 5.0 baseline**. The **governor** then stopped the campaign on its own once two rounds
-> passed with no further improvement (*loop-until-dry*). Along the way the **debate panel was
-> calibrated** against ground truth (67% of its go/no-go calls were right), and the reviewer rejected
-> the write-up 2/10 as too marginal. (It's not wrong.)
->
-> This run exercises the loop-engineering stack — **parallel fan-out · self-stopping governor ·
-> per-agent calibration** — on real torch.
+> **5 ideas → 1 picked · 18 experiments · 3 at the full tier · best 3.27% val / 3.33% held-out
+> test (baseline logreg 3.8) · panel review: reject, 2.2/10.**
+> Spend: campaign ≈ $0.94 (56 calls), write-up ≈ $5.53 (42 calls). The ideation session is not
+> metered.
+
+What it shows, good and bad:
+
+- **Ideation.** The tournament picked *sub-pixel augmentation for 8x8 digits*, 4-0-0 over the
+  other four ideas. See [`lit_review.md`](lit_review.md) and [`ideas.md`](ideas.md).
+- **Campaign.** It beat the bar: 5-fold CV val 3.27, held-out test 3.33. The bar is logreg@3.8.
+- **The gap between idea and campaign.** The chosen idea needs a change to `train.py`. The
+  Reasoner never used the edit channel. It tuned epochs, width and weight decay instead, so the
+  hypothesis was never tested.
+- **The tiers are not on the same folds.** All three configs promoted from 3 seeds rose at 5
+  seeds, for example 2.90 → 3.27. The paper reads this as regression to the mean. The ledger
+  shows something else. Seed s validates on fold s % 5, so verify sees folds 0-2 and full sees
+  all five, and fold 4 is much harder: every full run scores 4.5-5.2 there and about 3 on the
+  others. Most of the rise is fold 4, not selection. Comparing tiers fold by fold would make
+  this visible. That is now an open item.
+- **The reviewer caught it.** The panel rejected the paper because "the campaign's actual
+  question is untested". The panel also flagged stage-dependent shifts and missing setup detail
+  (optimizer, split sizes). The Writer was never given that detail. This is a real gap in the
+  writing context.
+- **Calibration.** The debate panel made 8 go/no-go calls and 50% were right. The Reasoner got
+  the direction of the effect right 28% of the time.
 
 | file | what it is |
 |---|---|
-| **[`run.md`](run.md)** | the autonomous run log — direction, the real (arXiv + OpenAlex, citation-ranked) findings, every experiment (funnel tiers + verdicts), the distilled lessons, and the **agent calibration** block |
-| **[`paper.md`](paper.md)** | the paper the L5 Writer produced + the Reviewer's assessment. Every number is checked against the experiment registry (grounding ✅) |
-| **[`experiments.jsonl`](experiments.jsonl)** | the raw ledger — one real torch training run per record |
+| [`lit_review.md`](lit_review.md) · [`ideas.md`](ideas.md) | the research session: themes, gaps, and five ideas ranked by a pairwise Elo tournament |
+| [`run.md`](run.md) | the campaign log: chosen idea, every experiment with tier, verdict and held-out score, distilled skills, agent calibration |
+| [`outline.md`](outline.md) · [`key_points.md`](key_points.md) | the write-up's first two stages, each debated by a panel |
+| [`paper.md`](paper.md) · [`review.md`](review.md) | the paper, with every number checked against the registry, and the three-reviewer assessment |
+| [`experiments.jsonl`](experiments.jsonl) | the raw ledger, one real torch training run per record |
 
-Captured 2026-06-15 with the one-shot Writer + Reviewer; the step-by-step writing session
-(`outline.md` / `key_points.md` / `review.md`, now the default) postdates this run, which is why
-those files are absent here.
-
-Reproduce (non-deterministic — a fresh run yields different experiments and a different paper):
+Reproduce. The run is not deterministic, so a fresh run gives different ideas, experiments and
+paper:
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-... \
-  SCHOLARLOOP_OUT=examples/sample_runs/digits SCHOLARLOOP_WRITING=oneshot \
-  SCHOLARLOOP_POPULATION=3 SCHOLARLOOP_MAX_WORKERS=3 \
-  SCHOLARLOOP_DRY_PATIENCE=2 SCHOLARLOOP_STEPS=4 \
-  python examples/run_to_paper.py
+export ANTHROPIC_API_KEY=sk-ant-...
+python -m scholarloop.ideation --profile profiles/digits-mlp.yaml --out runs/d \
+  --topic "small MLP image classification regularization" --auto
+SCHOLARLOOP_HANDOFF=runs/d/handoff.json SCHOLARLOOP_OUT=runs/d \
+  SCHOLARLOOP_POPULATION=3 SCHOLARLOOP_MAX_WORKERS=3 SCHOLARLOOP_DRY_PATIENCE=2 \
+  SCHOLARLOOP_STEPS=4 SCHOLARLOOP_MAX_COST=8 python examples/run_to_paper.py < /dev/null
 ```

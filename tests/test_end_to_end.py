@@ -162,3 +162,13 @@ def test_ideation_to_paper_then_resume_then_fresh(campaign):
     fresh = run(1)                                                    # no resume: a clean start
     assert fresh[0].id == "exp_0001" and len(fresh) < len(resumed)
     assert json.loads((out / "usage.json").read_text())["calls"] < usage2["calls"]
+
+
+def test_cost_cap_pauses_the_write_up(campaign, monkeypatch):
+    run, out, _ = campaign
+    monkeypatch.setenv("SCHOLARLOOP_WRITING", "auto")             # the staged session, unattended
+    monkeypatch.setenv("SCHOLARLOOP_MAX_COST", "0.000001")        # already spent by the first call
+    entries = run(1)
+    assert entries and (out / "run.md").exists()                 # the campaign ran and was logged
+    assert not (out / "paper.md").exists()                        # ... but the write-up paused at the cap
+    assert not (out / "outline.md").exists()

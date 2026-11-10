@@ -1,43 +1,134 @@
-# Wider, Deeper ReLU MLPs with L2 Weight Decay Reduce Validation Error Below a 5.0 Baseline
+# Training Budget Sets the No-Augmentation Control for an MLP on 8x8 Digits, and 3-Seed Estimates Overstate It
 
-> **Peer review:** reject · score 2/10 — The paper reports six experiments training a 256-unit, depth-2 ReLU MLP with L2 weight decay (0.0005) under two learning-rate/epoch regimes, claiming all runs fall below a 5.0 val_top1_err baseline, with a best result of 3.8222 (lr=0.05, 120 epochs). It concludes that combining wider/deeper ReLU MLPs with L2 weight decay improves generalization.  
-> **Number-grounding:** ✅ every number traces to a recorded measurement
+> **Panel review:** reject · mean score 2.2/10 (harsh-but-fair 2 · harsh-critical 2 · open-minded 2.5)
 
 ## Abstract
 
-We investigate whether a wider, two-hidden-layer ReLU multilayer perceptron (MLP) combined with stronger L2 weight decay and extended training can improve generalization over a 5.0 val_top1_err baseline. Across six experiments using a 256-unit, depth-2 architecture with weight decay of 0.0005, all runs fell below the baseline, achieving val_top1_err between 3.8222 and 4.4444. The best configuration (lr=0.05, 120 epochs) reached 3.8222. These results confirm that combining deeper ReLU MLPs (doi:10.1186/s40537-021-00444-8) with L2 regularization (doi:10.1007/s10462-023-10466-8) lowers validation error.
+All three MLP configs promoted as 3-seed winners on sklearn 8x8 digits rose in validation top-1 error (lower is better) when re-measured at 5 seeds: from 2.8968 to 3.2712 [exp_0015, exp_0016], from 3.1286 to 3.5497 [exp_0008, exp_0009] and from 3.2444 to 3.5494 [exp_0002, exp_0003]. This pattern is consistent with selection-induced regression to the mean without establishing it, and we use it to fix the no-augmentation control that sub-pixel augmentation arms must beat. Our motivating hypothesis is an extrapolation we have not measured: an MLP without spatial priors may benefit from sub-pixel augmentation, by analogy with weak-inductive-bias models needing more data [arXiv:2010.11929] and with regularization of fully connected layers [doi:10.1145/3065386], yet any gain no larger than the observed 3-to-5-seed shifts would be indistinguishable from selection noise under this protocol. Before running any augmentation arm, we ablate the training budget (120 to 360 epochs) of a one-hidden-layer MLP (lr=0.05, wd=1e-3), check width (128 vs 256) and weight decay (5e-4 vs 1e-3), stage runs as 1-seed smoke, 3-seed verify and 5-seed full, and score each full run once on a held-out test split never used for selection [exp_0004, exp_0001, exp_0013, exp_0011, exp_0018, exp_0016]. The best-measured control (hidden=256, wd=1e-3, 360 epochs) reaches 3.2712 ± 0.7247 std validation error over 5 seeds, about one and a half standard errors below the 3.8 baseline, which is not significant and mildly optimistic because it was picked on validation from three full runs; its held-out test error is 3.3333, the baseline has no test score, and 240 vs 360 epochs (3.5494 vs 3.2712) is unseparated at 5 seeds [exp_0016, exp_0003].
 
-## Method
+## Introduction
 
-We trained MLPs with two hidden layers (depth=2) and 256 hidden units, using ReLU activations to mitigate vanishing gradients (doi:10.1186/s40537-021-00444-8) and L2 weight decay of 0.0005 to reduce overfitting (doi:10.1007/s10462-023-10466-8). Two training regimes were evaluated: (i) lr=0.05 with 120 epochs, and (ii) lr=0.03 with 150 epochs. The target was to reduce val_top1_err below the 5.0 baseline.
+We study 10-class classification of the sklearn 8x8 digits by a multilayer perceptron (MLP) that reads raw pixels. The metric is validation top-1 error in percent, where lower is better, and the stated baseline to beat is 3.8 [baseline].
 
-## Results
+Our working hypothesis motivates the study, and this paper does not test it. We hypothesize that an MLP without spatial priors is regularization-limited on small data and should therefore benefit from sub-pixel augmentation [exp_0001]. The hypothesis extrapolates from two large-scale results. ViT found that models with weak inductive bias demand more data [arXiv:2010.11929], and AlexNet regularized its fully connected layers against overfitting [doi:10.1145/3065386]. Neither result was obtained on 64-pixel inputs, so the hypothesis remains an extrapolation until an augmentation arm is scored against a trustworthy control.
 
-All six runs improved on the 5.0 baseline. With lr=0.05 and 120 epochs (hidden=256, depth=2, weight_decay=0.0005), val_top1_err was 4.2222 (exp_0001), 3.9259 (exp_0004), and 3.8222 (exp_0005), the best result observed. With lr=0.03 and 150 epochs (same architecture and weight decay), val_top1_err was 4.4444 (exp_0003), 4.2222 (exp_0006), and 4.1778 (exp_0007). The lr=0.05 / 120-epoch regime produced the lowest error (3.8222).
+Testing the hypothesis needs a control that is both well trained and precisely measured, and neither property was known in advance. The 1-seed smoke runs of the candidate control sat above the baseline: 4.1667 at 120 epochs [exp_0004] and 3.8194 at 240 epochs [exp_0001]. The 240-epoch config fell below 3.8 only once it was measured at 3 seeds, where it reached 3.2444 [exp_0002, baseline]. A single seed therefore could not tell us whether the control was under-trained or simply unlucky.
+
+We ask which no-augmentation MLP control an augmentation arm must beat, and how far the 3-seed estimates that selected it shift at 5 seeds. We answer in three steps. First, we audit stage-to-stage shifts in the estimates. Second, we ablate training budget, width and weight decay [exp_0002, exp_0010, exp_0017, exp_0015, exp_0011, exp_0018]. Third, we report the selected control at 5 seeds together with a held-out test score [exp_0016]. The seed audit comes first because it determines how much weight every later 3-seed comparison can carry.
+
+Our first contribution is the stage-shift audit, and it shows that all three 3-seed winners rose at 5 seeds. Error moved from 2.8968 to 3.2712 [exp_0015, exp_0016], from 3.1286 to 3.5497 [exp_0008, exp_0009], and from 3.2444 to 3.5494 [exp_0002, exp_0003]. One 3-seed std of 0.0063 became 0.9374 at 5 seeds [exp_0008, exp_0009]. These rises are consistent with selection-induced regression to the mean, and we scope that reading to these three configs.
+
+Our second contribution maps budget, width and decay, and it finds few resolved differences. At hidden=256 and wd=1e-3, mean error is non-increasing with budget within each stage [exp_0002, exp_0010, exp_0017, exp_0015]. That trend is weak: at the verify stage 240 and 300 epochs are equal, and the full stage holds only two budgets. No budget step above 240 epochs is resolved beyond 3-seed spread. Neither is any width or decay difference at 240-300 epochs [exp_0011, exp_0008, exp_0018].
+
+Our third contribution is the control itself. With hidden=256, wd=1e-3, lr=0.05 and depth 1, training for 360 epochs gives 3.2712 ± 0.7247 validation error over 5 seeds (mean ± std) and 3.3333 held-out test error [exp_0016]. That validation mean lies about one and a half standard errors below 3.8, which is not significant [baseline]. The other 5-seed configs sit closer to the baseline, at 3.5494 ± 0.833 validation with 3.7222 test [exp_0003] and 3.5497 ± 0.9374 validation with 3.5 test [exp_0009]. The 360-epoch config is therefore the reference that later arms must beat.
+
+The sub-pixel augmentation arms were not run. This paper delivers only the measured control and its spread, a per-seed std of 0.7247, against which those arms must be scored at matched seeds [exp_0016].
+
+## Related Work
+
+Two lines of prior work bear on our question: one ties the inductive bias a model needs to the scale of its training data, and the other regularizes fully connected layers. We discuss each in turn and state where our measurement differs.
+
+The first line shows that a model with weak inductive bias needs large data to match a model with strong priors. The Vision Transformer (ViT) matches convolutional networks only after pre-training at large scale [arXiv:2010.11929]. Swin takes the architectural route instead and restores locality through windowed attention [arXiv:2103.14030]. Neither paper argues that augmentation can substitute for missing priors. Neither studies an MLP on 8x8 inputs. The substitution reading is our own hypothesis: an MLP on raw pixels has no locality prior, so sub-pixel augmentation might supply part of what the architecture lacks. Testing that hypothesis requires a no-augmentation control measured at the same budget and seed count as the augmentation arm. We supply that control here and leave the augmentation test itself to future work.
+
+The second line regularizes fully connected layers through dropout, augmentation and weight decay. AlexNet combined dropout with data augmentation to curb overfitting in its fully connected layers [doi:10.1145/3065386]. AdamW decouples weight decay from the gradient update, so decay strength acts as a separate regularizer [arXiv:1711.05101]. Both methods were validated at large-image scale. Our setting is a small MLP trained on 8x8 digits, a regime in which the effect of decay strength has not been measured. We therefore vary decay strength directly and report the result in Results: Width and weight decay.
+
+## Setup
+
+We train and score every configuration on the sklearn 8x8 digits, divided into a training split, a validation split and a held-out test split. The Setup table (Table 1) lists the size of each split, whether the split is stratified, and whether it is fixed or redrawn per seed [exp_0016, baseline]. We copy each entry from the pipeline config when the config records it. When it does not, the table marks the entry 'not available in the run records', and Limitations carries the gap forward. This rule matters most for the split sizes, because the size of the validation split sets how many images one error point represents.
+
+The multi-seed means do not fit a fixed small validation split, so we size every gap in error points against std and SE, never in images. Two values show the mismatch: the 3-seed verify mean of 3.1286 [exp_0008] and the 5-seed full mean of 3.5494 [exp_0003]. A fixed split of a few hundred images limits per-seed errors to a coarse grid, and these means do not lie on the grid such a split implies. Limitations gives the full argument. For this section, the consequence is that no result below is converted into a count of misclassified images.
+
+The model is a depth-1 MLP with one hidden layer of 128 or 256 units, trained with lr=0.05 and weight decay of 1e-3 or 5e-4 for 120 to 360 epochs. The range covers the shortest smoke at 120 epochs [exp_0004], the 128-unit run at 300 epochs [exp_0007], the single run at weight decay 5e-4 [exp_0012] and the 256-unit, 360-epoch control [exp_0016]. The Setup table lists the optimizer, batch size, activation, input scaling, learning-rate schedule and initialization only where the pipeline config records them. Every other entry is flagged as unrecorded, so a reimplementation must treat those choices as free.
+
+Each configuration passes through three stages: a 1-seed smoke, a 3-seed verify and a 5-seed full run. Each full run is scored once on the held-out test split, and no test number is used for selection [exp_0003, exp_0009, exp_0016]. The Setup table states how each test number was produced (from one seed's model or as the mean over the 5 seeds) and the size of the test split. It also lists the seeds used at each stage and whether full-stage seeds include the verify seeds. Entries the records cannot confirm are marked unconfirmed, and the per-stage seed overlap is one of them where the logs are silent.
+
+The metric is val_top1_err, the top-1 classification error in percent on the validation split; lower is better. A frozen scorer computes it, so no configuration can change how it is measured [exp_0003, exp_0009, exp_0016]. We report spread as the standard deviation across seeds. For 5-seed runs we add the standard error of the mean, which we use to size gaps between configurations.
+
+The baseline is a validation error of 3.8, and it has no held-out test score [baseline]. Its configuration comes only from the hypothesis text of exp_0001, which describes it as narrower than the control, with 10x lower weight decay and half the epochs [exp_0001]. The ledger does not contain the baseline run, and no other record confirms its settings. The Setup table therefore marks the baseline's hidden size, weight decay, epochs and seeds as unconfirmed, so any comparison to 3.8 compares against a number whose seed count and spread are unknown.
+
+Every run in the ledger has a recorded result and a verdict. The four discarded smokes (exp_0001, exp_0004, exp_0006, exp_0012) appear in the appendix run ledger with their id, stage, seeds, config and verdict [exp_0001, exp_0004, exp_0006, exp_0012]. The run records do not contain per-seed error counts, wall-clock times or hardware. We therefore report no per-run compute cost or total compute budget, and we cannot separate split variance from initialization variance by recounting per-seed errors.
+
+## Results: How far do 1-seed and 3-seed estimates move?
+
+This section tests which stage of the protocol gives estimates stable enough to rank configs and to certify a no-augmentation control. We follow each config from smoke (1 seed) to verify (3 seeds) and, for promoted configs, to full (5 seeds), and we report validation top-1 error, where lower is better. If a stage's estimate moves by more than the gaps between configs at the next stage, that stage cannot be used to rank them.
+
+Single-seed smoke values are unreliable. Three discarded smokes scored 3.8194, and at verify they fell to 3.2444 [exp_0001] [exp_0002], 3.3601 [exp_0006] [exp_0011] and 3.244 [exp_0012] [exp_0018]. These smokes came from three different configs: hidden=256 at 240 epochs, hidden=128 at 240 epochs, and hidden=256 with weight decay 5e-4 at 300 epochs. An identical value from three configs suggests that they shared a smoke seed, but we have not confirmed this. Each of the three was discarded on a smoke value above the 3.8 baseline, yet each fell below that baseline at verify.
+
+Kept smokes, which were selected for being low, also fell at verify. The 300-epoch config went from 3.4722 to 3.2444 [exp_0005] [exp_0010], the 320-epoch config from 3.4722 to 3.1282 [exp_0014] [exp_0017], and the 360-epoch config from 3.125 to 2.8968 [exp_0013] [exp_0015]. Selection-induced regression predicts a rise for configs kept because they scored low, so these drops run against that mechanism. A shared smoke seed or a split that depends on the stage could explain them; we did not test either. The one near-exception is hidden=128 at 300 epochs, which went from 3.125 to 3.1286 [exp_0007] [exp_0008]. We report the smoke-to-verify shifts only to show that 1-seed values are unreliable. The selection argument below rests on the verify-to-full shifts alone.
+
+At full, every promoted config rose in mean error and grew in spread. The 360-epoch config went from 2.8968 ± 0.1977 at verify to 3.2712 ± 0.7247 at full, with a held-out test score of 3.3333 [exp_0015] [exp_0016]. Hidden=128 at 300 epochs went from 3.1286 ± 0.0063 to 3.5497 ± 0.9374, with a test score of 3.5 [exp_0008] [exp_0009]. The 240-epoch config went from 3.2444 ± 0.5292 to 3.5494 ± 0.833, with a test score of 3.7222 [exp_0002] [exp_0003]. All spreads are per-seed standard deviations. The standard deviations grew from 0.1977 to 0.7247, from 0.0063 to 0.9374, and from 0.5292 to 0.833, so the 3-seed spreads understated the seed-to-seed variation that 5 seeds revealed. Each test score was computed once, and we do not use test scores to rank configs.
+
+The rises are consistent with selection-induced regression to the mean, because these three configs were promoted for winning at 3 seeds. We do not claim that this mechanism is established. Only three configs were promoted, each rise falls within about one 5-seed standard error, and the seed overlap between verify and full and the split policy across stages are unknown. What does follow from these measurements is a resolution limit: under this protocol, a treatment effect smaller than these verify-to-full shifts cannot be resolved at 5 seeds or fewer.
+
+## Results: Training budget
+
+This section tests whether training longer lowers validation top-1 error (lower is better) at hidden=256 and wd=1e-3, with width, depth, learning rate and weight decay held fixed. Each stage uses a different number of seeds, so we compare budgets within a stage only and never across stages.
+
+The smoke stage orders the budgets without measuring their spread, because each smoke runs a single seed. Error falls from 4.1667 at 120 epochs [exp_0004] to 3.8194 at 240 epochs [exp_0001], then to 3.4722 at both 300 epochs [exp_0005] and 320 epochs [exp_0014], and to 3.125 at 360 epochs [exp_0013]. The sequence is therefore non-increasing. The 120-epoch and 240-epoch smokes both sit above the 3.8 baseline [baseline]. Because the 120-epoch evidence rests on one seed, it suggests that a short budget erases the gain over the baseline but does not establish it.
+
+The verify stage adds a spread, and that spread covers every budget step. With 3 seeds (mean ± std), error is 3.2444 ± 0.5292 at 240 epochs [exp_0002], 3.2444 ± 0.1974 at 300 epochs [exp_0010], 3.1282 ± 0.3424 at 320 epochs [exp_0017] and 2.8968 ± 0.1977 at 360 epochs [exp_0015]. Each step between adjacent budgets lies within the larger of the two arms' standard deviations. The 320 to 360 step shows the margin: it falls within the 0.3424 std of exp_0017, although it exceeds the 0.1977 std of exp_0015 [exp_0017, exp_0015]. The 360-epoch verify mean is thus the lowest of the stage, yet the stage cannot resolve it from its 320-epoch neighbour.
+
+The full stage leaves the two remaining budgets unseparated. With 5 seeds, 240 epochs reaches 3.5494 ± 0.833 [exp_0003] and 360 epochs reaches 3.2712 ± 0.7247 [exp_0016]. Both standard deviations are larger than the gap between the two means, so the 5-seed evidence does not rank these budgets.
+
+Across the three stages, mean error is non-increasing with budget, and 360 epochs gives the lowest mean wherever it was measured. Two qualifications bound this trend: at verify, 240 and 300 epochs tie at 3.2444 [exp_0002, exp_0010], and the full stage holds only two points [exp_0003, exp_0016]. No step above 240 epochs is resolved beyond seed spread. The hidden=128 arm points the same way, from 3.3601 ± 0.3978 at 240 epochs [exp_0011] to 3.1286 ± 0.0063 at 300 epochs [exp_0008] over 3 seeds, and it carries the same caveat. We therefore adopt 360 epochs as the best measured control while treating its advantage over shorter budgets above 240 epochs as unresolved.
+
+## Results: Width and weight decay
+
+This section tests whether hidden width or weight decay changes validation top-1 error (lower is better) at a fixed training budget. Within the 3-seed spread, width does not separate. At 240 epochs, hidden 128 gives 3.3601 ± 0.3978 [exp_0011] and hidden 256 gives 3.2444 ± 0.5292 [exp_0002], with std across 3 seeds. At 300 epochs, hidden 128 gives 3.1286 ± 0.0063 [exp_0008] and hidden 256 gives 3.2444 ± 0.1974 [exp_0010]. That gap lies within the larger of the two stds. The std of 0.0063 for exp_0008 is suspect: the same config re-measured at 5 seeds has a std of 0.9374 [exp_0009]. We did not test width at 360 epochs, so any width effect at the longest budget remains unmeasured.
+
+Weight decay does not separate either. At 300 epochs and hidden 256, wd=5e-4 gives 3.244 ± 0.5261 [exp_0018] and wd=1e-3 gives 3.2444 ± 0.1974 [exp_0010]. The value 5e-4 is the weaker decay, although the run description calls it stronger. The 1-seed smoke of the 5e-4 config scored 3.8194 and was discarded [exp_0012]; we cite it for completeness only. Because the two decay values give matching means, this null result does not support the hypothesis that regularization strength limits error for this MLP.
+
+With no knob resolved, we choose the control by default. It keeps hidden=256 and wd=1e-3 and runs at the longest budget we measured.
+
+The certified control is exp_0016, with hidden=256, wd=1e-3, lr=0.05, depth 1 and 360 epochs. Its held-out test error is 3.3333, scored once and never used for selection [exp_0016]. Its validation error is 3.2712 ± 0.7247 over 5 seeds. We selected that validation mean as the best of three full runs, so it is mildly optimistic.
+
+Against the 3.8 baseline [baseline], the validation mean of exp_0016 sits about one and a half SE below, which is not significant. The other two full runs sit less than one SE below the baseline: 3.5494 ± 0.833 with test error 3.7222 [exp_0003] and 3.5497 ± 0.9374 with test error 3.5 [exp_0009]. The baseline has no test score, so any test comparison with it is indicative only. We also do not use the three test scores to rank configs. An augmentation arm therefore has to beat the measured validation error of exp_0016, with its 5-seed spread, rather than the 3.8 baseline.
+
+## Discussion
+
+Above 240 epochs, no single knob separates configurations beyond seed spread, so we chose the control as the longest budget measured. It is not a resolved optimum. At 3 seeds, validation top-1 error (lower is better) stays at 3.2444 from 240 to 300 epochs and falls to 2.8968 at 360 epochs [exp_0002, exp_0010, exp_0015]. At 5 seeds, the same move from 240 to 360 epochs lowers the mean from 3.5494 to 3.2712 [exp_0003, exp_0016]. The per-seed standard deviations of those two 5-seed runs, 0.833 and 0.7247, are each larger than the gap between their means. The budget trend therefore points in one direction without being resolved, and the 360-epoch choice rests on that direction alone.
+
+We hypothesize that the one-layer MLP with wd=1e-3 is still under-optimized at 240 epochs, and that it has not yet begun to overfit. The lower mean at 360 epochs fits this reading at both seed counts [exp_0015, exp_0016]. The reading is also consistent with reports that regularized fully connected layers tolerate long training schedules [doi:10.1145/3065386]. Our runs do not confirm the hypothesis, because they record no training-loss curves and no budget beyond 360 epochs.
+
+The control's per-seed spread is comparable to its margin over the baseline, and this sets the reference an augmentation arm must beat. The control scores 3.2712 against the stated baseline of 3.8, with a per-seed standard deviation of 0.7247 [exp_0016, baseline]. A single augmentation seed could land on either side of 3.8 from seed noise alone. An augmentation arm must therefore be compared with exp_0016 itself, run at the same 360-epoch budget and the same seeds. Scoring it against the fixed value of 3.8 would credit the arm with gains that the control already shows.
+
+We close with a forward-looking sizing estimate; it is a calculation, and no run measured it. Take σ = 0.7247 from exp_0016 and a target gain of half a point resolved at two standard errors [exp_0016]. Under these assumptions, a one-sample comparison against a fixed value needs several more seeds than the 5 we ran. An unpaired comparison between two arms needs roughly twice that count per arm, because the noise of both means enters the difference. Running both arms on paired seeds would reduce the count by a factor set by the within-seed correlation between arms. No run measured that correlation, so the next experiment should estimate it before fixing the seed budget for the augmentation arms.
+
+## Limitations
+
+The study makes no claim about augmentation in either direction, because no augmentation arm was run. The expected size of an augmentation gain is an assumption, and no measurement here stands behind it. What this paper supplies is the control that such an arm must beat, and the size of the shift that separates 3-seed from 5-seed estimates of that control.
+
+All results come from a single dataset, and the structure of its splits is unconfirmed. The smoke values of 3.8194 [exp_0001], 4.1667 [exp_0004], 3.125 [exp_0013] and 3.4722 [exp_0014] look like whole-image errors on one small fixed validation set. Two later numbers break that reading. A 3-seed mean of 3.1286 [exp_0008] and a 5-seed mean of 3.5494 [exp_0003] cannot be averages of such whole-image values, and a 3-seed std of 0.0063 [exp_0008] cannot arise when each seed moves in whole-image steps. We therefore cannot confirm the split sizes or whether splits are re-sampled per seed. If splits vary per seed, the reported seed variance also contains split variance, and no run in this study separates the two. A re-run on a fixed split is future work.
+
+Reproducibility is limited by what the run records omit. Per-seed error counts, wall-clock time, hardware, the aggregation used for the test score, and any setup items absent from the config are not available [exp_0016]. A reader can rebuild the configuration, but cannot check per-seed results against ours.
+
+The seed count caps how finely the training budget can be resolved. With at most 5 seeds, 240 and 360 epochs are not separated [exp_0003, exp_0016], and only exp_0016 clears the 3.8 baseline by more than one standard error [exp_0016]. The 120-epoch evidence is weaker still: it rests on a single smoke seed at 4.1667 [exp_0004], so the claim that halving the budget erases the gain has no spread behind it [exp_0009].
+
+The 3.8 baseline is itself a soft target. It is a validation number, its config is inferred from the hypothesis text [exp_0001], its spread is unreported, and it has no test score [baseline]. A comparison of our control against 3.8 therefore treats a point estimate as exact, which is one more reason an augmentation arm should be scored against the measured control.
+
+The stage-shift audit reads differently depending on seed reuse. Seeds overlap between stages, and the smoke runs may share seeds, so the 3-seed and 5-seed estimates are not independent samples [exp_0008, exp_0009]. The audit also covers only the three selected configs. The 5-seed validation mean of exp_0016, 3.2712, carries its own selection optimism, since that config was chosen on validation scores [exp_0016]; its single held-out test score of 3.3333 is the number to report.
+
+The search space was narrow. The learning rate was fixed at 0.05, depth at 1, and the epoch range stops at 360 [exp_0016]. No plateau in the training budget is established, and depth and dense connectivity [arXiv:1409.1556, arXiv:1608.06993] were untested. The control is the best measured point in this space, and a wider search could move it.
+
+Two outcomes would overturn the main finding. If more seeds placed the mean of exp_0016 at or above 3.8, the control would no longer beat the baseline [exp_0016, baseline]. If the 5-seed rise vanished once the full-stage seeds were disjoint from the verify-stage seeds, the overstatement we attribute to 3-seed estimates would instead reflect seed reuse. Its per-seed std of 0.7247 [exp_0016] is wide enough that the first outcome cannot be ruled out at the present seed count.
 
 ## Conclusion
 
-A wider, depth-2 ReLU MLP with L2 weight decay of 0.0005 consistently reduced val_top1_err below the 5.0 baseline, with the best configuration (lr=0.05, 120 epochs) reaching 3.8222. These findings support combining deeper ReLU MLPs (doi:10.1186/s40537-021-00444-8) with L2 weight decay (doi:10.1007/s10462-023-10466-8) for improved generalization.
+We asked which no-augmentation MLP control a sub-pixel augmentation arm must beat on sklearn 8x8 digits. The answer is the 360-epoch MLP with hidden=256 and wd=1e-3 (exp_0016), the best-measured control in this ledger [exp_0016]. Its single held-out test error is 3.3333. Over 5 seeds its validation top-1 error (lower is better) is 3.2712 ± 0.7247 std, about one and a half SE below the 3.8 baseline [baseline]. That margin is not significant, so the control improves on the baseline only nominally.
+
+The 3-seed estimates that selected this control were optimistic. All three 3-seed winners rose at 5 seeds: 2.8968 became 3.2712 [exp_0015, exp_0016], 3.1286 became 3.5497 [exp_0008, exp_0009], and 3.2444 became 3.5494 [exp_0002, exp_0003]. This pattern is consistent with selection-induced regression to the mean, although we do not know how far the seeds of the two stages overlap. At 5 seeds, the 240-epoch and 360-epoch configs (3.5494 vs 3.2712) are not separated [exp_0003, exp_0016]. The case for the longer budget therefore rests on its being the longest measured, not on a resolved gain.
+
+The insight concerns resolution. Under this protocol, a treatment effect smaller than these verify-to-full shifts cannot be resolved at 5 seeds or fewer [exp_0015, exp_0016, exp_0002, exp_0003]. As a consequence, the control must be measured with as much care as the treatment.
+
+Two limits bound these conclusions. Augmentation itself is untested, and the split sizes and split policy still need confirmation.
+
+The next step is the sub-pixel augmentation ablation at 360 epochs, scored against exp_0016. Its seed count should be sized from the control's std of 0.7247, which puts it well over 5 per arm [exp_0016]. Paired seeds can reduce that count, but only after the within-seed correlation between arms has been measured.
 
 ---
 
-### Reviewer notes
+### Drafting notes (for the author)
 
-**Strengths**
+- **Abstract**: 4 sentence(s) over 40 words (first: "All three MLP configs promoted as 3-seed winners on sklearn …")
+- **Conclusion**: "significant" without a number: "That margin is not significant, so the control improves on t…"
 
-- The experimental setup and hyperparameters are reported clearly enough to be reproducible at a basic level.
-- All reported runs are below the stated baseline, providing internally consistent evidence for the narrow claim.
-- Results are tabulated per-experiment, allowing the reader to see variance across runs.
-
-**Weaknesses**
-
-- No description of the dataset, task, or even what val_top1_err refers to; the units and scale (3.8-4.4) are ambiguous and never defined (percentage? out of 100? something else?).
-- No baseline architecture or training details are given, so the comparison to '5.0' is unanchored—we cannot tell if the baseline used the same data, splits, or budget.
-- The experimental design conflates multiple changes (width, depth, weight decay, learning rate, epochs) without ablations, so no causal claim about any single factor (e.g., 'deeper' or 'L2') is supported. The title and conclusions overstate what was tested.
-- Only two hyperparameter configurations with three runs each; no statistical analysis, no standard deviations, no significance testing despite drawing conclusions about which regime is 'best'.
-- The cited DOIs are used as if they validate the specific empirical claims, but the work itself does not establish the general conclusions it attributes to them.
-- Title says 'Wider, Deeper' but the network is fixed at depth 2 and width 256 with no variation, so the comparative adjectives are unjustified—there is no width/depth sweep.
-- No test set, no comparison to alternative regularization or architectures, and no discussion of overfitting beyond asserting weight decay 'reduces' it.
-- Trivial significance: the contribution amounts to a small hyperparameter tuning exercise on an undescribed task with no generalizable insight.
-
-*Drafted by ScholarLoop's L5 Writer and assessed by its Reviewer agent; every reported number is checked against the experiment registry.*
+*Written section by section from author-approved key points; every number and citation id checked against the evidence bank; prose linted for machine-writing tells.*

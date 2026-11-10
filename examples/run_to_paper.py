@@ -19,7 +19,10 @@ Knobs (environment):
     SCHOLARLOOP_MODEL=claude-opus-5-5    SCHOLARLOOP_TOPIC="..."   SCHOLARLOOP_STEPS=3
     SCHOLARLOOP_POPULATION=1             >1: parallel population funnel, with SCHOLARLOOP_MAX_WORKERS
     SCHOLARLOOP_DRY_PATIENCE=2           loop-until-dry convergence (Governor)
-    SCHOLARLOOP_MAX_COST=1.0             USD ceiling (Governor; needs a priced model)
+    SCHOLARLOOP_MAX_COST=1.0             USD ceiling on this invocation (needs a priced model): the Governor
+                                         stops the campaign at it, and the unattended write-up pauses at it,
+                                         checked before each stage (a stage can cost more than a whole
+                                         campaign, so the cap can be overshot by one stage)
     SCHOLARLOOP_WRITING=session|auto|oneshot   session = interactive if a tty else auto;
                                          oneshot = the single-call Writer + Reviewer (paper.py)
     SCHOLARLOOP_PAPER_ONLY=1             skip the campaign; write up the saved ledger in SCHOLARLOOP_OUT
@@ -27,7 +30,6 @@ Knobs (environment):
                                          more rounds (ledger, registry, skills, calibration and the LLM
                                          spend carry over; the write-up is redone on the larger ledger).
                                          Without it a run starts fresh and clears SCHOLARLOOP_OUT's campaign.
-                                         SCHOLARLOOP_MAX_COST caps this invocation's spend.
     SCHOLARLOOP_PERSIST_SKILLS=1         ~/.scholarloop/skills/<domain>, so lessons compound across runs
 """
 
@@ -260,6 +262,11 @@ def main() -> int:
             steps = {"new": session.outline, "outlined": session.key_points,
                      "keypointed": session.draft, "drafted": session.review}
             while session.stage in steps:
+                spent = _cost(model, total_usage(out, llm.usage)) if max_cost else None
+                if spent is not None and spent >= float(max_cost):   # writing costs more than the campaign
+                    print(f"   writing paused at stage {session.stage!r}: ${spent:.2f} spent, cap "
+                          f"${float(max_cost):.2f}; resume with python -m scholarloop.writing --out {out} ...")
+                    break
                 steps[session.stage]()
                 print(f"   writing: stage {session.stage}")
         artifacts = "outline.md · key_points.md · paper.md · review.md · run.md · experiments.jsonl · registry/"
