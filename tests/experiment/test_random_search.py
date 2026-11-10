@@ -56,8 +56,11 @@ def test_random_arm_runs_through_the_same_funnel_with_no_llm_call(tmp_path):
     assert llm.calls == []
     s = campaign_summary(entries, STUB)
     assert s["ideas"] == 3 and s["best_full"] is not None
+    # each tier re-scores the models the tier below trained: smoke 1, verify +2, full +2
     assert s["train_runs"] == train_runs(entries) == sum(
-        {"smoke": 1, "verify": 3, "full": 5}[e.fidelity[0]] for e in entries)
+        {"smoke": 1, "verify": 2, "full": 2}[e.fidelity[0]] for e in entries)
+    assert {e.fidelity[0]: e.metric.get("reused_seeds", 0) for e in entries
+            if e.fidelity[0] != "smoke"} == {"verify": 1, "full": 3}
 
 
 def test_campaign_bounded_by_training_runs(tmp_path):

@@ -109,7 +109,8 @@ def _run(module_args: list[str], cwd: Path, timeout_sec: int, extra_env: dict, s
 def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: int,
                   config_override: dict | None, engine_cwd: Path,
                   frozen_guard: tuple = (None, None), pristine: Path = ROOT,
-                  holdout: bool = False, fold: int | None = None) -> dict:
+                  holdout: bool = False, fold: int | None = None,
+                  cached_artifact: Path | None = None) -> dict:
     """Two-phase run for one seed — the reward-hacking guard.
 
     Phase 1 runs the EDITABLE train module, which must write a model artifact to
@@ -125,21 +126,34 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
     With a CV `fold`, train.py gets $SCHOLARLOOP_FOLD (the engine's load_train() leaves that fold
     out) and the scorer is called as `score <artifact> val <fold>`. The fold the scorer evaluates
     comes from the runner's argv, never from the environment train.py ran in.
+
+    With `cached_artifact`, the trained model is kept at that path instead of a temp file, and if
+    it already exists training is skipped: the same model (same config, edits, train script, seed
+    and fold; the caller keys the path on all of them) is only re-scored, so `"reused": True`.
+    A higher tier then trains just its new seeds, and the full tier can still score the reused
+    seeds on the held-out split.
     """
     extra = {"SCHOLARLOOP_SEED": str(seed)}
     if fold is not None:
         extra["SCHOLARLOOP_FOLD"] = str(fold)
     if config_override:
         extra["SCHOLARLOOP_CONFIG"] = json.dumps(config_override)
-    fd, artifact = tempfile.mkstemp(prefix="scholarloop_art_")
-    os.close(fd)
+    reused = cached_artifact is not None and cached_artifact.exists() and cached_artifact.stat().st_size > 0
+    if cached_artifact is not None:
+        cached_artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact = str(cached_artifact)
+    else:
+        fd, artifact = tempfile.mkstemp(prefix="scholarloop_art_")
+        os.close(fd)
     extra["SCHOLARLOOP_ARTIFACT"] = artifact
+    ok = False
     try:
-        p1 = _run([train_module], engine_cwd, timeout_sec, extra, seed, "train")
-        if p1.returncode != 0:
-            raise RunError(f"seed {seed}: train exit {p1.returncode}\n{p1.stderr[-500:]}")
-        if not os.path.exists(artifact) or os.path.getsize(artifact) == 0:
-            raise RunError(f"seed {seed}: train produced no artifact")
+        if not reused:
+            p1 = _run([train_module], engine_cwd, timeout_sec, extra, seed, "train")
+            if p1.returncode != 0:
+                raise RunError(f"seed {seed}: train exit {p1.returncode}\n{p1.stderr[-500:]}")
+            if not os.path.exists(artifact) or os.path.getsize(artifact) == 0:
+                raise RunError(f"seed {seed}: train produced no artifact")
 
         # Frozen scorer — the trusted metric — runs from PRISTINE ROOT, never the (possibly
         # edited / runtime-tampered) engine copy. Plus: verify the scorer file wasn't tampered
@@ -159,12 +173,16 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
             _verify_frozen(*frozen_guard)          # tampering still kills the seed, as for val
             result.update(_score_holdout(score_module, artifact, pristine, timeout_sec, extra, seed,
                                          fold))
+        if reused:
+            result["reused"] = True
+        ok = True
         return result
     finally:
-        try:
-            os.remove(artifact)
-        except OSError:
-            pass
+        if cached_artifact is None or not ok:      # keep a cached model only if it scored cleanly
+            try:
+                os.remove(artifact)
+            except OSError:
+                pass
 
 
 def _score_holdout(score_module: str, artifact: str, pristine: Path, timeout_sec: int,
@@ -183,6 +201,18 @@ def _score_holdout(score_module: str, artifact: str, pristine: Path, timeout_sec
         return {"holdout_error": f"seed {seed}: frozen scorer served no holdout result (exit "
                                  f"{p3.returncode}; does the engine support `score <artifact> test`?)"}
     return {"holdout_value": float(json.loads(held[-1])["value"])}
+
+
+def _artifact_key(config_override: dict | None, edits: list[dict], train_file: Path) -> str:
+    """What makes two seed runs the same training: config, edits and the train script itself."""
+    h = hashlib.sha256(json.dumps({"config": config_override or {}, "edits": edits},
+                                  sort_keys=True, default=str).encode())
+    h.update(train_file.read_bytes() if train_file.exists() else b"")
+    return h.hexdigest()[:24]
+
+
+def _cache_path(cache: str | Path | None, key: str | None, seed: int) -> Path | None:
+    return None if cache is None or key is None else Path(cache) / f"{key}_seed{seed}.artifact"
 
 
 def _file_hash(path: Path) -> str:
@@ -250,6 +280,7 @@ def run_experiment(
     parent_score: float | None = None,
     ledger_path: str | Path = "ledger.jsonl",
     registry_dir: str | Path = "registry",
+    artifact_cache: str | Path | None = None,
 ) -> LedgerEntry:
     """Run one experiment at one fidelity tier and record it. Returns the ledger entry.
 
@@ -257,6 +288,10 @@ def run_experiment(
     mutating source; `edits` (list of {path, content}) is the source-diff channel, applied in an
     isolated engine copy. Edits to frozen surfaces are refused here (the `forbidden_edits` guard,
     defense-in-depth — the orchestrator also gates them before calling).
+
+    `artifact_cache` (a directory) keeps each seed's trained model, keyed on the config, the edits,
+    the train script's hash, the seed and the fold. A tier that needs a seed an earlier tier already
+    trained re-scores that model instead of training it again (`metric["reused_seeds"]`).
     """
     edits = edits or []
     # Strict allowlist: the source-diff channel may ONLY replace the train entrypoint. This
@@ -281,6 +316,8 @@ def run_experiment(
     engine_root = _engine_root(profile.train_entrypoint, edits, root) if edits else None
     engine_cwd = engine_root if engine_root is not None else root
 
+    cache_key = (_artifact_key(config_override, edits, engine_cwd / profile.train_entrypoint)
+                 if artifact_cache is not None else None)
     config: dict = {}
     agg: float | None = None
     registry = VerifiedRegistry(Path(registry_dir) / f"{exp_id}.json", exp_id=exp_id)
@@ -288,7 +325,8 @@ def run_experiment(
         results, failures = _run_seeds(
             seeds, lambda s: _run_one_seed(train_module, score_module, s, budget, config_override,
                                            engine_cwd, (frozen_file, frozen_hash), pristine=root,
-                                           holdout=holdout, fold=fold_for_seed(s, profile.cv_folds)))
+                                           holdout=holdout, fold=fold_for_seed(s, profile.cv_folds),
+                                           cached_artifact=_cache_path(artifact_cache, cache_key, s)))
         per_seed = [float(r["value"]) for r in results]
         config = results[0].get("config", {})   # hparams are fixed across seeds for one run
         agg = round(mean(per_seed), 4)
@@ -305,6 +343,9 @@ def run_experiment(
             metric_blob["folds"] = [r["fold"] for r in results]
         if holdout:
             metric_blob["holdout"] = _aggregate_holdout(results, registry, profile.metric.name, exp_id)
+        reused = sum(1 for r in results if r.get("reused"))
+        if reused:                              # models an earlier tier trained, re-scored here
+            metric_blob["reused_seeds"] = reused
         if failures:                            # partial run: some seeds crashed but enough survived
             metric_blob["seeds_failed"] = len(failures)
     except RunError as e:

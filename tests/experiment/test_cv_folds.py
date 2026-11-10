@@ -120,3 +120,24 @@ def test_tiers_are_compared_on_shared_folds(tmp_path):
     plain = Orchestrator(None, dataclasses.replace(cv, cv_folds=0), ledger_path=ledger.path,
                          registry_dir=tmp_path / "r")
     assert plain._gate_for(candidate, full) == 3.4         # no CV: the old, unmatched comparison
+
+
+def test_a_climb_trains_each_seed_once_and_still_scores_the_holdout(tmp_path):
+    """verify re-scores smoke's model and full re-scores verify's: same numbers, fewer trainings,
+    and the full tier's held-out score covers every seed, reused ones included."""
+    from scholarloop.experiment.runner import _artifact_key
+    cv = dataclasses.replace(STUB, cv_folds=5, holdout=True)
+    cache = tmp_path / "models"
+    common = dict(config_override=IDEAL, ledger_path=tmp_path / "l.jsonl", registry_dir=tmp_path / "reg",
+                  artifact_cache=cache)
+    h = Hypothesis(claim="probe", source="arXiv:1")
+    verify = run_experiment(cv, "verify", "exp_0001", h, **common)
+    full = run_experiment(cv, "full", "exp_0002", h, **common)
+    fresh = _run(cv, "full", tmp_path, "exp_0003")                       # no cache: trains all five
+    assert "reused_seeds" not in verify.metric and full.metric["reused_seeds"] == 3
+    assert full.metric["seeds"] == fresh.metric["seeds"]                 # re-scoring changes nothing
+    assert full.metric["seeds"][:3] == verify.metric["seeds"]
+    assert len(full.metric["holdout"]["seeds"]) == 5
+    assert len(list(cache.iterdir())) == 5                               # one model per seed
+    other = {**IDEAL, "lr": 0.2}                                         # a different config never hits
+    assert _artifact_key(other, [], ROOT / cv.train_entrypoint) != _artifact_key(IDEAL, [], ROOT / cv.train_entrypoint)

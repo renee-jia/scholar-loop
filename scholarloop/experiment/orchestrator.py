@@ -20,7 +20,10 @@ from a human-chosen idea (a ResearchSession handoff) instead of asking the Direc
 
 from __future__ import annotations
 
+import shutil
 import sys
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from statistics import mean
 
@@ -91,6 +94,7 @@ class Orchestrator:
         # away from the good region (§9.1.2). Its first `warm_start` ideas are drawn at random
         # from the same ranges the control arm uses, so it refines from spread-out evidence.
         self.warm_start, self.warm_seed = warm_start, warm_seed
+        self._round_cache: str | None = None   # trained models shared by one idea's tiers
         self._warm = None
         # one shared trace across EVERY agent — full auditability of the loop
         for agent in (lit_scout, reflector, advisor, director):
@@ -232,7 +236,8 @@ class Orchestrator:
             self.profile, fidelity, exp_id, proposal.hypothesis,
             config_override=proposal.config, edits=proposal.edits, reasoning=reasoning,
             predicted_delta=predicted_delta, parent=parent_id, parent_score=parent_score,
-            ledger_path=self.ledger_path, registry_dir=self.registry_dir)
+            ledger_path=self.ledger_path, registry_dir=self.registry_dir,
+            artifact_cache=self._round_cache)
 
     def _calibrate(self, entry) -> None:
         """Universal predict-then-verify (B): score every agent claim attached to this run once the
@@ -288,8 +293,32 @@ class Orchestrator:
             prev = entry
         return produced
 
-    def funnel_step(self, *, tiers=("smoke", "verify", "full"), lit_context: str = "",
-                    skills: str = "", lit_priors: list[str] | None = None) -> list[LedgerEntry]:
+    def funnel_step(self, **kw) -> list[LedgerEntry]:
+        """Funnel one idea up the fidelity ladder (see `_funnel_step`), sharing trained models
+        across its tiers: verify re-scores smoke's seed and full re-scores verify's, so an idea
+        that reaches full trains 5 models, not 1 + 3 + 5."""
+        with self._shared_models():
+            return self._funnel_step(**kw)
+
+    def population_step(self, k: int = 4, **kw) -> list[LedgerEntry]:
+        """The population funnel (see `_population_step`), sharing trained models across tiers."""
+        with self._shared_models():
+            return self._population_step(k, **kw)
+
+    @contextmanager
+    def _shared_models(self):
+        if self._round_cache is not None:                  # nested: reuse the outer cache
+            yield
+            return
+        self._round_cache = tempfile.mkdtemp(prefix="scholarloop_models_")
+        try:
+            yield
+        finally:
+            shutil.rmtree(self._round_cache, ignore_errors=True)
+            self._round_cache = None
+
+    def _funnel_step(self, *, tiers=("smoke", "verify", "full"), lit_context: str = "",
+                     skills: str = "", lit_priors: list[str] | None = None) -> list[LedgerEntry]:
         """Funnel one idea up the fidelity ladder: each tier must clear a promotion
         gate to advance, so cheap smoke runs kill most ideas before any expensive full run.
         The tiers chain via `parent`; calibration is measured against the frontier. Returns the
@@ -310,7 +339,7 @@ class Orchestrator:
         self._post_run(produced[-1], frontier, entries + produced)
         return produced
 
-    def population_step(self, k: int = 4, *, tiers=("smoke", "verify", "full"),
+    def _population_step(self, k: int = 4, *, tiers=("smoke", "verify", "full"),
                         max_workers: int = 1, lit_context: str = "", skills: str = "",
                         lit_priors: list[str] | None = None) -> list[LedgerEntry]:
         """Population funnel (parallel fan-out): propose up to `k` distinct ideas, smoke-screen them
