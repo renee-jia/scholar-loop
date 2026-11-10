@@ -246,14 +246,15 @@ A single run shows the system
 | run | what | result | cost |
 |---|---|---|---|
 | [**full flow**](examples/sample_runs/digits/) | lit review → 5 ideas → tournament pick → 18 torch runs → staged write-up → 3-reviewer panel | **3.27% val / 3.33% held-out test**, beats logreg@3.8; panel: reject 2.2/10 | ≈ $0.94 campaign + $5.53 write-up |
-| agent vs random | `examples/compare_search.py --arms agent,random --repeats 3 --rounds 6 --match runs` | random search wins: held-out **3.13 ± 0.08** (3/3 reached full) vs agent 4.22 (1/3) | ≈ $1.94 |
+| agent vs random | `examples/compare_search.py --arms agent,random --repeats 3 --rounds 6 --match runs` | random search wins: held-out **3.13 ± 0.08** (3/3 reached full) vs agent 4.22 (1/3); after giving the agent the knob ranges and an explore phase (e32f237), agent 3.72 ± 0.24 (3/3), still 0 of 9 pairs | ≈ $1.94 + $1.66 |
 
 Both are reported as they came out. The full flow beats its baseline, and every number traces to
 a frozen-scorer measurement. The panel still rejects the paper, for the right reason: the tournament
 picked an augmentation idea, and the campaign only tuned hyperparameters. The comparison is the
 uncomfortable one. Given the same number of training runs, plain random search over the profile's
-knobs beats the agent on digits. The agent stays close to the defaults and moves one knob a little
-at a time, and the single-seed smoke tier can't rank ideas that close. Making the agent win this
+knobs beats the agent on digits. The first agent stayed close to the defaults and moved one knob a little
+at a time. The second explores, but it lowers lr for wider and deeper nets, a stability prior
+that is wrong here: every random winner sits at lr 0.15-0.2 with one hidden layer. Making the agent win this
 comparison is the next milestone. Until it does, the claim on digits is *a faithful, auditable
 research loop*, not *a better optimizer than random search*. The capture's
 [README](examples/sample_runs/digits/README.md) lists what the run exposed.
