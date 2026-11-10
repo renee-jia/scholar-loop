@@ -8,7 +8,7 @@ PHASE-0 NOTE: this is a dependency-free STUB. `evaluate()` does not train a real
 network; it deterministically maps a hyperparameter dict to a plausible validation
 error so the full orchestration pipeline (budget -> run -> metric -> registry ->
 ledger) can be exercised on a laptop with no GPU. The real torch engines live in
-engines/torch_vision and engines/torch_regression; this stub stays for the
+engines/torch_vision; this stub stays for the
 dependency-free demos and tests. The interface (`evaluate(hparams, seed) -> float`) is the same.
 """
 

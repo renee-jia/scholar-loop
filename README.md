@@ -126,7 +126,7 @@ checked is checked in code, and rejected + retried:
 
 | | |
 |---|---|
-| 🧪 **Real, pluggable experiments** | Drives real PyTorch runs (CPU-fast, no download). Two domains ship today — **digit classification** (error %) and **diabetes regression** (RMSE) — and a new one is just a YAML profile + an engine pair, **zero orchestrator changes**. |
+| 🧪 **Real, pluggable experiments** | Drives real PyTorch runs (CPU-fast, no download). The shipped domain is **digit classification** (error %); a new one is just a YAML profile + an engine pair, **zero orchestrator changes**. |
 | 🤖 **16 agents, one harness** | QueryPlanner · LitReviewer · Ideator · Director · Lit Scout · Reasoner · Debate · Reflector · Advisor · Outliner · Panelists · KeyPointer · SectionDrafter · Reviewer panel (+ the one-shot Writer/Reviewer) — typed JSON-schema I/O, validate→retry, one shared audit trace. |
 | 🔭 **Literature-grounded** | The Lit Scout pulls real papers from arXiv + OpenAlex, ranks them by citation impact, and distills *cited* techniques — so ideas aren't blind hill-climbing. |
 | 💸 **Budget-aware funnel** | One idea climbs **smoke → verify → full**, each tier gated. Bad ideas die after one cheap run; marginal ones never burn a full run. |
@@ -191,7 +191,7 @@ scholarloop/
 └── writing/       back half, author-approved: session, paper (one-shot fallback), skills/*.md   (python -m scholarloop.writing)
 engines/           L1 experiment engines: a frozen prepare.py + an editable train.py per domain
 profiles/          domain profiles (YAML) that bind an engine, a metric, budgets and baselines
-examples/          runnable demos; sample_runs/{digits,diabetes} are verbatim live captures
+examples/          runnable demos; sample_runs/digits is a verbatim live capture
 tests/             mirrors the package: tests/{core,ideation,experiment,writing} + cross-cutting regressions
 ```
 
@@ -241,20 +241,19 @@ A single run shows the system
 - **kill a bad idea cheaply** at the smoke tier — no full run,
 - **catch its own wrong prediction** via predict-then-verify, then **pivot**.
 
-## 🧪 Two live runs on Claude Opus 4.8 — real torch, real API, end to end
+## 🧪 A live run on Claude Opus 4.8 — real torch, real API, end to end
 
 | domain | metric | baseline | best (confirmed) | the climb | cost | self-review |
 |---|---|---|---|---|---|---|
 | [**digits-mlp**](examples/sample_runs/digits/) | val error | 5.0% | **3.82%** | population → verify → full, governed | ≈ $0.45 | reject 2/10 |
-| [**diabetes-mlp**](examples/sample_runs/diabetes/) | val RMSE | 56.5 *(linear model)* | **55.27** | population → verify → full, governed | ≈ $0.77 | reject 3/10 |
 
-*These captures predate the current data layout: the engines now hold out a fixed 20% test split and cross-validate on 5 folds of the rest (`cv_folds: 5`), so re-running them gives different numbers (the bars are now the CV means of a linear model: logreg@3.8 on digits, linear@53.9 on diabetes).*
+*This capture predates the current data layout: the engine now holds out a fixed 20% test split and cross-validates on 5 folds of the rest (`cv_folds: 5`), so re-running it gives different numbers (the bar is now the CV mean of a real logistic regression, logreg@3.8).*
 
-Both are **governed population funnels** — each round fans out several ideas, smoke-screens them in
+It is a **governed population funnel**: each round fans out several ideas, smoke-screens them in
 parallel, and climbs only the survivors, while the loop halts itself (on convergence or a round cap)
-and scores each agent's predictions against ground truth. An idea beats the baseline in each, every
+and scores each agent's predictions against ground truth. An idea beats the baseline, every
 number traces to a frozen-metric measurement, and the system's *own* reviewer still rejects the
-papers as too marginal. (It's not wrong.) Each link opens the captured **paper**, **run log**, and
+paper as too marginal. (It's not wrong.) The link opens the captured **paper**, **run log**, and
 raw **ledger** — every number reproducible from the jsonl.
 
 ## 📊 Status
@@ -263,8 +262,7 @@ raw **ledger** — every number reproducible from the jsonl.
 anti-reward-hacking guards in place and adversarially reviewed, an ideation-first research
 session (literature review → novelty-checked ideas → your choice) in front of the loop, and a
 step-by-step writing session (outline → key points → prose, panel-argued and author-approved) after it. It has been **run live against the
-real Anthropic API** across **two domains** — captured verbatim for both
-[classification](examples/sample_runs/digits/) and [regression](examples/sample_runs/diabetes/), each a
+real Anthropic API**, captured verbatim in [examples/sample_runs/digits](examples/sample_runs/digits/): a
 real Opus campaign that beats its baseline and writes itself up. Next: a per-idea second retrieval
 pass and a critic panel over ideas, then container sandboxing for the residual boundaries and scale.
 

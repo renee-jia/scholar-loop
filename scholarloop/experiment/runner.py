@@ -47,8 +47,8 @@ SEEDS_PER_FIDELITY = {"smoke": [0], "verify": [0, 1, 2], "full": [0, 1, 2, 3, 4]
 def fold_for_seed(seed: int, cv_folds: int) -> int | None:
     """The CV fold seed `seed` trains and validates on, or None without cross-validation.
 
-    On a small dataset one fixed val split is too noisy to select on (diabetes has ~70 val
-    samples). Pairing seed s with fold s % K reuses the seeds the funnel already runs: the full
+    On a small dataset one fixed val split is too noisy to select on (a 442-sample dataset
+    leaves ~70 per val fold). Pairing seed s with fold s % K reuses the seeds the funnel already runs: the full
     tier's five seeds cover all five folds, so the reported mean is a K-fold estimate and its std
     carries split noise as well as seed noise, at no extra compute. Every run at one tier sees the
     same folds, so runs stay comparable. The held-out test split is outside every fold."""

@@ -13,8 +13,7 @@ written-up, peer-reviewed paper. Produced by [`../run_to_paper.py`](../run_to_pa
 > the write-up 2/10 as too marginal. (It's not wrong.)
 >
 > This run exercises the loop-engineering stack — **parallel fan-out · self-stopping governor ·
-> per-agent calibration** — on real torch. See [`../diabetes/`](../diabetes/)
-> for the second domain.
+> per-agent calibration** — on real torch.
 
 | file | what it is |
 |---|---|

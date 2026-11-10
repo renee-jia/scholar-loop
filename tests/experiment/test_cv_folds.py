@@ -59,12 +59,9 @@ def test_one_fold_is_rejected(tmp_path):
 
 
 @pytest.mark.skipif(_NO_TORCH, reason="torch/sklearn not installed")
-@pytest.mark.parametrize("engine", ["torch_vision", "torch_regression"])
-def test_torch_folds_partition_the_pool_and_never_touch_test(engine):
-    import importlib
-
+def test_torch_folds_partition_the_pool_and_never_touch_test():
     import numpy as np
-    prep = importlib.import_module(f"engines.{engine}.prepare")
+    from engines.torch_vision import prepare as prep
     key = lambda xs: {r.tobytes() for r in xs}          # noqa: E731
     vals, test = [], None
     for k in range(prep.N_FOLDS):
@@ -91,7 +88,7 @@ def test_torch_score_args():
 
 @pytest.mark.skipif(_NO_TORCH, reason="torch/sklearn not installed")
 def test_load_train_follows_the_fold_env(monkeypatch):
-    from engines.torch_regression import prepare
+    from engines.torch_vision import prepare
     monkeypatch.setenv("SCHOLARLOOP_FOLD", "3")
     x_tr, _ = prepare.load_train()
     assert {r.tobytes() for r in x_tr} == {r.tobytes() for r in prepare._split(3)[0]}

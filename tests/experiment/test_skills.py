@@ -34,7 +34,7 @@ def test_skills_persist_and_isolate_per_domain(tmp_path):
     later = SkillLibrary.for_domain("digits-mlp", root=tmp_path)
     assert len(later.all()) == 1 and "cosine helps" in later.render(now=0.0)
     # a different domain is isolated — no cross-domain leakage
-    assert SkillLibrary.for_domain("diabetes-mlp", root=tmp_path).all() == []
+    assert SkillLibrary.for_domain("other-domain", root=tmp_path).all() == []
 
 
 def test_active_ranks_by_decayed_weight(tmp_path):
