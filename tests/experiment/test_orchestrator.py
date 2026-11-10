@@ -16,7 +16,7 @@ PROFILE = load_profile(ROOT / "profiles" / "image-classification.yaml")  # minim
 
 def _proposal_json(config: dict, *, source="arXiv:1608.03983", predicted_delta=-0.2):
     return {
-        "reasoning_trace": "ledger shows headroom; trying a cosine+SGD recipe",
+        "rationale": "ledger shows headroom; trying a cosine+SGD recipe",
         "config": [{"name": k, "value": v} for k, v in config.items()],
         "hypothesis": {"claim": "tuned recipe helps", "source": source,
                        "predicted_effect": "lower val error"},

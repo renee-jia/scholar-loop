@@ -30,7 +30,7 @@ REASONER_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
-        "reasoning_trace": {"type": "string"},
+        "rationale": {"type": "string"},
         "config": {
             "type": "array",
             "items": {
@@ -53,11 +53,11 @@ REASONER_SCHEMA = {
                       "required": ["path", "content"]},
         },
     },
-    "required": ["reasoning_trace", "config", "hypothesis", "predicted_delta"],
+    "required": ["rationale", "config", "hypothesis", "predicted_delta"],
 }
 
 _SYSTEM = (
-    "You are the reasoning core of an automated ML research loop. Propose the single next "
+    "You plan experiments for an automated ML research loop. Propose the single next "
     "experiment as one config edit, grounded in the ledger evidence and the cited literature. "
     "Never propose a config in a ruled-out region or one already tried. Every hypothesis MUST "
     "cite a real source. Predict the metric change before the experiment runs."
@@ -132,7 +132,7 @@ class Reasoner(Agent):
             "above, using their exact names (e.g. one or more of them). Use the `edits` channel "
             "ONLY to rewrite the train script itself for a genuine architecture change — otherwise "
             "leave it out. Also give a hypothesis {claim, source, predicted_effect}, a one-paragraph "
-            "reasoning_trace, and predicted_delta (signed expected change in the metric; negative = "
+            "rationale (why this experiment, citing the ledger evidence), and predicted_delta (signed expected change in the metric; negative = "
             "improvement for a minimize metric). Stay out of the ruled-out regions and don't repeat a tried config.",
         ]
         return "\n".join(parts)
@@ -162,6 +162,6 @@ class Reasoner(Agent):
         return Proposal(
             config=config, hypothesis=hypothesis,
             predicted_delta=float(raw.get("predicted_delta", 0.0)),
-            reasoning_trace=raw.get("reasoning_trace", ""),
+            reasoning_trace=raw.get("rationale", ""),
             constraints=constraints, edits=edits, violations=violations,
         )

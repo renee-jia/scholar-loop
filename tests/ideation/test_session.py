@@ -146,7 +146,7 @@ def test_handoff_adopted_by_orchestrator_drives_a_real_funnel(tmp_path):
     s.review(); s.ideate(1)
     h = s.select(1)
     # the Reasoner turns the plan into a config; no Lit Scout / Director needed -- the human set the direction
-    proposal = {"reasoning_trace": "follow the plan", "config": [{"name": "lr", "value": 0.1}, {"name": "depth", "value": 20},
+    proposal = {"rationale": "follow the plan", "config": [{"name": "lr", "value": 0.1}, {"name": "depth", "value": 20},
                 {"name": "weight_decay", "value": 5e-4}, {"name": "warmup", "value": 5}],
                 "hypothesis": {"claim": "Skip MLP lowers error", "source": "arXiv:1512.03385v1", "predicted_effect": "-0.3"},
                 "predicted_delta": -0.3}

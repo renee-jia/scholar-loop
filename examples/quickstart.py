@@ -25,7 +25,7 @@ def main() -> None:
     tmp = Path(tempfile.mkdtemp(prefix="quickstart_"))
 
     # A scripted "reasoner": propose one near-optimal config (in a real run an LLM does this).
-    idea = {"reasoning_trace": "raise lr, deepen, add warmup per the cosine-SGD recipe",
+    idea = {"rationale": "raise lr, deepen, add warmup per the cosine-SGD recipe",
             "config": [{"name": "lr", "value": 0.1}, {"name": "depth", "value": 20},
                        {"name": "weight_decay", "value": 5e-4}, {"name": "warmup", "value": 5}],
             "hypothesis": {"claim": "cosine + warmup beats the default",

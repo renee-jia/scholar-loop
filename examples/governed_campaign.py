@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _proposal(config: dict, *, delta=-0.2):
-    return {"reasoning_trace": "ledger headroom; trying a recipe",
+    return {"rationale": "ledger headroom; trying a recipe",
             "config": [{"name": k, "value": v} for k, v in config.items()],
             "hypothesis": {"claim": "tuned recipe", "source": "arXiv:1608.03983",
                            "predicted_effect": "lower val error"},

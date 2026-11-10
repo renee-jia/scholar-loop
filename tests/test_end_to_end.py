@@ -64,9 +64,9 @@ class SchemaRoutedLLM(MockLLM):
             return {"winner": "A" if "Title: Warmup" in first else "B", "rationale": "bigger effect"}
         if "recommendations" in p:
             return {"recommendations": []}
-        if "reasoning_trace" in p:
+        if "predicted_delta" in p:
             cfg = next(self.configs)
-            return {"reasoning_trace": "t", "config": [{"name": k, "value": v} for k, v in cfg.items()],
+            return {"rationale": "t", "config": [{"name": k, "value": v} for k, v in cfg.items()],
                     "hypothesis": {"claim": "warmup helps", "source": SRC, "predicted_effect": "-1"},
                     "predicted_delta": -1.0}
         if "verdict" in p and "concern" in p:

@@ -19,7 +19,7 @@ PROFILE = load_profile(ROOT / "profiles" / "image-classification.yaml")   # knob
 
 
 def _proposal(config):
-    return {"reasoning_trace": "t", "config": [{"name": k, "value": v} for k, v in config.items()],
+    return {"rationale": "t", "config": [{"name": k, "value": v} for k, v in config.items()],
             "hypothesis": {"claim": "c", "source": "arXiv:1", "predicted_effect": "e"}, "predicted_delta": -0.1}
 
 

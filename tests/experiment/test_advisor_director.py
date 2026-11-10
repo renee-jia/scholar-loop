@@ -14,7 +14,7 @@ PROFILE = load_profile(ROOT / "profiles" / "image-classification.yaml")
 
 
 def _proposal_json(config, *, source="arXiv:1608.03983", predicted_delta=-0.2):
-    return {"reasoning_trace": "t", "config": [{"name": k, "value": v} for k, v in config.items()],
+    return {"rationale": "t", "config": [{"name": k, "value": v} for k, v in config.items()],
             "hypothesis": {"claim": "c", "source": source, "predicted_effect": "lower err"},
             "predicted_delta": predicted_delta}
 

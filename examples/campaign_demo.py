@@ -38,7 +38,7 @@ ATOM = """<feed xmlns="http://www.w3.org/2005/Atom">
 
 
 def _proposal(cfg, source, predicted_delta):
-    return {"reasoning_trace": f"try {cfg} (grounded in {source})",
+    return {"rationale": f"try {cfg} (grounded in {source})",
             "config": [{"name": k, "value": v} for k, v in cfg.items()],
             "hypothesis": {"claim": "tuned MLP recipe", "source": source,
                            "predicted_effect": "lower val error"},

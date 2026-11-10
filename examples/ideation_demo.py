@@ -86,7 +86,7 @@ IDEAS = {"ideas": [
      "feasibility": 3, "impact": 3},
 ]}
 
-PROPOSAL = {"reasoning_trace": "follow the chosen plan: warmup=5 with lr=0.1 and cosine-style decay",
+PROPOSAL = {"rationale": "follow the chosen plan: warmup=5 with lr=0.1 and cosine-style decay",
             "config": [{"name": "lr", "value": 0.1}, {"name": "depth", "value": 20},
                        {"name": "weight_decay", "value": 5e-4}, {"name": "warmup", "value": 5}],
             "hypothesis": {"claim": "warmup lets a higher peak lr converge better", "source": W,

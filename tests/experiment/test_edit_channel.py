@@ -26,7 +26,7 @@ if __name__ == "__main__":
 
 
 def _proposal(edits=None, config=None, source="arXiv:1"):
-    return {"reasoning_trace": "t",
+    return {"rationale": "t",
             "config": [{"name": k, "value": v} for k, v in (config or {}).items()],
             "hypothesis": {"claim": "c", "source": source, "predicted_effect": "e"},
             "predicted_delta": -0.5,

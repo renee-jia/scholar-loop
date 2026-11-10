@@ -71,7 +71,7 @@ def test_no_agent_prompt_ever_contains_the_holdout_number(tmp_path):
     # round 1 climbs to full (the stub's ideal config) and records a holdout score; round 2's
     # Reasoner reads that ledger. Neither the value nor the word may reach any prompt.
     def proposal(cfg):
-        return {"reasoning_trace": "t", "config": [{"name": k, "value": v} for k, v in cfg.items()],
+        return {"rationale": "t", "config": [{"name": k, "value": v} for k, v in cfg.items()],
                 "hypothesis": {"claim": "c", "source": "arXiv:1", "predicted_effect": "lower"},
                 "predicted_delta": -0.1}
     llm = MockLLM(jsons=[proposal(IDEAL), proposal({**IDEAL, "depth": 22})])
