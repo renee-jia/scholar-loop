@@ -49,6 +49,14 @@ def _fold_scores(entry: LedgerEntry) -> dict[int, float] | None:
     return dict(zip(folds, seeds))
 
 
+def _fold_matched(entry: LedgerEntry, frontier: LedgerEntry | None) -> float | None:
+    """The frontier's mean over the folds `entry` saw, or None when that can't be formed."""
+    mine, theirs = _fold_scores(entry), _fold_scores(frontier) if frontier is not None else None
+    if not mine or not theirs or not set(mine) <= set(theirs):
+        return None
+    return round(mean(theirs[f] for f in mine), 4)
+
+
 class Orchestrator:
     def __init__(self, llm: LLMClient, profile: Profile, *,
                  lit_scout: LitScout | None = None, topic: str | None = None,
@@ -63,7 +71,9 @@ class Orchestrator:
                  trace: AgentTrace | None = None,
                  ledger_path: str | Path = "ledger.jsonl",
                  registry_dir: str | Path = "registry",
-                 calibration_path: str | Path | None = None):
+                 calibration_path: str | Path | None = None,
+                 warm_start: int = 0,    # the first N ideas are random draws from the knob ranges
+                 warm_seed: int = 0):
         self.profile = profile
         self.llm = llm                           # shared client; usage accumulates here for the Governor
         self.trace = trace or AgentTrace()       # one shared trace: every agent call is logged
@@ -77,6 +87,11 @@ class Orchestrator:
         self.max_refines = max_refines
         self.promote_z = promote_z
         self.smoke_slack = smoke_slack
+        # Warm start: measured against random search on digits, the agent's priors steered it
+        # away from the good region (§9.1.2). Its first `warm_start` ideas are drawn at random
+        # from the same ranges the control arm uses, so it refines from spread-out evidence.
+        self.warm_start, self.warm_seed = warm_start, warm_seed
+        self._warm = None
         # one shared trace across EVERY agent — full auditability of the loop
         for agent in (lit_scout, reflector, advisor, director):
             if agent is not None:
@@ -171,10 +186,8 @@ class Orchestrator:
         if frontier is None:
             return self._gate_score(None)
         score = frontier.primary_score()
-        mine, theirs = _fold_scores(entry), _fold_scores(frontier)
-        if self.profile.cv_folds >= 2 and mine and theirs and set(mine) <= set(theirs):
-            score = round(mean(theirs[f] for f in mine), 4)
-        return self._gate_score(score)
+        matched = _fold_matched(entry, frontier) if self.profile.cv_folds >= 2 else None
+        return self._gate_score(score if matched is None else matched)
 
     def _propose(self, entries: list[LedgerEntry], *, lit_context: str = "", skills: str = "",
                  lit_priors: list[str] | None = None):
@@ -188,15 +201,23 @@ class Orchestrator:
             # current direction — topic + guidance + literature priors — not just the heaviest.
             query = " ".join(filter(None, [self.topic, self.guidance, *(lit_priors or [])]))
             skills = self.skill_library.render(time.time(), query=query)   # injected intuition, relevance-ranked
-        proposal = self.reasoner.propose(entries, lit_context=lit_context, skills=skills,
-                                         guidance=self.guidance, lit_priors=lit_priors,
-                                         calibration=self.calibration.render())   # close the verifier loop
+        warm = sum(1 for e in entries if e.fidelity == ["smoke"]) < self.warm_start
+        if warm:
+            from scholarloop.experiment.random_search import RandomProposer
+            if self._warm is None:
+                self._warm = RandomProposer(self.profile, seed=self.warm_seed)
+            proposal = self._warm.propose(entries)
+        else:
+            proposal = self.reasoner.propose(entries, lit_context=lit_context, skills=skills,
+                                             guidance=self.guidance, lit_priors=lit_priors,
+                                             calibration=self.calibration.render())   # close the verifier loop
         if not proposal.admissible:
             print(f"orchestrator: skipping inadmissible proposal {proposal.config} "
                   f"({proposal.violations})", file=sys.stderr)
             return None
         reasoning = proposal.reasoning_blob()
-        if self.debate_panel is not None:                  # diverse-perspective gate before GPU
+        if self.debate_panel is not None and not warm:     # diverse-perspective gate before GPU
+                                                           # (a random draw makes no claim to vet)
             verdict = self.debate_panel.review(proposal)
             reasoning["debate"] = verdict.to_dict()
             if verdict.decision == "reject":
@@ -229,8 +250,11 @@ class Orchestrator:
                 self.skill_library.add(skill)
         if self.advisor is not None:                       # post-run loop control
             recent = [e.verdict for e in entries[-5:]]
-            self.last_advice = self.advisor.advise(entry, frontier, recent_verdicts=recent,
-                                                   direction=self.profile.metric.direction)
+            from scholarloop.experiment.reasoner import _ranges_line
+            self.last_advice = self.advisor.advise(
+                entry, frontier, recent_verdicts=recent, direction=self.profile.metric.direction,
+                parent_score=(_fold_matched(entry, frontier) if self.profile.cv_folds >= 2 else None),
+                ranges=_ranges_line(self.profile.knobs) if self.profile.knobs else "")
             self._apply_advice(entries)
 
     def step(self, *, fidelity: str = "smoke", lit_context: str = "", skills: str = "",

@@ -48,15 +48,23 @@ class Advisor(Agent):
         ]
         if parent is not None:
             better = (lambda a, b: a < b) if ctx.get("direction", "minimize") == "minimize" else (lambda a, b: a > b)
-            improved = (e.primary_score() is not None and parent.primary_score() is not None
-                        and better(e.primary_score(), parent.primary_score()))
-            lines.append(f"Frontier {parent.id} scored {parent.primary_score()} "
+            ref = ctx.get("parent_score")              # the frontier on this run's folds, when CV is on
+            ref = parent.primary_score() if ref is None else ref
+            improved = (e.primary_score() is not None and ref is not None
+                        and better(e.primary_score(), ref))
+            lines.append(f"Frontier {parent.id} scored {ref} on the same folds "
+                         f"({'improved' if improved else 'did not improve'})." if ctx.get("parent_score") is not None
+                         else f"Frontier {parent.id} scored {ref} "
                          f"({'improved' if improved else 'did not improve'}).")
         lines.append(f"Recent verdicts: {ctx.get('recent_verdicts', [])}.")
+        if ctx.get("ranges"):
+            lines.append(f"{ctx['ranges']} Any value you suggest must stay inside these ranges.")
         lines.append("\nDecide proceed / refine / pivot with a one-line rationale.")
         return "\n".join(lines)
 
     def advise(self, entry: LedgerEntry, parent: LedgerEntry | None,
-               recent_verdicts: list[str] | None = None, *, direction: str = "minimize") -> dict:
-        return self.run({"entry": entry, "parent": parent,
-                         "recent_verdicts": recent_verdicts or [], "direction": direction})
+               recent_verdicts: list[str] | None = None, *, direction: str = "minimize",
+               parent_score: float | None = None, ranges: str = "") -> dict:
+        return self.run({"entry": entry, "parent": parent, "parent_score": parent_score,
+                         "recent_verdicts": recent_verdicts or [], "direction": direction,
+                         "ranges": ranges})

@@ -43,11 +43,16 @@ def random_orchestrator(profile, out: Path, seed: int) -> Orchestrator:
     return orch
 
 
-def agent_orchestrator(profile, out: Path, llm, topic: str) -> Orchestrator:
+def agent_orchestrator(profile, out: Path, llm, topic: str, *, warm_start: int = 0,
+                       seed: int = 0) -> Orchestrator:
     from examples.run_to_paper import make_orchestrator
     from scholarloop.experiment.skills import SkillLibrary
     # a fresh skill library per campaign: repeats must be independent to be averaged
-    return make_orchestrator(llm, profile, out, topic=topic, skills=SkillLibrary(out / "skills"))
+    orch = make_orchestrator(llm, profile, out, topic=topic, skills=SkillLibrary(out / "skills"))
+    # warm-start draws use the random arm's seed for the same repeat, so both arms open on the
+    # same configs and the difference is what the agent does with them (a paired comparison)
+    orch.warm_start, orch.warm_seed = warm_start, seed
+    return orch
 
 
 def run_arm(arm: str, profile, out: Path, args, *, llm=None, max_train_runs=None) -> list[dict]:
@@ -67,7 +72,8 @@ def run_arm(arm: str, profile, out: Path, args, *, llm=None, max_train_runs=None
         shutil.rmtree(rep, ignore_errors=True)              # an interrupted campaign restarts clean
         rep.mkdir(parents=True)
         before = dict(llm.usage) if llm is not None else {}
-        orch = (agent_orchestrator(profile, rep, llm, args.topic) if arm == "agent"
+        orch = (agent_orchestrator(profile, rep, llm, args.topic, warm_start=args.warm_start, seed=k)
+                if arm == "agent"
                 else random_orchestrator(profile, rep, seed=k))
         bound = {"max_train_runs": max_train_runs} if max_train_runs else {"rounds": args.rounds}
         entries = run_campaign(orch, **bound)
@@ -91,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--rounds", type=int, default=8, help="funnel rounds (ideas) per campaign")
     ap.add_argument("--match", choices=["rounds", "runs"], default="rounds")
     ap.add_argument("--max-cost", type=float, default=None, help="USD cap on the agent arm")
+    ap.add_argument("--warm-start", type=int, default=0,
+                    help="the agent's first N ideas are the random arm's draws (paired by repeat)")
     ap.add_argument("--topic", default=os.environ.get("SCHOLARLOOP_TOPIC",
                                                        "small MLP image classification regularization"))
     ap.add_argument("--out", default=str(ROOT / "runs" / "compare"))

@@ -114,3 +114,28 @@ def test_reasoner_searches_the_random_arms_space_and_explores_first():
     assert f"lr {lo:.3g}..{hi:.3g} (log scale)" in prompt(0)     # the same range random search samples
     assert "EXPLORE (idea 2 of the first 2)" in prompt(1)
     assert "REFINE" in prompt(2) and "EXPLORE" not in prompt(2)
+
+
+def test_warm_start_opens_on_random_draws_without_llm_or_debate(tmp_path):
+    llm = MockLLM()                                        # any LLM call would raise
+    orch = Orchestrator(llm, STUB, ledger_path=tmp_path / "l.jsonl", registry_dir=tmp_path / "r",
+                        warm_start=2, warm_seed=3)
+    run_campaign(orch, rounds=2)
+    assert llm.calls == []
+    smokes = [e for e in Ledger(tmp_path / "l.jsonl").read_all() if e.fidelity == ["smoke"]]
+    assert all(e.hypothesis.source == SOURCE for e in smokes)
+    assert smokes[0].config == RandomProposer(STUB, seed=3).propose([]).config   # paired with the random arm
+
+
+def test_advisor_sees_the_ranges_and_the_fold_matched_frontier():
+    from scholarloop.core.ledger import Hypothesis, LedgerEntry
+    from scholarloop.experiment.advisor import Advisor
+    from scholarloop.experiment.reasoner import _ranges_line
+    e = LedgerEntry(id="exp_0002", domain="d", hypothesis=Hypothesis(claim="c", source="s"),
+                    metric_name="m", fidelity=["verify"], metric={"verify": 3.1})
+    f = LedgerEntry(id="exp_0001", domain="d", hypothesis=Hypothesis(claim="c", source="s"),
+                    metric_name="m", fidelity=["full"], metric={"full": 3.4})
+    prompt = Advisor(None).build_prompt({"entry": e, "parent": f, "parent_score": 3.0,
+                                         "ranges": _ranges_line(DIGITS.knobs)})
+    assert "scored 3.0 on the same folds (did not improve)" in prompt   # 3.1 vs 3.0, not vs 3.4
+    assert "lr 0.0125..0.2" in prompt and "must stay inside these ranges" in prompt
