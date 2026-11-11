@@ -210,6 +210,7 @@ def test_writing_feedback_after_draft_keeps_outline(monkeypatch, tmp_path):
     class Fake:
         stage = "drafted"
         out = tmp_path
+        def _require_release(self): pass
         def outline(self, feedback=""): calls.append(("outline", feedback))
         def key_points(self, feedback=""): calls.append(("key_points", feedback))
 

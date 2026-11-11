@@ -47,7 +47,7 @@ def test_pipeline_drafts_grounds_and_reviews(tmp_path):
     reviewer_llm = MockLLM(jsons=[{
         "summary": "solid", "strengths": ["grounded numbers"], "weaknesses": ["small dataset"],
         "score": 6, "recommendation": "weak_accept"}])
-    out = PaperPipeline(writer_llm, reviewer_llm, registry_dir=tmp_path).run(ENTRIES)
+    out = PaperPipeline(writer_llm, reviewer_llm, registry_dir=tmp_path, demo=True).run(ENTRIES)
     assert out["grounded"] is True and out["ungrounded"] == []
     assert out["review"]["recommendation"] == "weak_accept"
 
@@ -57,5 +57,5 @@ def test_reviewer_retries_on_out_of_range_score(tmp_path):
     reviewer_llm = MockLLM(jsons=[
         {"summary": "x", "strengths": [], "weaknesses": [], "score": 99, "recommendation": "reject"},
         {"summary": "x", "strengths": [], "weaknesses": [], "score": 4, "recommendation": "reject"}])
-    out = PaperPipeline(writer_llm, reviewer_llm, registry_dir=tmp_path).run(ENTRIES)
+    out = PaperPipeline(writer_llm, reviewer_llm, registry_dir=tmp_path, demo=True).run(ENTRIES)
     assert out["review"]["score"] == 4

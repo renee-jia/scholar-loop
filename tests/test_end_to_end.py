@@ -21,6 +21,25 @@ from scholarloop.ideation.session import ResearchSession
 from scholarloop.ideation.tournament import Tournament
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("artifact_dir", ["experiment_agenda", "registry/protocols"])
+def test_fresh_campaign_cannot_erase_frozen_protocol_evidence(tmp_path, monkeypatch, artifact_dir):
+    import examples.run_to_paper as rtp
+    (tmp_path / artifact_dir).mkdir(parents=True)
+    ledger = tmp_path / "experiments.jsonl"
+    ledger.write_text("preserved evidence\n")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-only")
+    monkeypatch.setenv("SCHOLARLOOP_OUT", str(tmp_path))
+    for name in ("SCHOLARLOOP_RESUME", "SCHOLARLOOP_PAPER_ONLY", "SCHOLARLOOP_HANDOFF"):
+        monkeypatch.delenv(name, raising=False)
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Must stop before constructing a paid model client")
+    monkeypatch.setattr(rtp, "AnthropicLLM", unexpected)
+    assert rtp.main() == 2
+    assert ledger.read_text() == "preserved evidence\n"
+
+
 ATOM = """<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom">
 <entry><id>http://arxiv.org/abs/1608.03983v1</id><title>SGDR</title>
 <summary>Cosine annealing with warm restarts.</summary><published>2016-08-13T00:00:00Z</published></entry>
@@ -46,6 +65,23 @@ class SchemaRoutedLLM(MockLLM):
         self.usage["input_tokens"] += len(prompt) // 4
         self.usage["output_tokens"] += 50
         p = set(schema.get("properties", {}))
+        if "method_summary" in p:
+            d = json.loads(prompt)["dossier"]
+            ref, m = next(iter(d["measurements"].items()))
+            self.argument = {"question": "What is the measured error?", "method_summary": "We evaluate the recipe.",
+                             "claims": [{"id": "claim_result", "text": f"The error is {m['value']} percent.",
+                                         "kind": "observation", "evidence": [m["run_id"]],
+                                         "measurements": [ref], "depends_on": [], "scope": "The measured setting."}],
+                             "limitations": ["The mechanism remains untested."]}
+            return self.argument
+        if "dispositions" in p:
+            claims = json.loads(prompt)["dossier"]["argument"]["claims"]
+            return {"verdict": "pass", "summary": "Scoped observation.", "issues": [], "dispositions": [],
+                    "claim_checks": [{"claim_id": c["id"], "question": "Is this observation supported within scope?",
+                                      "answer": "It reports the owning run's measurement without causal claims.",
+                                      "status": "supported_in_scope", "evidence": c["evidence"]} for c in claims]}
+        if p == {"verdict", "issues"}:
+            return {"verdict": "pass", "issues": []}
         if "queries" in p:
             return {"queries": ["cosine schedules"], "rationale": "r"}
         if "themes" in p:
@@ -81,7 +117,8 @@ class SchemaRoutedLLM(MockLLM):
         if "findings" in p:
             return {"findings": []}
         if "abstract" in p:
-            return {"title": "T", "abstract": "A.", "sections": [{"heading": "Results", "body": "It held."}]}
+            return {"title": "T", "abstract": self.argument["claims"][0]["text"].rstrip(".") + " [claim_result].",
+                    "sections": [{"heading": "Limitations", "body": "The mechanism remains untested [limit_1]."}]}
         if "recommendation" in p and "score" in p:
             return {"summary": "s", "strengths": ["a"], "weaknesses": ["b"], "score": 5,
                     "recommendation": "weak_accept"}
@@ -125,7 +162,22 @@ def campaign(tmp_path, monkeypatch):
             monkeypatch.setenv("SCHOLARLOOP_RESUME", "1")
         else:
             monkeypatch.delenv("SCHOLARLOOP_RESUME", raising=False)
-        assert rtp.main() == 0
+        result = rtp.main()
+        if result == 2:
+            from scholarloop.review.session import ScientificReviewSession
+            review = ScientificReviewSession(llm, stub, out, ledger_path=out / "experiments.jsonl",
+                                              registry_dir=out / "registry", research_dir=tmp_path / "research")
+            state = review.load()
+            assert state["status"] == "READY_FOR_AUTHOR"
+            assert not (out / "paper.md").exists()  # headless never approves on the author's behalf
+            review.approve(author="Scripted test author", review_hash=state["review_hash"])
+            monkeypatch.setenv("SCHOLARLOOP_PAPER_ONLY", "1")
+            try:
+                assert rtp.main() == 0
+            finally:
+                monkeypatch.delenv("SCHOLARLOOP_PAPER_ONLY")
+        else:
+            assert result == 0  # existing cost-cap path can pause before review
         return list(Ledger(out / "experiments.jsonl").read_all())
 
     return run, out, session

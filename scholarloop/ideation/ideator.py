@@ -69,6 +69,11 @@ class Idea:
     novelty: dict = field(default_factory=dict)   # filled by novelty_check(): {closest, overlap, flag, ...}
     tournament: dict = field(default_factory=dict)   # filled by Tournament: {elo, rank, wins, ...}
     selected: bool = False
+    idea_id: str = ""
+    strategy: str = "general"
+    design: dict = field(default_factory=dict)
+    novelty_review: dict = field(default_factory=dict)
+    status: str = "candidate"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -79,7 +84,7 @@ class Idea:
 
     @property
     def flagged(self) -> bool:
-        return bool(self.novelty.get("flag"))
+        return bool(self.novelty.get("flag")) or self.novelty_review.get("status") == "overlap"
 
     def rank_key(self) -> float:
         """Deterministic ranking used by non-interactive selection, with a flagged novelty check
@@ -258,6 +263,23 @@ def render_markdown(topic: str, ideas: list[Idea], *, feedback: list[str] | None
                 f"- **Experiment:** {idea.experiment_plan}",
                 f"- **Builds on:** {', '.join(f'`{s}`' for s in idea.sources)}",
                 f"- **Why novel (agent):** {idea.novelty_rationale}"]
+        if idea.idea_id:
+            out += [f"- **Stable ID:** `{idea.idea_id}`; strategy: {idea.strategy}; status: {idea.status}"]
+        if idea.design:
+            out += [f"- **Mechanism:** {idea.design['mechanism']}",
+                    f"- **Intervention:** {idea.design['intervention']}",
+                    f"- **Assumptions:** {'; '.join(idea.design['assumptions'])}",
+                    f"- **Minimum test:** {idea.design['minimal_test']}",
+                    f"- **Kill criterion:** {idea.design['kill_criterion']}",
+                    f"- **Confound controls:** {'; '.join(idea.design['confound_controls'])}",
+                    f"- **Resource risk:** {idea.design['resource_risk']}"]
+        if idea.novelty_review:
+            nr = idea.novelty_review
+            out += [f"- **Mechanism novelty review ({nr['evidence_scope']}):** {nr['status']}; {nr['summary']}"]
+            out += [f"  - `{c['paper_id']}`: shared mechanism: {c['shared_mechanism']}; "
+                    f"difference: {c['difference']}; abstract excerpt: “{c['supporting_excerpt']}”"
+                    for c in nr["comparisons"]]
+            out += [f"- **Unresolved search:** {'; '.join(nr['remaining_search'])}"]
         if idea.tournament.get("near_duplicates"):
             out.append("- **Near-duplicate of:** " + ", ".join(
                 f"#{j}" for j in idea.tournament["near_duplicates"]) + " (title + claim overlap)")

@@ -55,6 +55,8 @@ from scholarloop.core.profile import load_profile
 from scholarloop.experiment.reflector import Reflector
 from scholarloop.experiment.skills import SkillLibrary
 from scholarloop.writing.session import WritingSession
+from scholarloop.review.session import ScientificReviewSession
+from scholarloop.review.contracts import ReviewBlocked
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "runs" / "live"
@@ -67,7 +69,8 @@ def _cost(model, usage):
 # Campaign state in SCHOLARLOOP_OUT: a fresh run clears it, SCHOLARLOOP_RESUME=1 continues from it.
 CAMPAIGN_STATE = ("experiments.jsonl", "registry", "skills", "calibration.json", "usage.json")
 # The write-up is derived from the ledger, so any run that adds experiments redoes it.
-WRITING_ARTIFACTS = ("writing.json", "outline.md", "key_points.md", "paper.md", "review.md")
+WRITING_ARTIFACTS = ("writing.json", "outline.md", "key_points.md", "paper.md", "review.md",
+                     "approved_evidence.json", "evidence_map.md")
 
 
 def reset_campaign(out: Path, *, resume: bool) -> None:
@@ -203,6 +206,11 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     ledger_path = out / "experiments.jsonl"
     registry_dir = out / "registry"                 # kept: the write-up grounds its numbers here
+    if not paper_only and not resume and ((out / "experiment_agenda").exists() or
+                                         (registry_dir / "protocols").exists()):
+        print("This directory contains frozen research protocols. Use SCHOLARLOOP_RESUME=1 "
+              "to retain their evidence, or choose a new SCHOLARLOOP_OUT.", file=sys.stderr)
+        return 2
     llm = AnthropicLLM(model=model)
     profile = load_profile(ROOT / "profiles" / f"{profile_name}.yaml")
     if not paper_only:
@@ -245,11 +253,50 @@ def main() -> int:
                                             calibration=orch.calibration.render(), handoff=handoff,
                                             stop_reason=orch.stop_reason))
 
-    if writing_mode == "oneshot":                   # the single-call fallback
-        paper = PaperPipeline(llm, llm, registry_dir=registry_dir).run(
+    spent = _cost(model, total_usage(out, llm.usage)) if max_cost else None
+    if spent is not None and spent >= float(max_cost):
+        (out / "usage.json").write_text(json.dumps(total_usage(out, llm.usage), indent=1))
+        print("Scientific review and writing paused at the cost cap; no author approval was inferred.")
+        return 0
+
+    scientific = ScientificReviewSession(llm, profile, out, ledger_path=ledger_path,
+                                          registry_dir=registry_dir, research_dir=research_dir,
+                                          trace=orch.trace if orch else None)
+    try:
+        scientific.require_release()
+    except ReviewBlocked:
+        # A current report awaiting the author is not re-generated on every resume.
+        state = scientific.load() if (out / scientific.STATE_FILE).exists() else None
+        try:
+            if not state or state["status"] != "READY_FOR_AUTHOR":
+                raise ReviewBlocked("review needed")
+            scientific._check_review(state)
+        except ReviewBlocked:
+            state = scientific.review()
+        print(f"Scientific review: {state['status']} → {out / 'scientific_review.md'}")
+        if state["status"] == "READY_FOR_AUTHOR" and sys.stdin.isatty():
+            print(f"Review hash: {state['review_hash']}")
+            author = input("Read the review. Enter your name to approve this version for writing, or Enter to pause: ").strip()
+            if author:
+                scientific.approve(author=author, review_hash=state["review_hash"])
+        try:
+            scientific.require_release()
+        except ReviewBlocked as exc:
+            (out / "usage.json").write_text(json.dumps(total_usage(out, llm.usage), indent=1))
+            print(f"Writing paused: {exc}")
+            print("Resolve requests, review and approve with python -m scholarloop.review; "
+                  "resume using SCHOLARLOOP_PAPER_ONLY=1.")
+            return 2
+
+    if writing_mode == "oneshot":                   # same scientific gate as staged writing
+        paper = PaperPipeline(llm, llm, registry_dir=registry_dir, scientific_review=scientific).run(
             entries, extra_grounded=[profile.best_baseline()])
+        from scholarloop.review.dossier import write_evidence_map
+        dossier, release = scientific.require_release()
+        write_evidence_map(out, dossier, release)
         (out / "paper.md").write_text(
-            fmt_paper(paper["draft"], paper["grounded"], paper["ungrounded"], paper["review"]))
+            fmt_paper(paper["draft"], paper["grounded"], paper["ungrounded"], paper["review"])
+            + "\n\n[Approved statement bindings](evidence_map.md)\n")
         artifacts = "paper.md · run.md · experiments.jsonl · registry/"
     else:                                           # step by step, with the author in the loop
         session = WritingSession(llm, profile, out, ledger_path=ledger_path, registry_dir=registry_dir,

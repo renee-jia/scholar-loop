@@ -161,7 +161,7 @@ def load_profile(path: str | Path) -> Profile:
         debate_roles=tuple(raw.get("debate_roles", ["Innovator", "Pragmatist", "Contrarian"])),
         holdout=bool(raw.get("holdout", False)),
         cv_folds=int(raw.get("cv_folds", 0)),
-        source_path=path,
+        source_path=path.resolve(),
     )
 
 

@@ -205,7 +205,7 @@ def test_writing_session_end_to_end_with_scripted_author(tmp_path):
     (rd / "lit_review.json").write_text(json.dumps(REVIEW.to_dict()))
     (rd / "handoff.json").write_text(json.dumps({"idea": {"title": "Warmup first", "description": "d", "hypothesis": {"claim": "c"}}}))
     llm = _session_llm(outline_rounds=(REVISE, ACCEPT), feedback_outline=True)
-    s = WritingSession(llm, PROFILE, tmp_path / "w", ledger_path=led, registry_dir=reg, research_dir=rd)
+    s = WritingSession(llm, PROFILE, tmp_path / "w", ledger_path=led, registry_dir=reg, research_dir=rd, demo=True)
     answers = iter(["r make the title say revised", "a", "a"])
     log = []
     r = s.interactive(input_fn=lambda _: next(answers), print_fn=log.append)
@@ -230,9 +230,9 @@ def test_writing_session_end_to_end_with_scripted_author(tmp_path):
 
 def test_writing_session_persists_and_resumes(tmp_path):
     led, reg = _entries(tmp_path)
-    s1 = WritingSession(MockLLM(jsons=[OUTLINE, ACCEPT, ACCEPT, ACCEPT]), PROFILE, tmp_path / "w", ledger_path=led, registry_dir=reg)
+    s1 = WritingSession(MockLLM(jsons=[OUTLINE, ACCEPT, ACCEPT, ACCEPT]), PROFILE, tmp_path / "w", ledger_path=led, registry_dir=reg, demo=True)
     s1.outline()
-    s2 = WritingSession(MockLLM(jsons=[_kp(), ACCEPT, ACCEPT, ACCEPT]), PROFILE, tmp_path / "w", ledger_path=led, registry_dir=reg)
+    s2 = WritingSession(MockLLM(jsons=[_kp(), ACCEPT, ACCEPT, ACCEPT]), PROFILE, tmp_path / "w", ledger_path=led, registry_dir=reg, demo=True)
     assert s2.stage == "outlined" and s2.state.outline == OUTLINE
     s2.key_points()
     assert s2.stage == "keypointed" and (s2.out / "key_points.md").read_text().startswith("# Key points")
@@ -241,7 +241,7 @@ def test_writing_session_persists_and_resumes(tmp_path):
 def test_draft_keeps_best_attempt_and_flags_when_lint_never_passes(tmp_path):
     led, reg = _entries(tmp_path)
     s = WritingSession(MockLLM(jsons=[OUTLINE, ACCEPT, ACCEPT, ACCEPT, _kp(), ACCEPT, ACCEPT, ACCEPT]),
-                       PROFILE, tmp_path / "w", ledger_path=led, registry_dir=reg, panel_roles=("Skeptic", "Editor", "Methodologist"))
+                       PROFILE, tmp_path / "w", ledger_path=led, registry_dir=reg, panel_roles=("Skeptic", "Editor", "Methodologist"), demo=True)
     s.outline(); s.key_points()
     stubborn = {"body": "We leverage warmup. " + _body("Abstract")}
     s.drafter.llm = MockLLM(jsons=[stubborn] * 3 + [{"body": _body("Setup")}, {"body": _body("Results")}, {"body": _body("Limitations")}])

@@ -1,0 +1,11 @@
+{
+  "question": "Which proposed regularization mechanism survives matched controls on a small MLP?",
+  "success_criteria": [
+    "A falsifiable prediction and a control that separates it from a simpler explanation",
+    "A reproducible observation, including a negative result, with explicit scope limits"
+  ],
+  "constraints": ["CPU only", "Match training budget and seed/fold assignments between conditions"],
+  "non_goals": ["Leaderboard claims", "Claims of broad generalization from a single dataset"],
+  "resources": "One local CPU machine; use the profile's subprocess timeouts and an explicit protocol budget",
+  "literature_scope": "Regularization and optimization mechanisms for small neural networks"
+}

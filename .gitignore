@@ -22,5 +22,6 @@ runs/
 .DS_Store
 
 # Local planning / design notes (keep out of the public repo)
+docs/
 impl_plan.md
 DESIGN.md

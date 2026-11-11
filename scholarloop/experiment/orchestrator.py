@@ -165,10 +165,11 @@ class Orchestrator:
         full 0-4), and folds differ in difficulty, so means from different tiers are not
         comparable: a 3-fold verify mean that skips a hard fold "beats" a 5-fold full mean. The
         frontier is then the best kept entry among those that cover the most folds."""
+        entries = [e for e in entries if e.purpose == "exploration"]
         if self.profile.cv_folds >= 2:
             kept = [e for e in Ledger(self.ledger_path).read_all()
                     if e.domain == self.profile.name and e.verdict == "kept"
-                    and e.primary_score() is not None]
+                    and e.purpose == "exploration" and e.primary_score() is not None]
             if kept:
                 most = max(len(_fold_scores(e) or {}) for e in kept)
                 top = [e for e in kept if len(_fold_scores(e) or {}) == most]
@@ -254,7 +255,7 @@ class Orchestrator:
             if skill is not None:
                 self.skill_library.add(skill)
         if self.advisor is not None:                       # post-run loop control
-            recent = [e.verdict for e in entries[-5:]]
+            recent = [e.verdict for e in entries if e.purpose == "exploration"][-5:]
             from scholarloop.experiment.reasoner import _ranges_line
             self.last_advice = self.advisor.advise(
                 entry, frontier, recent_verdicts=recent, direction=self.profile.metric.direction,

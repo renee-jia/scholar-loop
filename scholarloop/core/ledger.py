@@ -32,6 +32,7 @@ _WRITE_LOCK = threading.Lock()
 
 VERDICTS = ("kept", "discarded", "killed", "pending")
 FIDELITIES = ("smoke", "verify", "full")
+PURPOSES = ("exploration", "baseline", "ablation", "falsification", "confirmation", "feasibility")
 
 
 @dataclass
@@ -58,6 +59,8 @@ class LedgerEntry:
     verdict: str = "pending"
     registry_id: str | None = None
     ts: float = field(default_factory=time.time)
+    purpose: str = "exploration"
+    protocol: dict[str, Any] = field(default_factory=dict)
 
     def validate(self) -> None:
         if not self.id:
@@ -66,6 +69,8 @@ class LedgerEntry:
             raise ValueError(f"{self.id}: hypothesis.source is required (no ungrounded ideas in the ledger)")
         if self.verdict not in VERDICTS:
             raise ValueError(f"{self.id}: verdict {self.verdict!r} not in {VERDICTS}")
+        if self.purpose not in PURPOSES:
+            raise ValueError(f"{self.id}: unknown experiment purpose {self.purpose!r}")
         for fid in self.fidelity:
             if fid not in FIDELITIES:
                 raise ValueError(f"{self.id}: fidelity {fid!r} not in {FIDELITIES}")
@@ -135,7 +140,7 @@ class Ledger:
     def best(self, domain: str, direction: str = "minimize") -> LedgerEntry | None:
         """Best kept entry for a domain under the given metric direction."""
         kept = [e for e in self.read_all() if e.domain == domain and e.verdict == "kept"
-                and e.primary_score() is not None]
+                and e.purpose == "exploration" and e.primary_score() is not None]
         if not kept:
             return None
         key = (lambda e: e.primary_score())

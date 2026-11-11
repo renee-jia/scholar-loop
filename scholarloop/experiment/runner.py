@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -30,7 +31,7 @@ import tempfile
 from pathlib import Path
 from statistics import mean, stdev
 
-from scholarloop.core.ledger import Hypothesis, Ledger, LedgerEntry
+from scholarloop.core.ledger import Hypothesis, Ledger, LedgerEntry, PURPOSES
 from scholarloop.core.profile import Profile, load_profile
 from scholarloop.experiment.reasoning import prediction_from_scores
 from scholarloop.core.registry import VerifiedRegistry
@@ -200,7 +201,16 @@ def _score_holdout(score_module: str, artifact: str, pristine: Path, timeout_sec
     if not held:
         return {"holdout_error": f"seed {seed}: frozen scorer served no holdout result (exit "
                                  f"{p3.returncode}; does the engine support `score <artifact> test`?)"}
-    return {"holdout_value": float(json.loads(held[-1])["value"])}
+    try:
+        raw = json.loads(held[-1])["value"]
+        if isinstance(raw, bool):
+            raise ValueError("boolean score")
+        value = float(raw)
+        if not math.isfinite(value):
+            raise ValueError("non-finite score")
+        return {"holdout_value": value}
+    except (ValueError, KeyError, TypeError) as exc:
+        return {"holdout_error": f"seed {seed}: invalid holdout result: {exc}"}
 
 
 def _artifact_key(config_override: dict | None, edits: list[dict], train_file: Path) -> str:
@@ -281,6 +291,10 @@ def run_experiment(
     ledger_path: str | Path = "ledger.jsonl",
     registry_dir: str | Path = "registry",
     artifact_cache: str | Path | None = None,
+    seeds_override: list[int] | None = None,
+    holdout_override: bool | None = None,
+    purpose: str = "exploration",
+    protocol: dict | None = None,
 ) -> LedgerEntry:
     """Run one experiment at one fidelity tier and record it. Returns the ledger entry.
 
@@ -308,11 +322,21 @@ def run_experiment(
     frozen_file = root / profile.fixed_module
     frozen_hash = _file_hash(frozen_file) if frozen_file.exists() else None
     budget = profile.budget.seconds_for(fidelity)
-    seeds = SEEDS_PER_FIDELITY[fidelity]
+    seeds = list(SEEDS_PER_FIDELITY[fidelity] if seeds_override is None else seeds_override)
+    if not seeds or len(set(seeds)) != len(seeds) or any(type(s) is not int or s < 0 for s in seeds):
+        raise ValueError("Seeds must be distinct nonnegative integers")
+    if purpose not in PURPOSES:
+        raise ValueError("Unknown experiment purpose")
+    if purpose == "feasibility" and (fidelity not in ("smoke", "verify") or len(seeds) > 3):
+        raise ValueError("Feasibility pilots require smoke/verify fidelity and at most three seeds")
     # Held-out test: scored on the terminal tier only, so the loop (which selects on val at every
     # tier) never sees it and it carries no selection bias. Stored under metric["holdout"], which
     # primary_score() and every agent prompt ignore; only the writing stage reads it.
-    holdout = profile.holdout and fidelity == "full"
+    holdout = profile.holdout and fidelity == "full" and purpose in ("exploration", "confirmation")
+    if holdout_override is not None:
+        if holdout_override and not holdout:
+            raise ValueError("Held-out scoring requires a full-tier holdout-enabled profile")
+        holdout = holdout_override
     engine_root = _engine_root(profile.train_entrypoint, edits, root) if edits else None
     engine_cwd = engine_root if engine_root is not None else root
 
@@ -321,12 +345,21 @@ def run_experiment(
     config: dict = {}
     agg: float | None = None
     registry = VerifiedRegistry(Path(registry_dir) / f"{exp_id}.json", exp_id=exp_id)
+    def run_seed(seed):
+        result = _run_one_seed(train_module, score_module, seed, budget, config_override,
+                               engine_cwd, (frozen_file, frozen_hash), pristine=root,
+                               holdout=holdout, fold=fold_for_seed(seed, profile.cv_folds),
+                               cached_artifact=_cache_path(artifact_cache, cache_key, seed))
+        try:
+            value = float(result["value"])
+            if not math.isfinite(value) or isinstance(result["value"], bool):
+                raise ValueError("non-finite or boolean score")
+        except (ValueError, KeyError, TypeError) as exc:
+            raise RunError(f"seed {seed}: invalid scorer result: {exc}") from exc
+        return {**result, "seed": seed, "value": value}
+
     try:
-        results, failures = _run_seeds(
-            seeds, lambda s: _run_one_seed(train_module, score_module, s, budget, config_override,
-                                           engine_cwd, (frozen_file, frozen_hash), pristine=root,
-                                           holdout=holdout, fold=fold_for_seed(s, profile.cv_folds),
-                                           cached_artifact=_cache_path(artifact_cache, cache_key, s)))
+        results, failures = _run_seeds(seeds, run_seed)
         per_seed = [float(r["value"]) for r in results]
         config = results[0].get("config", {})   # hparams are fixed across seeds for one run
         agg = round(mean(per_seed), 4)
@@ -338,7 +371,8 @@ def run_experiment(
             verdict = "kept"  # nothing to beat yet
         else:
             verdict = "kept" if profile.metric.is_better(agg, baseline) else "discarded"
-        metric_blob = {"name": profile.metric.name, fidelity: agg, "seeds": per_seed}
+        metric_blob = {"name": profile.metric.name, fidelity: agg, "seeds": per_seed,
+                       "seed_ids": [r["seed"] for r in results], "requested_seeds": seeds}
         if profile.cv_folds >= 2:               # which fold each surviving seed was validated on
             metric_blob["folds"] = [r["fold"] for r in results]
         if holdout:
@@ -348,10 +382,12 @@ def run_experiment(
             metric_blob["reused_seeds"] = reused
         if failures:                            # partial run: some seeds crashed but enough survived
             metric_blob["seeds_failed"] = len(failures)
+            metric_blob["failures"] = failures
     except RunError as e:
         registry.status = "killed"   # mark, so an empty registry isn't mistaken for a clean run
         registry.save()
-        verdict, metric_blob = "killed", {"name": profile.metric.name, "error": str(e)}
+        verdict, metric_blob = "killed", {"name": profile.metric.name, "error": str(e),
+                                         "requested_seeds": seeds}
     finally:
         if engine_root is not None:
             shutil.rmtree(engine_root, ignore_errors=True)
@@ -362,7 +398,7 @@ def run_experiment(
         metric_name=profile.metric.name, parent=parent, diff=diff, config=config,
         fidelity=[fidelity], metric=metric_blob,
         reasoning=reasoning or {}, prediction=prediction, verdict=verdict,
-        registry_id=exp_id,
+        registry_id=exp_id, purpose=purpose, protocol=protocol or {},
     )
     Ledger(ledger_path).append(entry)
     return entry

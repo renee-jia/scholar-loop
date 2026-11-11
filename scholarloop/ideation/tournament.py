@@ -99,7 +99,8 @@ def _describe(idea) -> str:
                       f"Hypothesis: {h.get('claim', '')} (expected: {h.get('predicted_effect', '')})",
                       f"Experiment: {idea.experiment_plan}",
                       f"Why novel (author's claim): {idea.novelty_rationale}",
-                      f"Builds on: {', '.join(idea.sources)}"])
+                      f"Builds on: {', '.join(idea.sources)}",
+                      *([f"Structured design: {idea.design}"] if idea.design else [])])
 
 
 def expected(ra: float, rb: float) -> float:

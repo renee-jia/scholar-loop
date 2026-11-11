@@ -55,6 +55,10 @@ from scholarloop.ideation.litreview import LitReview
 from scholarloop.core.profile import Profile
 from scholarloop.core.registry import VerifiedRegistry
 from scholarloop.core.text import containment
+from scholarloop.review.contracts import ReviewBlocked, atomic_json
+from scholarloop.review.session import ScientificReviewSession
+from scholarloop.review.dossier import approved_statements, audit_prose
+from scholarloop.review.critics import FidelityReviewer
 
 SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
@@ -157,6 +161,7 @@ class EvidenceBank:
     registry: VerifiedRegistry
     idea: dict | None = None                  # the chosen idea (session handoff), if any
     notes: dict[str, dict] = field(default_factory=dict)   # paper id -> {contribution, limitation}
+    approved_dossier: dict | None = None
 
     @classmethod
     def build(cls, entries: list[LedgerEntry], registry_dir: str | Path, profile: Profile, *,
@@ -200,6 +205,8 @@ class EvidenceBank:
                    idea=idea, notes=notes)
 
     def ids(self) -> set[str]:
+        if self.approved_dossier is not None:
+            return set(approved_statements(self.approved_dossier))
         return {r["id"] for r in self.findings} | set(self.papers) | {"baseline"}
 
     def unknown(self, ids) -> list[str]:
@@ -211,6 +218,9 @@ class EvidenceBank:
 
     def describe(self, eid: str) -> str:
         """One line a drafter can quote for an evidence id."""
+        if self.approved_dossier is not None:
+            s = approved_statements(self.approved_dossier).get(eid)
+            return f"[{eid}] {s['text']} (sources: {s['evidence']})" if s else eid
         if eid == "baseline":
             return f"baseline: {self.baseline} {self.metric_name} (must beat; {self.direction})"
         if eid in self.papers:
@@ -228,6 +238,10 @@ class EvidenceBank:
                 f"{held}, verdict {r['verdict']}, config {r['config']}, idea: {r['claim']} (source {r['source']})")
 
     def to_prompt_block(self) -> str:
+        if self.approved_dossier is not None:
+            return ("Approved statements only. Use their exact text for nugget, contributions and key "
+                    "points; cite their statement ids. Do not introduce additional scientific claims.\n"
+                    + "\n".join(self.describe(cid) for cid in sorted(self.ids())))
         lines = [f"Metric: {self.metric_name} ({self.direction}). Baseline to beat: {self.baseline} "
                  f"(cite as `baseline`).", "", "Runs (cite by id; every number you use must come from here):"]
         for r in self.findings:
@@ -348,6 +362,13 @@ class Outliner(Agent):
 
     def postcheck(self, output: dict, ctx: dict) -> list[str]:
         errs = []
+        if self.bank.approved_dossier is not None:
+            a = self.bank.approved_dossier["argument"]
+            texts = {c["text"] for c in a["claims"]}
+            if output["question"] != a["question"] or output["nugget"] not in texts:
+                errs.append("Use the approved question and an exact approved claim as the nugget")
+            if any(c not in texts for c in output["contributions"]):
+                errs.append("Contributions must be exact approved claims")
         if not output.get("question", "").strip() or not output.get("nugget", "").strip():
             errs.append("question and nugget must be non-empty one-sentence statements")
         secs = output.get("sections", [])
@@ -432,6 +453,12 @@ class KeyPointer(Agent):
             if not s.get("points"):
                 errs.append(f"section {s['heading']!r} needs at least one key point")
             for i, p in enumerate(s.get("points", []), 1):
+                if self.bank.approved_dossier is not None:
+                    statements = approved_statements(self.bank.approved_dossier)
+                    if len(p["evidence"]) != 1 or p["evidence"][0] not in statements or \
+                            p["claim"] != statements[p["evidence"][0]]["text"]:
+                        errs.append("Every key point must copy one approved statement and cite exactly its id")
+                    continue
                 unknown = self.bank.unknown(p.get("evidence", []))
                 if unknown:
                     errs.append(f"{s['heading']} point {i}: unknown evidence ids {unknown}")
@@ -440,6 +467,11 @@ class KeyPointer(Agent):
                 bad = self.bank.ungrounded(p.get("claim", ""))
                 if bad:
                     errs.append(f"{s['heading']} point {i}: numbers not in the evidence: {bad}")
+        if self.bank.approved_dossier is not None:
+            required = {f"limit_{i}" for i in range(1, len(self.bank.approved_dossier["argument"]["limitations"]) + 1)}
+            cited = {e for s in output.get("sections", []) for p in s["points"] for e in p["evidence"]}
+            if required - cited:
+                errs.append(f"Include every mandatory limitation: {sorted(required - cited)}")
         return errs
 
     def build_prompt(self, ctx: dict) -> str:
@@ -474,6 +506,8 @@ class SectionDrafter(Agent):
         if not body.strip():
             errs.append("empty section")
         errs += lint_prose(body)
+        if self.bank.approved_dossier is not None:
+            return errs + audit_prose(body, self.bank.approved_dossier)
         bad = self.bank.ungrounded(body)
         if bad:
             errs.append(f"numbers not in the evidence: {bad}")
@@ -497,6 +531,11 @@ class SectionDrafter(Agent):
         parts += ["", "Write the section body as prose. Abstract: five sentences, no citations needed. "
                   "Other sections: one paragraph per one or two points, each paragraph opening with "
                   "its message."]
+        if self.bank.approved_dossier is not None:
+            parts += ["For this reviewed run, EVERY sentence including the abstract must cite an "
+                      "approved statement id, e.g. [claim_001], [scope_method], [limit_1], BEFORE "
+                      "the sentence's final punctuation. Preserve each statement's scope, units "
+                      "and attribution. Use only the numbers written in that cited statement."]
         return "\n".join(parts)
 
 
@@ -603,7 +642,7 @@ def render_keypoints_md(o: dict, kp: dict, transcript: list[dict], feedback: lis
     return "\n".join(out)
 
 
-def render_paper_md(o: dict, sections: list[dict], review: dict | None = None) -> str:
+def render_paper_md(o: dict, sections: list[dict], review: dict | None = None, *, demo=False) -> str:
     out = [f"# {o['title']}", ""]
     if review:
         scores = " · ".join(f"{r['persona']} {r['score']}" for r in review["reviews"])
@@ -615,8 +654,9 @@ def render_paper_md(o: dict, sections: list[dict], review: dict | None = None) -
     if warns:
         out += ["---", "", "### Drafting notes (for the author)", ""]
         out += [f"- **{h}**: {w}" for h, w in warns] + [""]
-    out += ["*Written section by section from author-approved key points; every number and citation "
-            "id checked against the evidence bank; prose linted for machine-writing tells.*", ""]
+    out += ["*DEMO — unreviewed synthetic workflow; no scientific or author approval.*" if demo else
+            "*Written under a version-bound scientific review and author release. Automated checks "
+            "and semantic review can still miss errors; inspect the [evidence bindings](evidence_map.md).*", ""]
     return "\n".join(out)
 
 
@@ -649,6 +689,8 @@ class WritingState:
     sections: list = field(default_factory=list)      # [{heading, body, warnings}]
     review: dict | None = None
     feedback: list = field(default_factory=list)      # [{stage, text, ts}]
+    release_id: str | None = None
+    demo: bool = False
 
     def to_dict(self) -> dict:
         return {k: getattr(self, k) for k in self.__dataclass_fields__}
@@ -667,12 +709,17 @@ class WritingSession:
                  registry_dir: str | Path, research_dir: str | Path | None = None,
                  trace: AgentTrace | None = None, max_rounds: int = 2,
                  panel_roles=("Skeptic", "Editor", "Methodologist"),
-                 reviewer_personas=tuple(REVIEWER_PERSONAS)):
+                 reviewer_personas=tuple(REVIEWER_PERSONAS),
+                 review_dir: str | Path | None = None, demo: bool = False):
         self.llm, self.profile = llm, profile
         self.out = Path(out_dir)
         self.out.mkdir(parents=True, exist_ok=True)
         self.trace = trace or AgentTrace()
         self.max_rounds = max_rounds
+        self.demo = demo
+        self.scientific = ScientificReviewSession(llm, profile, review_dir or out_dir,
+                                                  ledger_path=ledger_path, registry_dir=registry_dir,
+                                                  research_dir=research_dir, trace=self.trace)
         entries = list(Ledger(ledger_path).read_all())
         review, idea = None, None
         if research_dir is not None:
@@ -690,10 +737,29 @@ class WritingSession:
         self.reviewers = [PaperReviewer(llm, p, trace=self.trace) for p in reviewer_personas]
         sp = self.out / self.STATE_FILE
         self.state = WritingState.from_dict(json.loads(sp.read_text())) if sp.exists() else WritingState()
+        if sp.exists() and self.state.demo != demo:
+            raise ReviewBlocked("Cannot switch an existing writing session between demo and reviewed modes")
+        self.state.demo = demo
         self._save()
 
     def _save(self) -> None:
-        (self.out / self.STATE_FILE).write_text(json.dumps(self.state.to_dict(), indent=2, ensure_ascii=False))
+        atomic_json(self.out / self.STATE_FILE, self.state.to_dict())
+
+    def _require_release(self):
+        if self.demo:
+            return
+        dossier, release = self.scientific.require_release()
+        if self.state.release_id != release["id"] and (self.state.stage != "new" or self.state.release_id is not None):
+            raise ReviewBlocked("Writing artifacts belong to an older/unreviewed release; use a new writing directory")
+        self.state.release_id = release["id"]
+        self.bank.approved_dossier = dossier
+        from scholarloop.review.dossier import write_evidence_map
+        write_evidence_map(self.out, dossier, release)
+
+    @staticmethod
+    def _require_panel(transcript):
+        if not transcript or not transcript[-1]["accepted"]:
+            raise ReviewBlocked("Panel concerns remain unresolved; revise this stage before advancing")
 
     @property
     def stage(self) -> str:
@@ -708,6 +774,7 @@ class WritingSession:
 
     # ---- [1] outline ----------------------------------------------------------------------------
     def outline(self, feedback: str = "") -> dict:
+        self._require_release()
         self._note("outline", feedback)
         fb = "\n".join(f"- {t}" for t in self._feedback("outline"))
         lit = self.review_doc.to_prompt_block() if self.review_doc else ""
@@ -720,6 +787,7 @@ class WritingSession:
 
         outline, transcript = discuss(propose, self.panel, "outline", render_outline_block,
                                       self.bank.to_prompt_block(), max_rounds=self.max_rounds)
+        self._require_release()
         self.state.outline, self.state.outline_discussion = outline, transcript
         self.state.key_points, self.state.keypoints_discussion = None, []
         self.state.sections, self.state.review = [], None
@@ -730,8 +798,10 @@ class WritingSession:
 
     # ---- [2] key points -------------------------------------------------------------------------
     def key_points(self, feedback: str = "") -> dict:
+        self._require_release()
         if self.state.outline is None:
             raise RuntimeError("run outline() first")
+        self._require_panel(self.state.outline_discussion)
         self._note("key_points", feedback)
         fb = "\n".join(f"- {t}" for t in self._feedback("key_points"))
         prev = self.state.key_points
@@ -744,6 +814,7 @@ class WritingSession:
 
         kp, transcript = discuss(propose, self.panel, "key points", render_keypoints_block,
                                  self.bank.to_prompt_block(), max_rounds=self.max_rounds)
+        self._require_release()
         self.state.key_points, self.state.keypoints_discussion = kp, transcript
         self.state.sections, self.state.review = [], None
         self.state.stage = "keypointed"
@@ -754,8 +825,10 @@ class WritingSession:
 
     # ---- [3] draft -------------------------------------------------------------------------------
     def draft(self) -> list[dict]:
+        self._require_release()
         if self.state.key_points is None:
             raise RuntimeError("run key_points() first")
+        self._require_panel(self.state.keypoints_discussion)
         o, kp = self.state.outline, self.state.key_points
         purposes = {s["heading"].lower(): s["purpose"] for s in o["sections"]}
         sections: list[dict] = []
@@ -768,6 +841,8 @@ class WritingSession:
             try:
                 body = self.drafter.run(ctx)["body"]
             except AgentError as e:                      # keep the best attempt, surface the problems
+                if not self.demo:
+                    raise  # failed grounding is never published as a reviewed paper
                 body = e.last_output.get("body", "")
                 warnings += [f"unresolved after retries: {err}" for err in e.errors]
             warnings += prose_warnings(body)
@@ -775,18 +850,25 @@ class WritingSession:
                 if containment(p["claim"], body) < 0.4:
                     warnings.append(f"key point {i} may not be covered: \"{p['claim'][:70]}…\"")
             sections.append({"heading": s["heading"], "body": body, "warnings": warnings})
+        if not self.demo:
+            verdict = FidelityReviewer(self.llm, trace=self.trace).run({
+                "dossier": self.bank.approved_dossier, "title": o["title"], "sections": sections})
+            if verdict["verdict"] != "pass":
+                raise ReviewBlocked("Draft changed approved claims: " + "; ".join(verdict["issues"]))
+            self._require_release()  # evidence may have changed during drafting
         self.state.sections, self.state.review = sections, None
         self.state.stage = "drafted"
         self._save()
-        (self.out / "paper.md").write_text(render_paper_md(o, sections))
+        (self.out / "paper.md").write_text(render_paper_md(o, sections, demo=self.demo))
         return sections
 
     # ---- [4] review ------------------------------------------------------------------------------
     def review(self) -> dict:
+        self._require_release()
         if not self.state.sections:
             raise RuntimeError("run draft() first")
         o = self.state.outline
-        paper = render_paper_md(o, self.state.sections)
+        paper = render_paper_md(o, self.state.sections, demo=self.demo)
         ev = self.bank.to_prompt_block()
         reviews = [{"persona": r.persona, **r.run({"paper": paper, "evidence": ev})} for r in self.reviewers]
         seen, weaknesses, strengths, questions = set(), [], [], []
@@ -802,10 +884,11 @@ class WritingSession:
         result = {"title": o["title"], "mean_score": round(mean(r["score"] for r in reviews), 1),
                   "recommendation": recs[len(recs) // 2],          # the median reviewer's call
                   "reviews": reviews, "weaknesses": weaknesses, "strengths": strengths, "questions": questions}
+        self._require_release()
         self.state.review = result
         self.state.stage = "reviewed"
         self._save()
-        (self.out / "paper.md").write_text(render_paper_md(o, self.state.sections, result))
+        (self.out / "paper.md").write_text(render_paper_md(o, self.state.sections, result, demo=self.demo))
         (self.out / "review.md").write_text(render_review_md(result))
         return result
 
@@ -865,12 +948,13 @@ def _parse(line: str) -> tuple[str, str]:
     return head[:1].lower(), rest.strip()
 
 
-def _main(argv: list[str]) -> int:
+def _run_cli(argv: list[str]) -> int:
     import argparse
     import os
 
     from scholarloop.core.llm import AnthropicLLM, model_from_env
     from scholarloop.core.profile import load_profile
+    from scholarloop.core.call_budget import CallLimitedLLM
 
     ap = argparse.ArgumentParser(prog="scholarloop.writing",
                                  description="outline → key points → draft → review, with author sign-off")
@@ -879,18 +963,29 @@ def _main(argv: list[str]) -> int:
     ap.add_argument("--registry", required=True, help="registry dir with the per-run measurements")
     ap.add_argument("--out", required=True, help="writing directory (resumes if writing.json exists)")
     ap.add_argument("--research", help="a ResearchSession dir (lit_review.json + handoff.json) to cite from")
+    ap.add_argument("--review-dir", help="scientific review directory (default: --out)")
     ap.add_argument("--model", default=model_from_env())
+    ap.add_argument("--max-llm-calls", type=int, default=100,
+                    help="cumulative writing request cap, including retries")
     ap.add_argument("--max-rounds", type=int, default=2)
     ap.add_argument("--feedback", help="non-interactive: feedback for the CURRENT stage, then stop")
     ap.add_argument("--approve", action="store_true", help="non-interactive: advance one stage")
-    ap.add_argument("--auto", action="store_true", help="non-interactive: run every stage without sign-off")
+    ap.add_argument("--auto", action="store_true", help="advance writing stages after a valid scientific author release")
     a = ap.parse_args(argv)
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("ANTHROPIC_API_KEY is not set.", file=sys.stderr)
         return 1
-    s = WritingSession(AnthropicLLM(model=a.model), load_profile(a.profile), a.out, ledger_path=a.ledger,
-                       registry_dir=a.registry, research_dir=a.research, max_rounds=a.max_rounds)
+    llm = CallLimitedLLM(AnthropicLLM(model=a.model), a.max_llm_calls,
+                         path=Path(a.out) / "writing_call_budget.json")
+    s = WritingSession(llm, load_profile(a.profile), a.out, ledger_path=a.ledger,
+                       registry_dir=a.registry, research_dir=a.research, max_rounds=a.max_rounds,
+                       review_dir=a.review_dir)
+    try:
+        s._require_release()
+    except ReviewBlocked as exc:
+        print(f"{exc}\nRun python -m scholarloop.review first.", file=sys.stderr)
+        return 2
     if not any([a.feedback, a.approve, a.auto]):
         return 0 if s.interactive() else 1
     if a.feedback:
@@ -908,6 +1003,15 @@ def _main(argv: list[str]) -> int:
         if not a.auto:
             break
     return 0
+
+
+def _main(argv):
+    from scholarloop.core.call_budget import CallBudgetExceeded
+    try:
+        return _run_cli(argv)
+    except (CallBudgetExceeded, AgentError, ReviewBlocked) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

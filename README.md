@@ -19,7 +19,11 @@ ScholarLoop runs the loop a PhD actually runs: it reads the literature and **wri
 proposes **novelty-checked ideas** and lets **you pick**, **runs real ML experiments** on the chosen
 one, scores them against a frozen ground-truth metric, learns from its failures, and then writes it
 up **the slow way** — outline, key points, prose — with AI panels arguing each step and **you signing
-off** before the next. A deterministic harness keeps the agents honest and **impossible to reward-hack**.
+off** before the next. A deterministic harness checks provenance and gates writing on scientific review.
+
+**New research workflow:** pre-writing scientific review, version-bound author releases, executable
+critic-requested protocols, and opt-in deeper ideation with persistent branches and human decisions.
+These mechanisms are tested; their effect on research quality still requires matched-budget evaluation.
 
 | Stage | What it does |
 |---|---|
@@ -34,6 +38,9 @@ off** before the next. A deterministic harness keeps the agents honest and **imp
 | ⚙️ **Runner** | runs a **real** torch experiment, scored by a **frozen** metric |
 | 🪞 **Reflector** | turns the outcome into a lesson in a decaying skill library |
 | 🚦 **Advisor** | **PROCEED · REFINE · PIVOT** — steers the loop |
+| 🔬 **Scientific review** | four role-specific, optionally different-model critics answer evidence questions for every claim; unresolved concerns require experiments or narrower claims before writing |
+| 🧪 **Experiment agenda** | freezes critic-requested controls/ablations, executes every condition, retains negative results, and returns evidence for re-review |
+| 🔐 **Author release** | explicit approval of the current review hash; changes to evidence, argument or tracked execution inputs invalidate it |
 | ✍️ **Writing session** | outline → key points → prose, each argued by a Skeptic · Editor · Methodologist panel and **approved by you**; every number, citation and sentence checked in code |
 | 🧑‍⚖️ **Reviewer panel** | three persona reviewers score the draft against a NeurIPS-style checklist → `review.md` |
 | 🗄️ **Ledger + Skills** | the durable memory every step reads from |
@@ -70,6 +77,16 @@ and `--select 2` resume a session from another process (all state lives in `sess
 Ideator's self-scores). See it end to end, free and deterministic, in
 [`examples/ideation_demo.py`](examples/ideation_demo.py).
 
+Add `--deep --brief examples/research_brief.json` for independent mechanism/transfer/contradiction
+generation, per-idea targeted retrieval and an abstract-grounded novelty review. Every candidate
+has a stable ID; `--decision reject|refine|merge|revive --idea-ids ... --actor ... --reason ...`
+preserves human decisions and parent branches. `--inject-idea` accepts a human-authored candidate;
+`python -m scholarloop.ideation.pilot` plans and executes a bounded validation-only portfolio pilot,
+then returns observations for a fresh human direction decision. Use each command's `--help` for
+arguments and [the example brief](examples/research_brief.json) or
+[human idea](examples/human_idea.json) for input formats. Novelty assessments use retrieved abstracts
+and remain provisional; they do not certify originality.
+
 What keeps it honest, in deterministic code rather than prompts:
 
 | | |
@@ -87,7 +104,11 @@ A one-shot "write the paper" call gives fluent prose over a weak argument. Schol
 argument first, lets different agents fight over it, and asks you before moving on:
 
 ```text
-  evidence bank ──▶ [1] outline      Outliner proposes ─▶ Skeptic · Editor · Methodologist argue
+  evidence ─▶ scientific argument ─▶ four critics ─▶ explicit author release
+                   ▲                     │                    │
+                   └── experiments / narrower claims ─────────┘ (when needed)
+                                                              ▼
+  approved statements ─▶ [1] outline Outliner proposes ─▶ Skeptic · Editor · Methodologist argue
   (runs · papers ·      │             ─▶ Outliner revises … until the panel accepts ──▶ outline.md
    baseline)            │                                                         ◀── you: approve / feedback
                         ▼
@@ -101,13 +122,38 @@ argument first, lets different agents fight over it, and asks you before moving 
 ```
 
 ```bash
-# run_to_paper.py ends in this session (interactive on a terminal, unattended otherwise;
+# Complete scientific review before generating paper prose:
+python -m scholarloop.review review --profile profiles/digits-mlp.yaml \
+    --ledger runs/s1/experiments.jsonl --registry runs/s1/registry \
+    --research runs/s1 --out runs/s1
+# Read scientific_review.md. Approve only when READY_FOR_AUTHOR, using its exact review hash:
+python -m scholarloop.review approve --profile profiles/digits-mlp.yaml \
+    --ledger runs/s1/experiments.jsonl --registry runs/s1/registry \
+    --research runs/s1 --out runs/s1 --author Researcher --review-hash EXACT_REVIEW_HASH
+# run_to_paper.py pauses for that decision, including in unattended mode.
+# It then enters this session (interactive on a terminal, unattended otherwise;
 # SCHOLARLOOP_WRITING=oneshot keeps the single-call writer). The same directory resumes or revises later:
 python -m scholarloop.writing --profile profiles/digits-mlp.yaml \
     --ledger runs/s1/experiments.jsonl --registry runs/s1/registry \
     --research runs/s1 --out runs/s1                 # interactive; --approve / --feedback "…" / --auto for scripts
 python examples/writing_demo.py                     # the whole flow, free and deterministic
 ```
+
+For `NEEDS_EXPERIMENTS`, use `python -m scholarloop.experiment.agenda plan` with the same
+profile/ledger/registry/research/out arguments. Inspect the frozen protocol, then use `run`
+with `--protocol-hash HASH --author Researcher` and re-run scientific review. Negative results
+and failed seeds remain evidence; completing experiments never approves writing.
+
+Optional `--critic-model ROLE=MODEL` mappings choose different reviewer models; every critic
+must answer evidence questions for each claim. `--max-llm-calls` caps cumulative CLI requests,
+including retries, rather than dollars. Old v1 releases require re-review under the v2 contract.
+Changed evidence, code, declared data or research scope invalidates a release. An existing
+writing session bound to an older release needs a new output directory and `--review-dir`.
+
+Use `SCHOLARLOOP_RESUME=1` to continue a campaign containing frozen protocols; fresh mode refuses
+to erase that evidence. Protocol hashes detect changed inputs, not hostile execution: container
+isolation and a global final-test evaluator are not yet implemented. Workflow diagnostics are
+available through `python -m scholarloop.evaluation --help`.
 
 The writing discipline ships **in the repo**, not in a chat window: `scholarloop/writing/skills/`
 holds the guidance the agents load as system prompts — the one-sentence question test and the
@@ -117,8 +163,8 @@ checked is checked in code, and rejected + retried:
 
 | | |
 |---|---|
-| 🔢 **Number grounding** | every number in a key point or a section traces to a run, a logged config value, the budget, or the baseline |
-| 📎 **Evidence grounding** | every evidence id behind a claim is a real run id, a reviewed paper id, or `baseline`; result/method/comparison claims must cite one |
+| 🔢 **Number grounding** | reviewed claims bind numbers to named run/metric measurements; strict drafts check numbers against each sentence's approved statement citations |
+| 📎 **Evidence grounding** | claim dependencies and evidence IDs are validated; a separate semantic reviewer checks attribution, scope and mandatory limitations |
 | 🧹 **Prose lint** | em-dashes, "not X, but Y", stacked *Moreover/Furthermore*, hype ("paves the way"), and the usual machine vocabulary are rejected before the text reaches you |
 | 🗂️ **Coverage** | a drafted section that drops one of its agreed key points is flagged in the draft's notes |
 
@@ -127,14 +173,14 @@ checked is checked in code, and rejected + retried:
 | | |
 |---|---|
 | 🧪 **Real, pluggable experiments** | Drives real PyTorch runs (CPU-fast, no download). The shipped domain is **digit classification** (error %); a new one is just a YAML profile + an engine pair, **zero orchestrator changes**. |
-| 🤖 **16 agents, one harness** | QueryPlanner · LitReviewer · Ideator · Director · Lit Scout · Reasoner · Debate · Reflector · Advisor · Outliner · Panelists · KeyPointer · SectionDrafter · Reviewer panel (+ the one-shot Writer/Reviewer) — typed JSON-schema I/O, validate→retry, one shared audit trace. |
+| 🤖 **Typed agents, one harness** | Research, experiments, scientific critics and writing use JSON-schema I/O, validate→retry and an audit trace. Agent count is not a quality metric. |
 | 🔭 **Literature-grounded** | The Lit Scout pulls real papers from arXiv + OpenAlex, ranks them by citation impact, and distills *cited* techniques — so ideas aren't blind hill-climbing. |
 | 💸 **Budget-aware funnel** | One idea climbs **smoke → verify → full**, each tier gated. Bad ideas die after one cheap run; marginal ones never burn a full run. |
 | ⚙️ **Engineered loop** | A **parallel population funnel** — propose N ideas, smoke-screen them all at once, climb only the survivors — under a **self-stopping governor** that halts on budget, round cap, or convergence (*loop-until-dry*). |
 | 🧠 **Self-improving** | Predicts each idea's effect, scores the prediction against reality, and distills failures into a **relevance-ranked, time-decaying skill library** re-injected next round. |
 | 🎯 **Calibrated agents** | **Universal predict-then-verify** — every agent's checkable claims (Reasoner deltas, Debate go/no-go) are scored against ground truth, so the loop learns *which of its own agents to trust*. |
-| 🛡️ **Can't be reward-hacked** | Two-phase **frozen scoring** (`train.py` can't fake the metric or see the val set) + edit **allowlist** + **VerifiedRegistry** number-grounding — proven by a bundled `cheater` engine. A **held-out test split**, scored only on full-tier runs and never shown to an agent, gives the paper a number free of the bias that selecting on val every round adds; small datasets cross-validate (`cv_folds`), each seed on its own fold. |
-| ✅ **Honest & testable** | 160 tests, **no API key or GPU needed** — the whole loop, the research and writing sessions included, runs against a deterministic `MockLLM`. |
+| 🛡️ **Scoring boundaries** | Two-phase frozen scoring, edit allowlists and registry checks reject several tested cheating paths. They are not OS isolation. Legacy full-tier runs can score a held-out split; this alone does not remove adaptive selection or reporting bias. New scientific protocols make test access explicit. |
+| ✅ **Testable workflows** | Tests use deterministic models and local engines without API keys, including stale releases, critic dissent, negative controls, failed seeds and preserved human decisions. |
 
 > The LLM does only the open-ended reasoning. Everything checkable — search-space pruning, dedup,
 > calibration, number-grounding, promotion gates — is deterministic, unit-tested code, and the
@@ -188,6 +234,8 @@ scholarloop/
 ├── core/          shared contracts: Agent harness, LLM clients, Profile (+ schema), Ledger, VerifiedRegistry
 ├── ideation/      front half, human-in-the-loop: litscout → litreview → ideator → tournament → session   (python -m scholarloop.ideation)
 ├── experiment/    autonomous loop: orchestrator, runner, reasoner, debate, reflector, advisor, director, governor, …
+├── review/        scientific dossier, independent critics, issue history and explicit author release
+├── evaluation.py  workflow diagnostics for matched-budget evaluation
 └── writing/       back half, author-approved: session, paper (one-shot fallback), skills/*.md   (python -m scholarloop.writing)
 engines/           L1 experiment engines: a frozen prepare.py + an editable train.py per domain
 profiles/          domain profiles (YAML) that bind an engine, a metric, budgets and baselines

@@ -118,7 +118,7 @@ def main() -> int:
     author = iter(["r put the five-epoch warmup in the title", "a", "a"])
 
     print("=== STEP-BY-STEP WRITING · image-classification (captured ledger) ===\n")
-    s = WritingSession(llm, profile, tmp / "paper", ledger_path=led, registry_dir=reg)
+    s = WritingSession(llm, profile, tmp / "paper", ledger_path=led, registry_dir=reg, demo=True)
 
     def ask(prompt):
         a = next(author)

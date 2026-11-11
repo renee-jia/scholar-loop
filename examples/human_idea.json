@@ -1,0 +1,24 @@
+{
+  "title": "Separate residual-path effects from parameter-count effects in a shallow MLP",
+  "description": "Compare an MLP with a residual path against a parameter-matched MLP without that path. Treat the claim as a human hypothesis that still needs literature grounding.",
+  "gap": "Whether the residual path itself explains an observed gain under matched training resources",
+  "sources": [],
+  "hypothesis": {
+    "claim": "A residual path improves optimization beyond the effect of adding the same number of parameters",
+    "predicted_effect": "Lower validation error under matched training resources"
+  },
+  "experiment_plan": "Implement a residual variant and a matched control in the editable train module; keep the frozen scorer, data split, seeds and training resources fixed.",
+  "novelty_rationale": "Unverified human proposal; retrieve and inspect related work before making a novelty claim.",
+  "feasibility": 3,
+  "impact": 3,
+  "design": {
+    "mechanism": "The residual path changes optimization dynamics rather than merely increasing capacity",
+    "intervention": "Add or remove the residual path while controlling parameter count",
+    "assumptions": ["Parameter-matched controls can be constructed in the available engine"],
+    "minimal_test": "Validation-only comparison of the intervention and its matched control",
+    "kill_criterion": "The apparent benefit disappears after matching training resources and capacity",
+    "confound_controls": ["Parameter count", "Training steps", "Seed and fold assignments"],
+    "resource_risk": "The architecture must first be implemented and checked; a crash is not evidence against the hypothesis",
+    "novelty_queries": ["shallow MLP residual connections parameter matched optimization"]
+  }
+}

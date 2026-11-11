@@ -30,7 +30,8 @@ def t95(df: int) -> float:
 def train_runs(entries: list[LedgerEntry]) -> int:
     """Models trained for these entries (a killed run still spent its budget). A seed an earlier
     tier already trained is re-scored, not retrained, and is not counted again."""
-    return sum(len(SEEDS_PER_FIDELITY[e.fidelity[0]]) - (e.metric or {}).get("reused_seeds", 0)
+    return sum(len((e.metric or {}).get("requested_seeds", SEEDS_PER_FIDELITY[e.fidelity[0]]))
+               - (e.metric or {}).get("reused_seeds", 0)
                for e in entries if e.fidelity)
 
 

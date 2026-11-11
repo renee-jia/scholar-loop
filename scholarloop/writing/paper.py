@@ -17,12 +17,16 @@ The grounding is deterministic code, not an agent — the Writer proposes, the r
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 from scholarloop.core.agent import Agent, AgentTrace
 from scholarloop.core.ledger import LedgerEntry
 from scholarloop.core.llm import LLMClient
 from scholarloop.core.registry import VerifiedRegistry
 from scholarloop.writing.session import load_skill
+from scholarloop.review.contracts import ReviewBlocked, digest
+from scholarloop.review.dossier import approved_statements, audit_prose
+from scholarloop.review.critics import FidelityReviewer
 
 WRITER_SCHEMA = {
     "type": "object", "additionalProperties": False,
@@ -110,7 +114,23 @@ class Writer(Agent):
               + load_skill("narrative", "style"))      # the one-shot path gets the same writing discipline
     schema = WRITER_SCHEMA
 
+    def __init__(self, llm, *, trace=None, demo=False):
+        super().__init__(llm, trace=trace)
+        self.demo = demo
+
+    def postcheck(self, output, ctx):
+        if not self.demo:
+            dossier = ctx["approved_dossier"]
+            return [err for body in [output["abstract"], *[s["body"] for s in output["sections"]]]
+                    for err in audit_prose(body, dossier)]
+        return []
+
     def build_prompt(self, ctx: dict) -> str:
+        if not self.demo:
+            return ("Write only from these approved statements. Every sentence, including the abstract, "
+                    "must cite [claim_*], [scope_*] or [limit_*] before its final punctuation. Preserve "
+                    "all limitations. Do not invent new claims, numbers, units or scope.\n" +
+                    json.dumps(approved_statements(ctx["approved_dossier"]), ensure_ascii=False))
         rows = "\n".join(
             f"- {f['id']}: {f['metric']}={f['score']}"
             + (f", held-out test {f['metric']}={f['heldout_test_score']} (never selected on; report it as "
@@ -120,8 +140,10 @@ class Writer(Agent):
         return ("Write a short paper from these confirmed findings. Report only these numbers; "
                 "do not fabricate any value.\n\nFindings:\n" + rows)
 
-    def draft(self, findings: list[dict]) -> dict:
-        return self.run({"findings": findings})
+    def draft(self, findings: list[dict], *, approved_dossier=None) -> dict:
+        if not self.demo and approved_dossier is None:
+            raise ReviewBlocked("Writer needs a scientific review release via PaperPipeline")
+        return self.run({"findings": findings, "approved_dossier": approved_dossier})
 
 
 class Reviewer(Agent):
@@ -149,16 +171,38 @@ class PaperPipeline:
     """Draft → ground → review. Returns the draft, ungrounded numbers, and the review."""
 
     def __init__(self, writer_llm: LLMClient, reviewer_llm: LLMClient, *,
-                 registry_dir: str | Path = "registry", trace: AgentTrace | None = None):
-        self.writer = Writer(writer_llm, trace=trace)
+                 registry_dir: str | Path = "registry", trace: AgentTrace | None = None,
+                 scientific_review=None, demo=False):
+        self.demo, self.scientific_review = demo, scientific_review
+        self.writer = Writer(writer_llm, trace=trace, demo=demo)
         self.reviewer = Reviewer(reviewer_llm, trace=trace)
+        self.fidelity = FidelityReviewer(reviewer_llm, trace=trace)
         self.registry_dir = Path(registry_dir)
 
     def run(self, entries: list[LedgerEntry], extra_grounded: list[float] | None = None) -> dict:
+        dossier, release = None, None
+        if not self.demo:
+            if self.scientific_review is None:
+                raise ReviewBlocked("One-shot writing also requires scientific review and author approval")
+            dossier, release = self.scientific_review.require_release()
+            reviewed = [LedgerEntry.from_dict(r).to_json() for r in dossier["runs"]]
+            if digest([e.to_json() for e in entries]) != digest(reviewed):
+                raise ReviewBlocked("One-shot entries differ from the reviewed evidence")
         findings = gather_findings(entries)
-        draft = self.writer.draft(findings)
+        draft = self.writer.draft(findings, approved_dossier=dossier)
+        if not self.demo:
+            fidelity = self.fidelity.run({"dossier": dossier, "draft": draft})
+            if fidelity["verdict"] != "pass":
+                raise ReviewBlocked("Draft changed approved claims: " + "; ".join(fidelity["issues"]))
         reg = grounded_registry(entries, self.registry_dir, extra=extra_grounded)
-        ungrounded = audit_draft(draft, reg)
+        ungrounded = audit_draft(draft, reg) if self.demo else []  # strict Writer checked sentence-local bindings
         review = self.reviewer.review(draft)
+        if not self.demo:
+            _, current = self.scientific_review.require_release()
+            if current["id"] != release["id"]:
+                raise ReviewBlocked("Release changed during one-shot drafting")
+        else:
+            draft["title"] = "[DEMO — unreviewed] " + draft["title"]
         return {"draft": draft, "ungrounded": ungrounded,
-                "grounded": not ungrounded, "review": review}
+                "grounded": not ungrounded, "review": review, "demo": self.demo,
+                "release_id": release["id"] if release else None}

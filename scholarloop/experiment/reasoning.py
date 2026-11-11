@@ -73,7 +73,7 @@ def _scored_entries(entries: list[LedgerEntry]) -> list[tuple[dict, float]]:
     out = []
     for e in entries:
         score = e.primary_score()
-        if e.verdict in ("kept", "discarded") and e.config and score is not None:
+        if e.purpose == "exploration" and e.verdict in ("kept", "discarded") and e.config and score is not None:
             out.append((dict(e.config), score))
     return out
 
