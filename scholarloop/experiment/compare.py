@@ -17,6 +17,7 @@ from statistics import mean, stdev
 from scholarloop.core.ledger import Ledger, LedgerEntry
 from scholarloop.core.profile import Profile
 from scholarloop.experiment.runner import SEEDS_PER_FIDELITY
+from scholarloop.experiment.evidence import search_entries, best_comparable
 
 # two-sided 95% Student-t quantiles by degrees of freedom; repeats are few, so 1.96 would lie
 _T95 = {1: 12.71, 2: 4.30, 3: 3.18, 4: 2.78, 5: 2.57, 6: 2.45, 7: 2.36, 8: 2.31, 9: 2.26,
@@ -30,21 +31,26 @@ def t95(df: int) -> float:
 def train_runs(entries: list[LedgerEntry]) -> int:
     """Models trained for these entries (a killed run still spent its budget). A seed an earlier
     tier already trained is re-scored, not retrained, and is not counted again."""
-    return sum(len((e.metric or {}).get("requested_seeds", SEEDS_PER_FIDELITY[e.fidelity[0]]))
-               - (e.metric or {}).get("reused_seeds", 0)
+    return sum(e.metric.get("training_attempts",
+               len((e.metric or {}).get("requested_seeds", SEEDS_PER_FIDELITY[e.fidelity[0]]))
+               - (e.metric or {}).get("reused_seeds", 0))
                for e in entries if e.fidelity)
 
 
 def run_campaign(orch, *, rounds: int | None = None, max_train_runs: int | None = None,
                  max_rounds: int = 200) -> list[LedgerEntry]:
     """Run funnel rounds on `orch` until `rounds` rounds have run or `max_train_runs` seed runs
-    are spent (the round that crosses the budget finishes; there is no partial idea)."""
+    are spent (each new training attempt reserves budget before execution)."""
     if rounds is None and max_train_runs is None:
         raise ValueError("bound the campaign by rounds or by max_train_runs")
+    if max_train_runs is not None:
+        from scholarloop.core.training_budget import TrainingBudget
+        orch.training_budget = TrainingBudget(orch.ledger_path.with_name(orch.ledger_path.name + ".training_budget.json"),
+                                             max_train_runs, initial_used=train_runs(list(Ledger(orch.ledger_path).read_all())))
     done = 0
     while done < (rounds if rounds is not None else max_rounds):
         entries = list(Ledger(orch.ledger_path).read_all())
-        if max_train_runs is not None and train_runs(entries) >= max_train_runs:
+        if max_train_runs is not None and orch.training_budget.used >= max_train_runs:
             break
         orch.run(1, funnel=True)
         done += 1
@@ -53,11 +59,9 @@ def run_campaign(orch, *, rounds: int | None = None, max_train_runs: int | None 
 
 def campaign_summary(entries: list[LedgerEntry], profile: Profile) -> dict:
     """What one campaign would report, plus what it cost and how its funnel converted."""
+    entries = search_entries(entries, profile)
     full = [e for e in entries if e.fidelity == ["full"] and e.primary_score() is not None]
-    pick = None
-    if full:
-        key = lambda e: e.primary_score()                       # noqa: E731
-        pick = min(full, key=key) if profile.metric.direction == "minimize" else max(full, key=key)
+    pick = best_comparable(full, profile)
     tiers = Counter(e.fidelity[0] for e in entries if e.fidelity)
     ideas = sum(1 for e in entries if e.fidelity == ["smoke"])
     return {"ideas": ideas, "train_runs": train_runs(entries),
@@ -84,6 +88,8 @@ def arm_stats(summaries: list[dict]) -> dict:
     held-out scores with 95% intervals, and the compute it used."""
     picks = [s["best_full"] for s in summaries if s["best_full"]]
     return {"campaigns": len(summaries), "reached_full": len(picks),
+            "statuses": dict(Counter(s.get("status", "legacy_unspecified") for s in summaries)),
+            "missing_full_results": len(summaries) - len(picks),
             "val": _interval([p["val"] for p in picks]),
             "holdout": _interval([p["holdout"] for p in picks if p["holdout"] is not None]),
             "train_runs": _interval([s["train_runs"] for s in summaries]),
@@ -113,8 +119,8 @@ def render(arms: dict[str, list[dict]], profile: Profile, *, match: str) -> str:
     fmt = lambda iv: ("—" if not iv.get("n") else f"{iv['mean']}" + (                  # noqa: E731
         f" ± {iv['std']} (95% CI {iv['ci95'][0]}..{iv['ci95'][1]})" if "ci95" in iv else ""))
     out = [f"# Matched-budget comparison on {profile.name}", "",
-           f"Budget matched by **{match}**. Each campaign reports its best full-tier run by val; the "
-           f"held-out column is that run's test score, which no arm selected on. "
+           f"Budget targets specified by **{match}**. Each campaign reports its best full-tier run by val; the "
+           f"held-out column contains historical scores when available; new exploration does not access test. "
            f"Metric: {m.name} ({m.direction}); must-beat baseline {profile.best_baseline()}.", "",
            "| arm | campaigns | reached full | reported val | held-out test | train runs | ideas | funnel smoke/verify/full |",
            "|---|---|---|---|---|---|---|---|"]
@@ -123,6 +129,12 @@ def render(arms: dict[str, list[dict]], profile: Profile, *, match: str) -> str:
         out.append(f"| {name} | {s['campaigns']} | {s['reached_full']} | {fmt(s['val'])} | "
                    f"{fmt(s['holdout'])} | {fmt(s['train_runs'])} | {fmt(s['ideas'])} | "
                    f"{f['smoke']}/{f['verify']}/{f['full']} |")
+    out += ["", "Campaign status counts (all planned repeats remain in the denominator):"]
+    for name, summary in stats.items():
+        out.append(f"- {name}: {summary['statuses']}; missing full results: {summary['missing_full_results']}")
+    out += ["", "Score intervals describe only campaigns with observed results; missing outcomes are not imputed. "
+            "New run-matched campaigns reserve each training attempt before execution. Round-matched campaigns "
+            "may use different training counts. New exploration runs do not open test."]
     names = list(arms)
     if len(names) == 2:
         a, b = names
@@ -138,3 +150,25 @@ def render(arms: dict[str, list[dict]], profile: Profile, *, match: str) -> str:
             out.append(f"| {name} | {i} | {s['ideas']} | {s['train_runs']} | {p.get('id', '—')} | "
                        f"{p.get('val', '—')} | {p.get('holdout', '—')} | `{p.get('config', '')}` |")
     return "\n".join(out) + "\n"
+
+
+def freeze_comparison(directory, profile, settings):
+    """Bind resumable comparisons to declared task inputs and requested settings."""
+    import json
+    from pathlib import Path
+    from dataclasses import asdict
+    from scholarloop.core.candidates import make_snapshot
+    from scholarloop.review.contracts import atomic_json
+    directory = Path(directory)
+    path = directory / "comparison_plan.json"
+    plan = json.loads(json.dumps({"version": 1, "profile": asdict(profile),
+                                 "root_candidate": make_snapshot(profile)["id"],
+                                 "settings": settings}, default=str))
+    if path.exists():
+        if json.loads(path.read_text()) != plan:
+            raise ValueError("Comparison inputs/settings changed; use a separate output directory")
+    else:
+        if any(directory.glob("*/rep*")):
+            raise ValueError("Existing campaigns lack a frozen comparison plan; preserve them and use a new directory")
+        atomic_json(path, plan)
+    return plan

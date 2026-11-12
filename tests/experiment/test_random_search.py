@@ -67,7 +67,7 @@ def test_campaign_bounded_by_training_runs(tmp_path):
     orch = Orchestrator(None, STUB, ledger_path=tmp_path / "l.jsonl", registry_dir=tmp_path / "r")
     orch.reasoner = RandomProposer(STUB, seed=0)
     entries = run_campaign(orch, max_train_runs=5)
-    assert 5 <= train_runs(entries) < 5 + 9                # stops after the round that crosses it
+    assert train_runs(entries) == 5                      # strict per-training reservation
     with pytest.raises(ValueError):
         run_campaign(orch)
 
@@ -91,7 +91,7 @@ def test_arm_stats_intervals_and_win_rate():
 def test_report_compares_two_arms_on_the_held_out_score():
     md = render({"agent": [_summary(3.0, 3.1), _summary(3.2, 3.3)],
                  "random": [_summary(3.5, 3.6), _summary(3.4, 3.2)]}, DIGITS, match="runs")
-    assert "Budget matched by **runs**" in md and "| agent | 2 | 2 |" in md
+    assert "Budget targets specified by **runs**" in md and "| agent | 2 | 2 |" in md
     assert "P(agent reports a better held-out score than random) = **0.75**" in md
 
 
@@ -140,5 +140,5 @@ def test_advisor_sees_the_ranges_and_the_fold_matched_frontier():
                     metric_name="m", fidelity=["full"], metric={"full": 3.4})
     prompt = Advisor(None).build_prompt({"entry": e, "parent": f, "parent_score": 3.0,
                                          "ranges": _ranges_line(DIGITS.knobs)})
-    assert "scored 3.0 on the same folds (did not improve)" in prompt   # 3.1 vs 3.0, not vs 3.4
+    assert "comparable validation score 3.0 (did not improve)" in prompt   # 3.1 vs 3.0, not vs 3.4
     assert "lr 0.0125..0.2" in prompt and "must stay inside these ranges" in prompt

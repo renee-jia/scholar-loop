@@ -69,6 +69,11 @@ def audit_run(profile, directory, *, research_dir=None):
     for base in {out, research}:
         for path in sorted(base.glob("*_call_budget.json")):
             result["request_budgets"][str(path.resolve())] = optional(path)
+    from scholarloop.core.agent import summarize_trace
+    result["agent_traces"] = {}
+    for base in {out.resolve(), research.resolve()}:
+        for path in sorted(base.glob("*.agents.jsonl")):
+            result["agent_traces"][str(path)] = summarize_trace(path)
     result["token_usage"] = optional(out / "usage.json")
     return result
 

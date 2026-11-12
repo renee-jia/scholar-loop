@@ -14,6 +14,7 @@ from __future__ import annotations
 from scholarloop.core.agent import Agent
 from scholarloop.core.ledger import LedgerEntry, idea_chains
 from scholarloop.core.profile import Profile
+from scholarloop.experiment.evidence import best_comparable, search_entries, render_evidence
 
 DIRECTOR_SCHEMA = {
     "type": "object",
@@ -44,12 +45,11 @@ class Director(Agent):
         self.profile = profile
 
     def _summary(self, entries: list[LedgerEntry]) -> str:
+        entries = search_entries(entries, self.profile)
         if not entries:
             return "No experiments yet."
         kept = [e for e in entries if e.verdict == "kept" and e.primary_score() is not None]
-        best = min(kept, key=lambda e: e.primary_score(), default=None) \
-            if self.profile.metric.direction == "minimize" \
-            else max(kept, key=lambda e: e.primary_score(), default=None)
+        best = best_comparable(entries, self.profile, kept_only=True)
         return (f"{len(idea_chains(entries))} distinct ideas over {len(entries)} runs; {len(kept)} kept. "
                 f"Best {self.profile.metric.name}: "
                 f"{best.primary_score() if best else 'none'} (config {best.config if best else '-'}). "
@@ -61,6 +61,7 @@ class Director(Agent):
             f"Domain: {p.name} ({p.paradigm}). Metric: {p.metric.name}, {p.metric.direction}. "
             f"Must-beat baseline: {p.best_baseline()}.",
             f"Ledger summary: {self._summary(ctx['entries'])}",
+            render_evidence(ctx["entries"], p),
         ]
         if ctx.get("lit_hotspots"):
             parts += [f"Literature hotspots: {ctx['lit_hotspots']}"]

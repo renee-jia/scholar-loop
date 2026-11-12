@@ -32,7 +32,7 @@ class ScientificReviewSession:
         self.out.mkdir(parents=True, exist_ok=True)
         self.ledger_path, self.registry_dir = Path(ledger_path), Path(registry_dir)
         self.research_dir = Path(research_dir) if research_dir else None
-        self.trace = trace or AgentTrace()
+        self.trace = trace or AgentTrace(path=self.out / "review.agents.jsonl")
 
     def inputs(self):
         return snapshot(self.profile, self.ledger_path, self.registry_dir, self.research_dir)

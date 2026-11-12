@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from scholarloop.core.agent import Agent
 from scholarloop.core.ledger import LedgerEntry
+from scholarloop.experiment.evidence import reference_score
 
 ADVISOR_SCHEMA = {
     "type": "object",
@@ -48,14 +49,14 @@ class Advisor(Agent):
         ]
         if parent is not None:
             better = (lambda a, b: a < b) if ctx.get("direction", "minimize") == "minimize" else (lambda a, b: a > b)
-            ref = ctx.get("parent_score")              # the frontier on this run's folds, when CV is on
-            ref = parent.primary_score() if ref is None else ref
+            ref = ctx.get("parent_score")
+            ref = reference_score(e, parent) if ref is None else ref
             improved = (e.primary_score() is not None and ref is not None
                         and better(e.primary_score(), ref))
-            lines.append(f"Frontier {parent.id} scored {ref} on the same folds "
-                         f"({'improved' if improved else 'did not improve'})." if ctx.get("parent_score") is not None
-                         else f"Frontier {parent.id} scored {ref} "
-                         f"({'improved' if improved else 'did not improve'}).")
+            lines.append(f"Frontier {parent.id}: comparable validation score {ref} "
+                         f"({'improved' if improved else 'did not improve'})." if ref is not None
+                         else f"Frontier {parent.id}: comparison unavailable; incompatible observation scopes. "
+                              "Do not infer improvement or regression.")
         lines.append(f"Recent verdicts: {ctx.get('recent_verdicts', [])}.")
         if ctx.get("ranges"):
             lines.append(f"{ctx['ranges']} Any value you suggest must stay inside these ranges.")

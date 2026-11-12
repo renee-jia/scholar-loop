@@ -25,3 +25,13 @@ runs/
 docs/
 impl_plan.md
 DESIGN.md
+
+# Durable final-test access receipts (campaign-local)
+*.test-access/
+
+# Persistent agent attempt logs
+*.agents.jsonl
+
+# Persistent training reservation state
+*.training_budget.json
+*.training_budget.lock

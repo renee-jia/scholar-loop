@@ -65,7 +65,8 @@ def test_config_override_varies_outcome_and_feeds_reasoning(tmp_path):
 
     c = analyze_search_space(entries, profile)
     assert "lr" in c.focus                                    # lr clearly moves the metric
-    assert any(r.startswith("lr>") for r in c.ruled_out)      # high lr region is exhausted
+    assert any(r.startswith("lr>") for r in c.warnings)      # observed association, not an exclusion
+    assert c.ruled_out_bounds == []
 
 
 def test_run_seeds_tolerates_partial_failure():

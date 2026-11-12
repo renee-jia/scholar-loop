@@ -61,6 +61,8 @@ class LedgerEntry:
     ts: float = field(default_factory=time.time)
     purpose: str = "exploration"
     protocol: dict[str, Any] = field(default_factory=dict)
+    candidate_id: str | None = None
+    run_spec: dict[str, Any] = field(default_factory=dict)
 
     def validate(self) -> None:
         if not self.id:
@@ -71,6 +73,11 @@ class LedgerEntry:
             raise ValueError(f"{self.id}: verdict {self.verdict!r} not in {VERDICTS}")
         if self.purpose not in PURPOSES:
             raise ValueError(f"{self.id}: unknown experiment purpose {self.purpose!r}")
+        if not isinstance(self.run_spec, dict):
+            raise ValueError(f"{self.id}: run_spec must be a mapping")
+        if self.candidate_id is not None and (not isinstance(self.candidate_id, str)
+                or len(self.candidate_id) != 64 or any(c not in "0123456789abcdef" for c in self.candidate_id)):
+            raise ValueError(f"{self.id}: invalid candidate identity")
         for fid in self.fidelity:
             if fid not in FIDELITIES:
                 raise ValueError(f"{self.id}: fidelity {fid!r} not in {FIDELITIES}")
@@ -152,15 +159,19 @@ _TIER_ORDER = {"smoke": 0, "verify": 1, "full": 2}
 
 def idea_chains(entries: list[LedgerEntry]) -> list[dict]:
     """Roll the flat ledger up to the level of *ideas*: group the funnel tiers of one idea
-    (which share a config) and report, per idea, the tiers it reached and its highest-fidelity
+    (which share a candidate identity) and report, per idea, the tiers it reached and its highest-fidelity
     result. Useful for campaign summaries (Director, write-up) and analysis."""
-    groups: dict[str, list[LedgerEntry]] = {}
+    groups: dict[tuple, list[LedgerEntry]] = {}
     for e in entries:
-        groups.setdefault(json.dumps(e.config, sort_keys=True), []).append(e)
+        # Legacy code edits lack a recoverable identity: keep such rows separate.
+        key = e.candidate_id or ("legacy-edit:" + e.id if e.diff or e.reasoning.get("edits") else
+                                "legacy-config:" + json.dumps(e.config, sort_keys=True))
+        groups.setdefault((e.domain, e.purpose, key), []).append(e)
     out = []
     for tiers in groups.values():
         top = max(tiers, key=lambda e: _TIER_ORDER.get(e.fidelity[0] if e.fidelity else "smoke", 0))
         out.append({
+            "candidate_id": top.candidate_id,
             "config": tiers[0].config,
             "source": tiers[0].hypothesis.source,
             "tiers": [e.fidelity[0] for e in tiers if e.fidelity],

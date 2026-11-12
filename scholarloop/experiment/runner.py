@@ -31,6 +31,7 @@ import tempfile
 from pathlib import Path
 from statistics import mean, stdev
 
+from scholarloop.core.candidates import CandidateStore, CandidateError, make_snapshot, check_environment, content_id
 from scholarloop.core.ledger import Hypothesis, Ledger, LedgerEntry, PURPOSES
 from scholarloop.core.profile import Profile, load_profile
 from scholarloop.experiment.reasoning import prediction_from_scores
@@ -111,7 +112,7 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
                   config_override: dict | None, engine_cwd: Path,
                   frozen_guard: tuple = (None, None), pristine: Path = ROOT,
                   holdout: bool = False, fold: int | None = None,
-                  cached_artifact: Path | None = None) -> dict:
+                  cached_artifact: Path | None = None, before_train=None) -> dict:
     """Two-phase run for one seed — the reward-hacking guard.
 
     Phase 1 runs the EDITABLE train module, which must write a model artifact to
@@ -150,6 +151,8 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
     ok = False
     try:
         if not reused:
+            if before_train is not None:
+                before_train()
             p1 = _run([train_module], engine_cwd, timeout_sec, extra, seed, "train")
             if p1.returncode != 0:
                 raise RunError(f"seed {seed}: train exit {p1.returncode}\n{p1.stderr[-500:]}")
@@ -211,14 +214,6 @@ def _score_holdout(score_module: str, artifact: str, pristine: Path, timeout_sec
         return {"holdout_value": value}
     except (ValueError, KeyError, TypeError) as exc:
         return {"holdout_error": f"seed {seed}: invalid holdout result: {exc}"}
-
-
-def _artifact_key(config_override: dict | None, edits: list[dict], train_file: Path) -> str:
-    """What makes two seed runs the same training: config, edits and the train script itself."""
-    h = hashlib.sha256(json.dumps({"config": config_override or {}, "edits": edits},
-                                  sort_keys=True, default=str).encode())
-    h.update(train_file.read_bytes() if train_file.exists() else b"")
-    return h.hexdigest()[:24]
 
 
 def _cache_path(cache: str | Path | None, key: str | None, seed: int) -> Path | None:
@@ -291,6 +286,9 @@ def run_experiment(
     ledger_path: str | Path = "ledger.jsonl",
     registry_dir: str | Path = "registry",
     artifact_cache: str | Path | None = None,
+    candidate_snapshot: dict | None = None,
+    training_budget=None,
+    prediction_reference: LedgerEntry | None = None,
     seeds_override: list[int] | None = None,
     holdout_override: bool | None = None,
     purpose: str = "exploration",
@@ -303,10 +301,13 @@ def run_experiment(
     isolated engine copy. Edits to frozen surfaces are refused here (the `forbidden_edits` guard,
     defense-in-depth — the orchestrator also gates them before calling).
 
-    `artifact_cache` (a directory) keeps each seed's trained model, keyed on the config, the edits,
-    the train script's hash, the seed and the fold. A tier that needs a seed an earlier tier already
+    `artifact_cache` (a directory) keeps each seed's trained model, keyed on the frozen candidate
+    and seed (the candidate context includes fold assignment). A tier that needs a seed an earlier tier already
     trained re-scores that model instead of training it again (`metric["reused_seeds"]`).
     """
+    from scholarloop.experiment.test_boundary import require_unopened_test
+    require_unopened_test(ledger_path, continuing_protocol=(
+        (protocol or {}).get("id") if purpose == "confirmation" else None))
     edits = edits or []
     # Strict allowlist: the source-diff channel may ONLY replace the train entrypoint. This
     # subsumes the forbidden_edits denylist and blocks path traversal, frozen-file edits, and
@@ -329,27 +330,47 @@ def run_experiment(
         raise ValueError("Unknown experiment purpose")
     if purpose == "feasibility" and (fidelity not in ("smoke", "verify") or len(seeds) > 3):
         raise ValueError("Feasibility pilots require smoke/verify fidelity and at most three seeds")
-    # Held-out test: scored on the terminal tier only, so the loop (which selects on val at every
-    # tier) never sees it and it carries no selection bias. Stored under metric["holdout"], which
-    # primary_score() and every agent prompt ignore; only the writing stage reads it.
-    holdout = profile.holdout and fidelity == "full" and purpose in ("exploration", "confirmation")
-    if holdout_override is not None:
-        if holdout_override and not holdout:
-            raise ValueError("Held-out scoring requires a full-tier holdout-enabled profile")
-        holdout = holdout_override
-    engine_root = _engine_root(profile.train_entrypoint, edits, root) if edits else None
+    # Exploration never consumes the final test split. Confirmation access must
+    # be explicitly requested; a profile capability alone is not authorization.
+    holdout = bool(holdout_override)
+    if holdout and not (profile.holdout and fidelity == "full" and purpose == "confirmation"):
+        raise ValueError("Held-out scoring requires explicit full-tier confirmation on a holdout profile")
+    candidate = candidate_snapshot or make_snapshot(profile, config_override, edits)
+    check_environment(candidate, profile)
+    if any(candidate["config"].get(k) != v for k, v in (config_override or {}).items()):
+        raise CandidateError("Requested knobs differ from the frozen candidate")
+    if any(candidate["sources"].get(e["path"]) != e["content"] for e in edits):
+        raise CandidateError("Requested edits differ from the frozen candidate")
+    CandidateStore(registry_dir).save(candidate)
+    if holdout:
+        from scholarloop.experiment.test_boundary import reserve_test_access
+        reserve_test_access(ledger_path, exp_id, candidate["id"], protocol or {})
+    config_override = candidate["config"]
+    source = candidate["sources"][profile.train_entrypoint]
+    frozen_edits = [{"path": profile.train_entrypoint, "content": source}] if source is not None else []
+    engine_root = _engine_root(profile.train_entrypoint, frozen_edits, root) if frozen_edits else None
     engine_cwd = engine_root if engine_root is not None else root
 
-    cache_key = (_artifact_key(config_override, edits, engine_cwd / profile.train_entrypoint)
-                 if artifact_cache is not None else None)
-    config: dict = {}
+    cache_key = candidate["id"] if artifact_cache is not None else None
+    config: dict = dict(candidate["config"])
     agg: float | None = None
     registry = VerifiedRegistry(Path(registry_dir) / f"{exp_id}.json", exp_id=exp_id)
+    training_attempts = 0
+    def before_train():
+        nonlocal training_attempts
+        if training_budget is not None:
+            from scholarloop.core.training_budget import TrainingBudgetExceeded
+            try:
+                training_budget.reserve()
+            except TrainingBudgetExceeded as exc:
+                raise RunError(str(exc)) from exc
+        training_attempts += 1
+
     def run_seed(seed):
         result = _run_one_seed(train_module, score_module, seed, budget, config_override,
                                engine_cwd, (frozen_file, frozen_hash), pristine=root,
                                holdout=holdout, fold=fold_for_seed(seed, profile.cv_folds),
-                               cached_artifact=_cache_path(artifact_cache, cache_key, seed))
+                               cached_artifact=_cache_path(artifact_cache, cache_key, seed), before_train=before_train)
         try:
             value = float(result["value"])
             if not math.isfinite(value) or isinstance(result["value"], bool):
@@ -392,14 +413,26 @@ def run_experiment(
         if engine_root is not None:
             shutil.rmtree(engine_root, ignore_errors=True)
 
+    metric_blob["training_attempts"] = training_attempts
     prediction = prediction_from_scores(predicted_delta, agg, parent_score)
+    run_spec = {"candidate_id": candidate["id"], "fidelity": fidelity, "seeds": seeds,
+                "folds": [fold_for_seed(s, profile.cv_folds) for s in seeds],
+                "budget_seconds": budget,
+                "purpose": purpose, "protocol": protocol or {}, "holdout": holdout,
+                "implementation_id": content_id(candidate["sources"])}
+    run_spec["id"] = content_id(run_spec)
     entry = LedgerEntry(
         id=exp_id, domain=profile.name, hypothesis=hypothesis,
         metric_name=profile.metric.name, parent=parent, diff=diff, config=config,
         fidelity=[fidelity], metric=metric_blob,
         reasoning=reasoning or {}, prediction=prediction, verdict=verdict,
         registry_id=exp_id, purpose=purpose, protocol=protocol or {},
+        candidate_id=candidate["id"], run_spec=run_spec,
     )
+    if prediction_reference is not None:
+        from scholarloop.experiment.evidence import reference_score
+        entry.prediction = prediction_from_scores(predicted_delta, agg,
+                                                   reference_score(entry, prediction_reference))
     Ledger(ledger_path).append(entry)
     return entry
 

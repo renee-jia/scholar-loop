@@ -30,8 +30,8 @@ def test_too_few_entries_yields_empty_constraints():
     assert c.ruled_out == [] and c.focus == [] and len(c.tried) == 1
 
 
-def test_region_pruning_rules_out_losing_side():
-    # winners have low lr; every loser has lr strictly above the winners -> rule out high lr
+def test_observed_losing_region_is_a_revisitable_warning():
+    # Confounded observational losses guide exploration without excluding a region.
     entries = [
         _entry("w1", {"lr": 0.1, "wd": 1e-4}, 4.5, verdict="kept"),   # beats 4.9
         _entry("w2", {"lr": 0.15, "wd": 1e-4}, 4.7, verdict="kept"),
@@ -39,9 +39,11 @@ def test_region_pruning_rules_out_losing_side():
         _entry("l2", {"lr": 0.5, "wd": 1e-4}, 6.3),
     ]
     c = analyze_search_space(entries, PROFILE)
-    assert any(r.startswith("lr>") for r in c.ruled_out), c.ruled_out
-    # wd never varies and never separates win/lose -> not ruled out
-    assert not any(r.startswith("wd") for r in c.ruled_out)
+    assert any(r.startswith("lr>") for r in c.warnings), c.warnings
+    assert c.ruled_out_bounds == []
+    assert c.violations({"lr": 0.9, "wd": 1e-4}) == []
+    # wd never varies and never separates win/lose.
+    assert not any(r.startswith("wd") for r in c.warnings)
 
 
 def test_focus_picks_high_leverage_knob():

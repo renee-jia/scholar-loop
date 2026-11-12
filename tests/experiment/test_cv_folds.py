@@ -38,9 +38,9 @@ def test_full_tier_covers_every_fold_and_records_them(tmp_path):
     assert cv.metric["seeds"][1:] != plain.metric["seeds"][1:]
 
 
-def test_cv_and_holdout_together(tmp_path):
+def test_cv_exploration_keeps_test_unopened(tmp_path):
     e = _run(dataclasses.replace(STUB, cv_folds=5, holdout=True), "full", tmp_path)
-    assert len(e.metric["holdout"]["seeds"]) == 5 and e.holdout_score() is not None
+    assert e.holdout_score() is None and e.metric["folds"] == [0, 1, 2, 3, 4]
 
 
 def test_engine_without_fold_support_kills_the_run(tmp_path):
@@ -119,13 +119,12 @@ def test_tiers_are_compared_on_shared_folds(tmp_path):
     assert orch._gate_for(_entry("exp_0004", "smoke", [2.0]), full) == 3.0
     plain = Orchestrator(None, dataclasses.replace(cv, cv_folds=0), ledger_path=ledger.path,
                          registry_dir=tmp_path / "r")
-    assert plain._gate_for(candidate, full) == 3.4         # no CV: the old, unmatched comparison
+    assert plain._gate_for(candidate, full) is None       # no paired IDs or matching scope: no reference gate
 
 
-def test_a_climb_trains_each_seed_once_and_still_scores_the_holdout(tmp_path):
+def test_a_climb_trains_each_seed_once_without_opening_holdout(tmp_path):
     """verify re-scores smoke's model and full re-scores verify's: same numbers, fewer trainings,
     and the full tier's held-out score covers every seed, reused ones included."""
-    from scholarloop.experiment.runner import _artifact_key
     cv = dataclasses.replace(STUB, cv_folds=5, holdout=True)
     cache = tmp_path / "models"
     common = dict(config_override=IDEAL, ledger_path=tmp_path / "l.jsonl", registry_dir=tmp_path / "reg",
@@ -137,7 +136,9 @@ def test_a_climb_trains_each_seed_once_and_still_scores_the_holdout(tmp_path):
     assert "reused_seeds" not in verify.metric and full.metric["reused_seeds"] == 3
     assert full.metric["seeds"] == fresh.metric["seeds"]                 # re-scoring changes nothing
     assert full.metric["seeds"][:3] == verify.metric["seeds"]
-    assert len(full.metric["holdout"]["seeds"]) == 5
+    assert "holdout" not in full.metric
     assert len(list(cache.iterdir())) == 5                               # one model per seed
     other = {**IDEAL, "lr": 0.2}                                         # a different config never hits
-    assert _artifact_key(other, [], ROOT / cv.train_entrypoint) != _artifact_key(IDEAL, [], ROOT / cv.train_entrypoint)
+    changed = run_experiment(cv, "smoke", "exp_0004", h, **{**common, "config_override": other})
+    assert not changed.metric.get("reused_seeds")
+    assert changed.candidate_id != full.candidate_id

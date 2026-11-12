@@ -192,10 +192,11 @@ def test_ideation_to_paper_then_resume_then_fresh(campaign):
     assert ids == [f"exp_{i:04d}" for i in range(1, len(ids) + 1)]
     full = [e for e in first if e.fidelity == ["full"]]
     assert full, "the stub's optimum should climb to the full tier"
-    assert full[0].metric["folds"] == [0, 1, 2, 3, 4] and full[0].holdout_score() is not None
+    assert full[0].metric["folds"] == [0, 1, 2, 3, 4] and full[0].holdout_score() is None
     for name in ("paper.md", "run.md", "usage.json", "calibration.json"):
         assert (out / name).exists(), name
-    assert "held-out test" in (out / "run.md").read_text()
+    rows = [line for line in (out / "run.md").read_text().splitlines() if line.startswith("| exp_")]
+    assert rows and all(line.split("|")[4].strip() == "—" for line in rows)
     usage1 = json.loads((out / "usage.json").read_text())
     calib1 = json.loads((out / "calibration.json").read_text())
     skills1 = sorted(p.name for p in (out / "skills").rglob("*") if p.is_file())

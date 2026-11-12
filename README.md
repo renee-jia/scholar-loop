@@ -179,10 +179,10 @@ checked is checked in code, and rejected + retried:
 | ⚙️ **Engineered loop** | A **parallel population funnel** — propose N ideas, smoke-screen them all at once, climb only the survivors — under a **self-stopping governor** that halts on budget, round cap, or convergence (*loop-until-dry*). |
 | 🧠 **Self-improving** | Predicts each idea's effect, scores the prediction against reality, and distills failures into a **relevance-ranked, time-decaying skill library** re-injected next round. |
 | 🎯 **Calibrated agents** | **Universal predict-then-verify** — every agent's checkable claims (Reasoner deltas, Debate go/no-go) are scored against ground truth, so the loop learns *which of its own agents to trust*. |
-| 🛡️ **Scoring boundaries** | Two-phase frozen scoring, edit allowlists and registry checks reject several tested cheating paths. They are not OS isolation. Legacy full-tier runs can score a held-out split; this alone does not remove adaptive selection or reporting bias. New scientific protocols make test access explicit. |
+| 🛡️ **Scoring boundaries** | Two-phase frozen scoring, edit allowlists and registry checks reject several tested cheating paths. They are not OS isolation. Exploration never scores the held-out split, including at full fidelity. Test access requires an explicit full-tier confirmation request on a holdout-enabled profile. Historical test results still require care against adaptive reporting bias. |
 | ✅ **Testable workflows** | Tests use deterministic models and local engines without API keys, including stale releases, critic dissent, negative controls, failed seeds and preserved human decisions. |
 
-> The LLM does only the open-ended reasoning. Everything checkable — search-space pruning, dedup,
+> The LLM does only the open-ended reasoning. Everything checkable — candidate identity, dedup,
 > calibration, number-grounding, promotion gates — is deterministic, unit-tested code, and the
 > metric is the **only** optimization target (no LLM-as-judge in the optimization loop). Multiple adversarial review passes
 > found and fixed real bugs across the loop's correctness and reward-hacking boundaries.
@@ -202,7 +202,7 @@ as the product. One **governed round** looks like this:
                   ╰──────────────────────────────┬──────────────────────────────╯
                                  survivors only   │   (the clearly-worse die here)
                                                   ▼
-                       verify · 3 seeds + significance  ─▶  full · 5 seeds        compute spent on the few
+                       verify · 3 seeds + noise margin  ─▶  full · 5 seeds        compute spent on the few
                                                   │
                                                   ▼
                        calibrate every agent's claim  ·  distill one lesson → skills
@@ -219,6 +219,26 @@ Four pillars, each a few lines of deterministic code — and each pinned by test
 | 🛑 | **Self-stopping governor** | run unattended — halt on a **$ budget**, a round cap, or **loop-until-dry** convergence | `Governor(max_cost, max_rounds, dry_patience)` |
 | 🎯 | **Universal predict-then-verify** | the loop learns *which of its own agents to trust* — Reasoner deltas & Debate go/no-go scored vs ground truth | `CalibrationLog` → next prompt |
 | 🧭 | **Relevance-ranked context** | a growing skill library stays useful — surface the lessons that bear on *this* idea, not just the heaviest | `SkillLibrary.render(query=…)` |
+
+The Reasoner and Director also receive a bounded validation evidence view: configurations,
+scores, seed/fold identities, failures and the frontier. It excludes held-out scores and
+scientific control runs. Observed losing regions are **soft warnings**, not causal exclusions;
+repeated fidelity tiers count once per candidate when deriving these associations.
+
+Each new run records a `candidate_id` and a separate `run_spec`. Candidate snapshots in
+`registry/candidates/` bind the requested configuration, local engine Python sources, frozen
+scorer and declared execution context. Different implementations remain distinct even at
+identical knobs; changing seed or fidelity creates a different run of the same candidate.
+The Reasoner sees the frontier's source and inherits its code and requested knobs by default,
+including after restarting a campaign. `base: "root"` explicitly starts from repository code
+and profile defaults. Changing scorer/dependencies requires a new root candidate. Legacy runs
+without snapshots remain readable but cannot supply inherited implementations.
+
+Scientific review includes these snapshots and rejects missing or modified candidate files.
+They document execution inputs; they do not certify undeclared data, external dependencies or
+scientific validity. Frontier selection and convergence tracking use a common fidelity and
+seed/fold scope, and prediction calibration uses matched reference observations when available.
+The funnel's SEM margin is a resource-allocation heuristic, not a significance test.
 
 > Net effect: a loop you can actually let run — it **fans out** to explore, **screens cheaply in
 > parallel**, **concentrates compute** on what survives, **calibrates itself**, and **knows when to
@@ -319,5 +339,51 @@ real Opus campaign that beats its baseline and writes itself up. It has also bee
 random search at a matched budget, and on digits it loses (above). Next: make the agent win that
 comparison (bolder, range-aware proposals; fold-matched tier comparisons), then a per-idea second
 retrieval pass, container sandboxing for the residual boundaries, and scale.
+
+## Evaluation and final-test controls
+
+Final-test access closes that campaign to new exploration and experiment plans, including
+when test scoring fails. A previously frozen confirmation protocol may finish its planned
+conditions; review and writing may still inspect its results. This is a ledger-level guard,
+not OS isolation or proof that a reused dataset is statistically independent. Historical
+campaigns containing test results are also closed to further exploration.
+
+Before a confirmation run starts, the runner persists and fsyncs a test-access receipt beside
+its ledger in `<ledger>.test-access/`. Keep this directory with the ledger when moving a
+campaign. An incomplete receipt or a receipt without its matching ledger result closes
+execution and blocks scientific review; an interrupted run is never automatically replayed.
+Completed receipts are part of the review snapshot and permit the original protocol to
+continue. Recovery requires inspecting the run and reconciling its real evidence; deleting a
+receipt or restarting with the same test data does not restore statistical independence.
+
+Agent attempts are persisted as `*.agents.jsonl` by experiment, ideation, review and writing
+sessions. Each attempt has a durable start event, input/schema fingerprints, model identity,
+and a finish event containing the structured output, validation errors, status and elapsed time.
+Raw prompts are not stored. An unmatched start denotes an unfinished attempt; provider errors
+and invalid JSON remain visible. Client usage snapshots are cumulative and must not be treated
+as per-attempt costs when requests share a client. Explicitly supplied in-memory `AgentTrace`
+objects remain supported. `scholarloop.evaluation` reports these logs, including corrupt tails.
+
+Search comparisons freeze declared profile/engine inputs and settings in `comparison_plan.json`;
+resuming with different settings is rejected. Interrupted campaign directories are preserved,
+failed campaigns are recorded, and budget-skipped repeats remain in the reported denominator.
+Score intervals still describe observed outcomes only. Run-matched campaigns now reserve each
+training attempt before dispatch and never exceed their configured count. Failed/interrupted
+attempts remain charged; cached models do not consume a new training reservation. Accounting is
+persisted beside the ledger as `*.training_budget.json`. This caps training attempts, not GPU
+seconds or financial cost. `compare_search.py --max-calls` also caps model requests persistently
+across retries and repeats (default 100); `--max-cost` remains an estimated stop threshold between
+campaigns, not a hard dollar ceiling. Unknown prices block cost-limited campaigns.
+
+For multiple tasks, use `python -m scholarloop.experiment.suite --manifest suite.json --out runs/suite`.
+The manifest has `version: 1` and a `tasks` array. Every task explicitly supplies `id`, `split`
+(`development` or `evaluation`), `dataset_group`, `profile`, `seeds` (search seeds), and
+`train_budget`. Profile paths are relative to the manifest. Both partitions are required;
+shared dataset groups or profile dataset names across partitions are rejected. The suite freezes
+its declared inputs, retains every planned repeat, and keeps per-task metrics separate.
+The CLI runs the random-search baseline without API calls. Programmatic model arms must provide
+an orchestrator with a persistent `CallLimitedLLM` budget. Dataset declarations and disjoint
+labels do not establish real-world independence: inspect data provenance before interpreting
+these runs as a benchmark. The shipped stub is a workflow fixture, not a second scientific task.
 
 License: [MIT](LICENSE).

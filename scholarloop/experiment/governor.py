@@ -55,6 +55,7 @@ class Governor:
     _rounds: int = 0
     _dry: int = 0
     _best: float | None = None
+    _scope: tuple | None = None
     _alerted: set = field(default_factory=set)
 
     def __post_init__(self) -> None:
@@ -64,10 +65,13 @@ class Governor:
             raise ValueError("Governor needs at least one stop condition "
                              "(max_cost / max_rounds / dry_patience) or the loop never ends")
 
-    def update_frontier(self, score: float | None, direction: str) -> bool:
+    def update_frontier(self, score: float | None, direction: str, *, scope: tuple | None = None) -> bool:
         """Fold a fresh result into the tracked frontier. Returns True iff it improved the best so far."""
         if score is None:
             return False
+        if scope is not None and scope != self._scope:
+            self._scope, self._best = scope, score
+            return True   # establishing a new comparison scope counts as progress
         if self._best is None or _better(score, self._best, direction):
             self._best = score
             return True

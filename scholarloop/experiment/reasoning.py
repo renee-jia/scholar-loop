@@ -1,25 +1,17 @@
-"""Reasoning Layer — ReAct-light.
+"""Deterministic search evidence and prediction calibration.
 
-This module holds the *deterministic* substrate the LLM Reasoner stands on:
-
-  - `analyze_search_space` — mine the ledger for which hyperparameter regions are
-    exhausted (ruled out) and which knobs are high-leverage (worth focusing edits on).
-    This is mechanism 2 ("Search-Space Reasoning"): it bounds the next experiment so the
-    agent does not re-explore losing regions or fiddle low-impact knobs.
-  - `calibration_error` / `score_prediction` — mechanism 1 ("Predict-then-Verify"): turn a
-    predicted effect and the measured effect into a number, so reasoning that doesn't help
-    is demoted by measurement rather than trusted on faith.
-  - `is_duplicate_config` — config-level novelty so the same config isn't run twice.
-
-The LLM Reasoner consumes a `SearchSpaceConstraints` (rendered via `to_prompt_block`) plus
-literature/skills to write the trace + act; the Reflector calls `score_prediction` after.
-Everything here is pure and testable with no LLM and no GPU.
+Search history produces observational warnings and focus suggestions, never learned
+hard exclusions. Repeated tiers count once per candidate. Explicit caller-supplied
+bounds remain enforceable; candidate identity is checked by the Reasoner.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from statistics import mean, stdev
+import json
+
+from scholarloop.experiment.evidence import coverage, scope, search_entries, reference_score
 
 from scholarloop.core.ledger import LedgerEntry
 from scholarloop.core.profile import Profile
@@ -30,12 +22,14 @@ class SearchSpaceConstraints:
     ruled_out: list[str] = field(default_factory=list)        # human-readable, e.g. "lr>0.3 (3 losses)"
     ruled_out_bounds: list[dict] = field(default_factory=list)  # machine-checkable, e.g. {"knob":"lr","op":">","value":0.3}
     focus: list[str] = field(default_factory=list)             # high-leverage knob names
-    priors: list[str] = field(default_factory=list)            # literature-derived hard bounds
+    priors: list[str] = field(default_factory=list)            # literature suggestions
     tried: list[dict] = field(default_factory=list)            # configs already evaluated
+
+    warnings: list[str] = field(default_factory=list)  # observational associations, never exclusions
 
     def to_dict(self) -> dict:
         return {"ruled_out": self.ruled_out, "ruled_out_bounds": self.ruled_out_bounds,
-                "focus": self.focus, "priors": self.priors, "tried": self.tried}
+                "focus": self.focus, "priors": self.priors, "tried": self.tried, "warnings": self.warnings}
 
     def violations(self, config: dict, defaults: dict | None = None) -> list[str]:
         """Return the reasons `config` violates the constraints (empty == admissible).
@@ -61,10 +55,11 @@ class SearchSpaceConstraints:
         """Render for injection into the Reasoner's prompt."""
         lines = ["Search-space constraints derived from the experiment ledger:"]
         lines.append(f"  RULED OUT (do not propose): {self.ruled_out or 'none yet'}")
-        lines.append(f"  FOCUS (high-leverage knobs): {self.focus or 'unknown — explore'}")
+        lines.append(f"  OBSERVATIONAL WARNINGS (revisitable, not causal bounds): {self.warnings or 'none'}")
+        lines.append(f"  FOCUS (associated with score variation, not causal importance): {self.focus or 'unknown — explore'}")
         if self.priors:
-            lines.append(f"  LITERATURE PRIORS (hard bounds): {self.priors}")
-        lines.append(f"  ALREADY TRIED ({len(self.tried)} configs): do not repeat any of them.")
+            lines.append(f"  LITERATURE SUGGESTIONS (not hard bounds): {self.priors}")
+        lines.append(f"  OBSERVED DESIGNS ({len(self.tried)}): avoid repeating the same code and config.")
         return "\n".join(lines)
 
 
@@ -96,15 +91,30 @@ def analyze_search_space(
 ) -> SearchSpaceConstraints:
     """Derive search-space constraints from the ledger (deterministic, no LLM).
 
-    - ruled_out: for each numeric knob, if every losing run sits strictly to one side of
-      every winning run (>=2 losers), that outer region is exhausted.
-    - focus: knobs whose value changes move the metric the most (per-value mean spread).
+    Observational warnings and focus use unique designs within one implementation
+    and fidelity/fold cohort. Associations never create hard exclusion bounds.
     """
-    pairs = _scored_entries(entries)
+    entries = search_entries(entries, profile)
+    # Count designs once, retaining their widest observation. Do not mix source
+    # implementations or fold/fidelity scopes when estimating associations.
+    designs = {}
+    for e in entries:
+        if e.primary_score() is None or e.verdict not in ("kept", "discarded") or not e.config:
+            continue
+        key = e.candidate_id or (e.id if e.diff or e.reasoning.get("edits") else
+                                 json.dumps(e.config, sort_keys=True))
+        if key not in designs or coverage(e) >= coverage(designs[key]):
+            designs[key] = e
     constraints = SearchSpaceConstraints(priors=list(lit_priors or []),
-                                         tried=[cfg for cfg, _ in pairs])
+                                         tried=[dict(e.config) for e in designs.values()])
+    groups = {}
+    for e in designs.values():
+        key = (scope(e), e.run_spec.get("implementation_id", "legacy"))
+        groups.setdefault(key, []).append(e)
+    cohort = max(groups.values(), key=len, default=[])
+    pairs = _scored_entries(cohort)
     if len(pairs) < 2:
-        return constraints  # not enough signal to bound anything yet
+        return constraints
 
     baseline = profile.best_baseline()
     if baseline is None:
@@ -129,7 +139,7 @@ def analyze_search_space(
             means = [mean(v) for v in by_val.values()]
             leverage[k] = max(means) - min(means)
 
-        # --- region pruning: losers all strictly outside the winning range ---
+        # --- observational warnings: losers all strictly outside the winning range ---
         if winners and len(losers) >= 2:
             win_vals = [c[k] for c, _ in winners if k in c]
             lose_vals = [c[k] for c, _ in losers if k in c]
@@ -139,11 +149,11 @@ def analyze_search_space(
                 above = [v for v in lose_vals if v > hi]
                 below = [v for v in lose_vals if v < lo]
                 if len(above) >= 2 and len(above) == len(lose_vals):
-                    constraints.ruled_out.append(f"{k}>{hi} ({len(above)} losses)")
-                    constraints.ruled_out_bounds.append({"knob": k, "op": ">", "value": hi})
+                    constraints.warnings.append(f"{k}>{hi}: {len(above)} losing designs in this observed cohort; "
+                                               "other knobs and selection may confound this association")
                 elif len(below) >= 2 and len(below) == len(lose_vals):
-                    constraints.ruled_out.append(f"{k}<{lo} ({len(below)} losses)")
-                    constraints.ruled_out_bounds.append({"knob": k, "op": "<", "value": lo})
+                    constraints.warnings.append(f"{k}<{lo}: {len(below)} losing designs in this observed cohort; "
+                                               "other knobs and selection may confound this association")
 
     # focus = knobs with leverage at/above the mean leverage (most impactful first)
     if leverage:
@@ -170,7 +180,7 @@ def is_duplicate_config(config: dict, entries: list[LedgerEntry], defaults: dict
 
 def confidence_bound(values, direction: str, z: float = 1.0) -> float:
     """Pessimistic z·SEM bound on the mean across seeds — the side that must still clear a gate
-    for the improvement to count as real rather than noise (statistical-significance gating).
+    as a resource-allocation heuristic; this is not a significance test.
 
     For a `minimize` metric this is mean + z·SEM (the high/worse side); for `maximize`, mean − z·SEM.
     With a single value (or z=0) it's just the mean.
@@ -205,5 +215,5 @@ def prediction_from_scores(predicted_delta: float | None, score: float | None,
 def score_prediction(entry: LedgerEntry, parent: LedgerEntry | None,
                      predicted_delta: float) -> dict:
     """Build the `prediction` blob for a ledger entry, resolving scores from the entries."""
-    parent_score = parent.primary_score() if parent is not None else None
+    parent_score = reference_score(entry, parent)
     return prediction_from_scores(predicted_delta, entry.primary_score(), parent_score)

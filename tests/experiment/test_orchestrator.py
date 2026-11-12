@@ -33,8 +33,8 @@ def _entry(eid, config, score, verdict="discarded"):
     )
 
 
-def test_reasoner_enforces_ruled_out_region():
-    # ledger rules out high lr (winners low, all losers high) -> a high-lr proposal must violate
+def test_reasoner_can_revisit_observed_losing_region():
+    # Association alone cannot forbid a new high-lr experiment.
     entries = [
         _entry("w1", {"lr": 0.1}, 4.5, verdict="kept"),
         _entry("w2", {"lr": 0.15}, 4.7, verdict="kept"),
@@ -43,8 +43,8 @@ def test_reasoner_enforces_ruled_out_region():
     ]
     llm = MockLLM(jsons=[_proposal_json({"lr": 0.9})])
     proposal = Reasoner(llm, PROFILE).propose(entries)
-    assert not proposal.admissible
-    assert any("lr>" in v for v in proposal.violations)
+    assert proposal.admissible
+    assert any("lr>" in v for v in proposal.constraints.warnings)
 
 
 def test_reasoner_admits_in_bounds_config():
@@ -372,12 +372,12 @@ def test_smoke_screen_keeps_borderline_but_drops_clearly_worse(tmp_path):
 
 def test_orchestrator_skips_inadmissible_proposal(tmp_path):
     ledger_path = tmp_path / "ledger.jsonl"
-    # seed a ledger that rules out high lr
+    # Seed a ledger; duplicate proposals must still be skipped.
     led = Ledger(ledger_path)
     for e in [_entry("w1", {"lr": 0.1}, 4.5, "kept"), _entry("w2", {"lr": 0.15}, 4.7, "kept"),
               _entry("l1", {"lr": 0.4}, 6.0), _entry("l2", {"lr": 0.5}, 6.3)]:
         led.append(e)
-    llm = MockLLM(jsons=[_proposal_json({"lr": 0.95})])   # ruled out
+    llm = MockLLM(jsons=[_proposal_json({"lr": 0.1})])   # already tried
     orch = Orchestrator(llm, PROFILE, ledger_path=ledger_path, registry_dir=tmp_path / "registry")
     assert orch.step() is None
     assert len(list(led.read_all())) == 4   # nothing new appended

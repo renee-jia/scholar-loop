@@ -19,6 +19,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+import hashlib
+import json
+import os
+import threading
+import time
+import uuid
+from pathlib import Path
 
 from jsonschema import Draft7Validator
 
@@ -44,6 +51,21 @@ class AgentCall:
 class AgentTrace:
     """An append-only log of agent calls — the harness's observability surface."""
     calls: list[AgentCall] = field(default_factory=list)
+
+    path: str | Path | None = None
+    events: list[dict] = field(default_factory=list)
+    _lock: object = field(default_factory=threading.Lock, repr=False)
+
+    def event(self, event: dict) -> None:
+        with self._lock:
+            if self.path is not None:
+                path = Path(self.path)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("a") as stream:
+                    stream.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            self.events.append(event)
 
     def record(self, call: AgentCall) -> None:
         self.calls.append(call)
@@ -81,18 +103,41 @@ class Agent(ABC):
         validator = Draft7Validator(self.schema) if self.schema else None
         output: dict = {}
         errors: list[str] = []
+        call_id = uuid.uuid4().hex
+        def fingerprint(value):
+            return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
         for attempt in range(self.max_retries + 1):
+            started = time.monotonic()
+            identity = {"version": 1, "call_id": call_id, "agent": self.name, "attempt": attempt + 1}
+            if self.trace is not None:
+                self.trace.event({**identity, "event": "started", "timestamp": time.time(),
+                    "prompt_hash": fingerprint(prompt), "system_hash": fingerprint(self.system),
+                    "schema_hash": fingerprint(self.schema), "context_hash": fingerprint(ctx),
+                    "model": getattr(self.llm, "model", None),
+                    "client": type(self.llm).__module__ + "." + type(self.llm).__qualname__,
+                    "client_usage": dict(getattr(self.llm, "usage", {}) or {})})
+            status, output, errors = "exception", {}, []
             try:
-                output = self.llm.complete_json(prompt, self.schema, system=self.system)
-            except ValueError as e:          # json.JSONDecodeError: a truncated / non-JSON reply
-                output, errors = {}, [f"response was not valid JSON ({e})"]
-                prompt = self._retry_prompt(prompt, errors)
-                continue
-            errors = []
-            if validator is not None:
-                errors += [f"schema: {e.message}" for e in validator.iter_errors(output)]
-            if not errors:                   # postchecks assume a well-formed shape; never run them on a broken one
-                errors += self.postcheck(output, ctx)
+                try:
+                    output = self.llm.complete_json(prompt, self.schema, system=self.system)
+                except ValueError as exc:
+                    errors = [f"response was not valid JSON ({exc})"]
+                    status = "invalid_json"
+                else:
+                    errors = [f"schema: {e.message}" for e in validator.iter_errors(output)] if validator else []
+                    if not errors:
+                        errors += self.postcheck(output, ctx)
+                    status = "rejected" if errors else "accepted"
+            except BaseException as exc:
+                errors = [f"{type(exc).__name__}: {exc}"]
+                raise
+            finally:
+                if self.trace is not None:
+                    self.trace.event({**identity, "event": "finished", "timestamp": time.time(),
+                        "elapsed_seconds": time.monotonic() - started, "status": status,
+                        "output": output, "errors": errors,
+                        "client_usage": dict(getattr(self.llm, "usage", {}) or {}),
+                        "usage_scope": "client_cumulative_not_per_attempt"})
             if not errors:
                 if self.trace is not None:
                     self.trace.record(AgentCall(self.name, attempt + 1, output))
@@ -107,3 +152,31 @@ class Agent(ABC):
         return (prompt + "\n\nYour previous response was rejected:\n"
                 + "\n".join(f"- {e}" for e in errors)
                 + "\nReturn a corrected response that fixes these problems.")
+
+
+def summarize_trace(path):
+    """Read persisted attempts without turning missing/corrupt records into successes."""
+    starts, finishes, errors = {}, {}, []
+    with Path(path).open() as stream:
+        for number, line in enumerate(stream, 1):
+            try:
+                event = json.loads(line)
+                key = (event["call_id"], event["attempt"])
+                if event.get("version") != 1 or event["event"] not in ("started", "finished"):
+                    raise ValueError("unknown event")
+                target = starts if event["event"] == "started" else finishes
+                if key in target:
+                    raise ValueError("duplicate event")
+                if event["event"] == "finished" and event.get("status") not in (
+                        "accepted", "rejected", "invalid_json", "exception"):
+                    raise ValueError("unknown attempt outcome")
+                target[key] = event
+            except (ValueError, KeyError, TypeError) as exc:
+                errors.append(f"line {number}: {exc}")
+    orphan = set(finishes) - set(starts)
+    errors.extend(f"finish without start: {key}" for key in sorted(orphan))
+    outcomes = {status: sum(e["status"] == status for k, e in finishes.items() if k in starts)
+                for status in ("accepted", "rejected", "invalid_json", "exception")}
+    return {"attempts_started": len(starts), "calls_started": len({k[0] for k in starts}),
+            "unfinished_attempts": len(set(starts) - set(finishes)), "outcomes": outcomes,
+            "errors": errors, "complete_record": not errors and set(starts) == set(finishes)}

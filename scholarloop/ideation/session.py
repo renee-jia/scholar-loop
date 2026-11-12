@@ -98,7 +98,7 @@ class ResearchSession:
         self.out.mkdir(parents=True, exist_ok=True)
         self.sources = sources if sources is not None else [OpenAlexClient(), ArxivClient()]
         self.ledger_path = Path(ledger_path) if ledger_path else None
-        self.trace = trace or AgentTrace()
+        self.trace = trace or AgentTrace(path=self.out / "ideation.agents.jsonl")
         self.max_papers, self.per_query = max_papers, per_query
         self.planner = QueryPlanner(llm, trace=self.trace)
         self.reviewer = LitReviewer(llm, trace=self.trace)

@@ -25,6 +25,11 @@ class ExperimentAgenda:
 
     def plan(self, *, spec=None, feedback=""):
         with self.review._lock():
+            from scholarloop.experiment.test_boundary import require_unopened_test
+            try:
+                require_unopened_test(self.review.ledger_path)
+            except ValueError as exc:
+                raise ReviewBlocked(str(exc)) from exc
             source = self.review.load()
             if source.get("status") != "NEEDS_EXPERIMENTS" or not source.get("review_hash"):
                 raise ReviewBlocked("No completed scientific review with open experiment requests")
@@ -50,6 +55,11 @@ class ExperimentAgenda:
             return self._store_plan(envelope)
 
     def _store_plan(self, envelope):
+        from scholarloop.experiment.test_boundary import require_unopened_test
+        try:
+            require_unopened_test(self.review.ledger_path)
+        except ValueError as exc:
+            raise ReviewBlocked(str(exc)) from exc
         protocol_id = digest(envelope)
         if (self.out / f"{protocol_id}.json").exists():
             raise ReviewBlocked("This protocol already exists; resume it instead")
@@ -126,6 +136,20 @@ class ExperimentAgenda:
             file = current["files"].pop(key, None)
             if not file or file["sha256"] != result["registry_sha256"]:
                 raise ReviewBlocked("A recorded protocol result changed")
+            cid = result["entry"].get("candidate_id")
+            key = f"candidates/{cid}.json"
+            # inputs() validates the content address. Existing evidence remains frozen;
+            # only newly referenced snapshots from this protocol may be appended.
+            if cid and key not in original["files"]:
+                current["files"].pop(key, None)
+        for key in list(current["files"]):
+            if key.startswith("test_access/") and key not in original["files"]:
+                record = json.loads(current["files"][key]["text"])
+                if not any(record == {"version": 1, "run_id": r["entry"]["id"],
+                           "candidate_id": r["entry"].get("candidate_id"),
+                           "protocol": r["entry"].get("protocol")} for r in state["results"]):
+                    raise ReviewBlocked("Unexpected final test access")
+                current["files"].pop(key)
         current["files"].pop(f"protocols/{state['protocol_id']}.analysis.json", None)
         if current != original:
             raise ReviewBlocked("Other evidence changed; finish scientific review before replanning")

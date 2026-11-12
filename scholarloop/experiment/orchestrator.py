@@ -3,8 +3,8 @@
 step():
   1. read the ledger,
   2. Reasoner proposes the next experiment (reason → act under search-space constraints),
-  3. ENFORCE admissibility — a proposal in a ruled-out region or already tried is skipped,
-     never run (this is the search-space limit binding),
+  3. ENFORCE admissibility — a duplicate candidate or forbidden source edit is skipped,
+     while observational warnings remain revisitable,
   4. run it under the fidelity budget,
   5. the runner records the measured result + the prediction's calibration_error (Reflect).
 
@@ -32,13 +32,15 @@ from scholarloop.core.agent import AgentTrace
 from scholarloop.experiment.debate import DebatePanel
 from scholarloop.experiment.director import Director
 from scholarloop.core.ledger import Ledger, LedgerEntry
+from scholarloop.core.candidates import CandidateStore, make_snapshot
+from scholarloop.experiment.evidence import best_comparable, search_entries, scope, reference_score
 from scholarloop.ideation.litscout import LitScout
 from scholarloop.core.llm import LLMClient
 from scholarloop.core.profile import Profile
 from scholarloop.experiment.reasoner import Reasoner
 from scholarloop.experiment.calibration import CalibrationLog, score_binary, score_delta
 from scholarloop.experiment.governor import Governor, cost_of
-from scholarloop.experiment.reasoning import confidence_bound, same_config
+from scholarloop.experiment.reasoning import confidence_bound
 from scholarloop.experiment.reflector import Reflector
 from scholarloop.experiment.skills import SkillLibrary
 
@@ -47,7 +49,7 @@ def _fold_scores(entry: LedgerEntry) -> dict[int, float] | None:
     """{fold: val score} for a cross-validated entry, or None (no CV, killed, or no fold record).
     Seeds that crashed are absent from both lists, so they stay aligned."""
     folds, seeds = (entry.metric or {}).get("folds"), (entry.metric or {}).get("seeds")
-    if not folds or not seeds or len(folds) != len(seeds):
+    if not folds or not seeds or len(folds) != len(seeds) or len(set(folds)) != len(folds):
         return None
     return dict(zip(folds, seeds))
 
@@ -79,7 +81,7 @@ class Orchestrator:
                  warm_seed: int = 0):
         self.profile = profile
         self.llm = llm                           # shared client; usage accumulates here for the Governor
-        self.trace = trace or AgentTrace()       # one shared trace: every agent call is logged
+        self.trace = trace or AgentTrace(path=Path(ledger_path).with_name(Path(ledger_path).name + ".agents.jsonl"))       # one shared trace: every agent call is logged
         self.reasoner = Reasoner(llm, profile, trace=self.trace)
         self.lit_scout = lit_scout
         self.debate_panel = debate_panel
@@ -96,6 +98,7 @@ class Orchestrator:
         self.warm_start, self.warm_seed = warm_start, warm_seed
         self._round_cache: str | None = None   # trained models shared by one idea's tiers
         self._warm = None
+        self.training_budget = None
         # one shared trace across EVERY agent — full auditability of the loop
         for agent in (lit_scout, reflector, advisor, director):
             if agent is not None:
@@ -106,6 +109,7 @@ class Orchestrator:
         self.topic = topic or profile.name
         self.ledger_path = Path(ledger_path)
         self.registry_dir = Path(registry_dir)
+        self.candidates = CandidateStore(self.registry_dir)
         self._lit: tuple[str, list[str]] | None = None   # cached (lit_context, lit_priors)
         self.guidance = ""               # Director direction / Advisor rationale for the next step
         self.last_advice: dict | None = None
@@ -151,12 +155,8 @@ class Orchestrator:
         return f"exp_{self._max_suffix(entries) + 1:04d}"
 
     def _best_of(self, entries: list[LedgerEntry]):
-        """The best-scoring entry in a batch by the metric direction (None scores ignored)."""
-        scored = [e for e in entries if e.primary_score() is not None]
-        if not scored:
-            return None                                 # all killed/unscored — no result to reflect on
-        return min(scored, key=lambda e: e.primary_score()) if self.profile.metric.direction == "minimize" \
-            else max(scored, key=lambda e: e.primary_score())
+        """Select within the widest comparable validation scope in this batch."""
+        return best_comparable(entries, self.profile)
 
     def _parent(self, entries: list[LedgerEntry]):
         """The frontier to iterate from: the current best kept entry, else the last run.
@@ -165,18 +165,8 @@ class Orchestrator:
         full 0-4), and folds differ in difficulty, so means from different tiers are not
         comparable: a 3-fold verify mean that skips a hard fold "beats" a 5-fold full mean. The
         frontier is then the best kept entry among those that cover the most folds."""
-        entries = [e for e in entries if e.purpose == "exploration"]
-        if self.profile.cv_folds >= 2:
-            kept = [e for e in Ledger(self.ledger_path).read_all()
-                    if e.domain == self.profile.name and e.verdict == "kept"
-                    and e.purpose == "exploration" and e.primary_score() is not None]
-            if kept:
-                most = max(len(_fold_scores(e) or {}) for e in kept)
-                top = [e for e in kept if len(_fold_scores(e) or {}) == most]
-                key = lambda e: e.primary_score()                        # noqa: E731
-                return min(top, key=key) if self.profile.metric.direction == "minimize" \
-                    else max(top, key=key)
-        best = Ledger(self.ledger_path).best(self.profile.name, self.profile.metric.direction)
+        entries = search_entries(entries, self.profile)
+        best = best_comparable(list(Ledger(self.ledger_path).read_all()), self.profile, kept_only=True)
         if best is not None:
             return best
         return entries[-1] if entries else None
@@ -190,14 +180,17 @@ class Orchestrator:
         The baseline is a K-fold mean and has no per-fold scores, so it stays as configured."""
         if frontier is None:
             return self._gate_score(None)
-        score = frontier.primary_score()
-        matched = _fold_matched(entry, frontier) if self.profile.cv_folds >= 2 else None
-        return self._gate_score(score if matched is None else matched)
+        matched = reference_score(entry, frontier)
+        if matched is None and "seed_ids" not in entry.metric and "seed_ids" not in frontier.metric:
+            matched = _fold_matched(entry, frontier) if self.profile.cv_folds >= 2 else None
+        return self._gate_score(matched)
 
     def _propose(self, entries: list[LedgerEntry], *, lit_context: str = "", skills: str = "",
                  lit_priors: list[str] | None = None):
         """Propose → admissibility gate → debate gate. Returns (proposal, reasoning) or None."""
         import time
+        from scholarloop.experiment.test_boundary import require_unopened_test
+        require_unopened_test(self.ledger_path)
 
         if not lit_context and lit_priors is None:
             lit_context, lit_priors = self._literature()   # fall back to the Lit Scout
@@ -213,13 +206,18 @@ class Orchestrator:
                 self._warm = RandomProposer(self.profile, seed=self.warm_seed)
             proposal = self._warm.propose(entries)
         else:
+            frontier = self._parent(entries)
+            base = self.candidates.load(frontier.candidate_id) if frontier and frontier.candidate_id else None
             proposal = self.reasoner.propose(entries, lit_context=lit_context, skills=skills,
                                              guidance=self.guidance, lit_priors=lit_priors,
+                                             base_candidate=base,
                                              calibration=self.calibration.render())   # close the verifier loop
         if not proposal.admissible:
             print(f"orchestrator: skipping inadmissible proposal {proposal.config} "
                   f"({proposal.violations})", file=sys.stderr)
             return None
+        if proposal.snapshot is None:
+            proposal.snapshot = make_snapshot(self.profile, proposal.config, proposal.edits)
         reasoning = proposal.reasoning_blob()
         if self.debate_panel is not None and not warm:     # diverse-perspective gate before GPU
                                                            # (a random draw makes no claim to vet)
@@ -233,12 +231,14 @@ class Orchestrator:
 
     def _run_tier(self, proposal, reasoning, fidelity, exp_id, parent_id, parent_score, predicted_delta):
         from scholarloop.experiment.runner import run_experiment   # imported lazily (heavy deps)
+        reference = next((e for e in Ledger(self.ledger_path).read_all() if e.id == parent_id), None)
         return run_experiment(
             self.profile, fidelity, exp_id, proposal.hypothesis,
             config_override=proposal.config, edits=proposal.edits, reasoning=reasoning,
             predicted_delta=predicted_delta, parent=parent_id, parent_score=parent_score,
             ledger_path=self.ledger_path, registry_dir=self.registry_dir,
-            artifact_cache=self._round_cache)
+            artifact_cache=self._round_cache, candidate_snapshot=proposal.snapshot,
+            prediction_reference=reference, training_budget=self.training_budget)
 
     def _calibrate(self, entry) -> None:
         """Universal predict-then-verify (B): score every agent claim attached to this run once the
@@ -259,7 +259,7 @@ class Orchestrator:
             from scholarloop.experiment.reasoner import _ranges_line
             self.last_advice = self.advisor.advise(
                 entry, frontier, recent_verdicts=recent, direction=self.profile.metric.direction,
-                parent_score=(_fold_matched(entry, frontier) if self.profile.cv_folds >= 2 else None),
+                parent_score=reference_score(entry, frontier),
                 ranges=_ranges_line(self.profile.knobs) if self.profile.knobs else "")
             self._apply_advice(entries)
 
@@ -352,16 +352,18 @@ class Orchestrator:
 
         # Phase 1 — propose up to k admissible, mutually-distinct ideas.
         batch: list[tuple] = []
-        seen: list[dict] = []
+        seen: set[str] = set()
         for _ in range(k):
             prepared = self._propose(entries, lit_context=lit_context, skills=skills, lit_priors=lit_priors)
             if prepared is None:
                 continue
             proposal, reasoning = prepared
-            effective = {**self.profile.knobs, **proposal.config}
-            if any(same_config(effective, c) for c in seen):
-                continue                                # don't smoke the same config twice in one round
-            seen.append(effective)
+            if proposal.snapshot is None:
+                proposal.snapshot = make_snapshot(self.profile, proposal.config, proposal.edits)
+            identity = proposal.snapshot["id"]
+            if identity in seen:
+                continue                                # same implementation AND effective config
+            seen.add(identity)
             batch.append((proposal, reasoning))
         if not batch:
             return []
@@ -422,9 +424,9 @@ class Orchestrator:
 
     def _promote(self, entry: LedgerEntry, fidelity: str, gate: float | None) -> bool:
         """Promotion gate (deterministic): does this tier earn a more expensive confirmation?
-        Smoke screens with slack (high recall); verify enforces the strict significance gate
-        (high precision) — the standard multi-fidelity shape: cheap stages keep candidates, expensive
-        stages confirm them."""
+        Smoke screens with slack; verify uses a pessimistic SEM margin
+        as a compute-allocation heuristic, not a significance test. Cheap stages keep
+        candidates; expensive stages collect wider validation evidence."""
         if fidelity == "full":
             return False                                   # full is terminal
         score = entry.primary_score()
@@ -439,7 +441,7 @@ class Orchestrator:
             return self.profile.metric.is_better(score, self._relaxed_gate(gate))
         if not self.profile.metric.is_better(score, gate):
             return False                                   # didn't clear the bar — drop it cheaply
-        if fidelity == "verify":                           # statistical-significance gate (not just the mean)
+        if fidelity == "verify":                           # noise-margin heuristic, not inferential confirmation
             bound = confidence_bound(seeds, self.profile.metric.direction, self.promote_z)
             return self.profile.metric.is_better(bound, gate)   # promote only if robust to seed noise
         return False                                       # default-deny: only smoke/verify ever climb
@@ -473,7 +475,7 @@ class Orchestrator:
             self.guidance = d.get("direction", rationale)
         else:
             self.guidance = (f"{rationale} — change approach: explore a different architecture/"
-                             "optimizer outside the current focus and ruled-out regions.").strip()
+                             "optimizer beyond the current focus; revisit warnings when justified.").strip()
 
     def _spent(self) -> float | None:
         """Cumulative LLM spend (USD) for the Governor, or None when the model has no known price."""
@@ -507,6 +509,8 @@ class Orchestrator:
           - else `funnel=True` — one idea through smoke→verify→full,
           - else a single flat run at `fidelity`.
         """
+        from scholarloop.experiment.test_boundary import require_unopened_test
+        require_unopened_test(self.ledger_path)
         if self.director is not None and not self._directed:   # set the campaign direction once
             d = self.director.direct(list(Ledger(self.ledger_path).read_all()))
             self.topic, self.guidance, self._directed = d.get("topic", self.topic), \
@@ -518,9 +522,9 @@ class Orchestrator:
                   f"is known for model {getattr(self.llm, 'model', None)!r}; the budget gate is OFF "
                   "(add it to scholarloop.experiment.governor.MODEL_PRICES).", file=sys.stderr)
         if governor is not None:                               # seed convergence tracking from any prior best
-            fr = self._parent(list(Ledger(self.ledger_path).read_all()))
+            fr = best_comparable(list(Ledger(self.ledger_path).read_all()), self.profile, kept_only=True)
             if fr is not None:
-                governor.update_frontier(fr.primary_score(), direction)
+                governor.update_frontier(fr.primary_score(), direction, scope=scope(fr))
         out: list[LedgerEntry] = []
         round_idx = 0
         while True:
@@ -543,8 +547,10 @@ class Orchestrator:
             round_idx += 1
 
             if governor is not None:
-                kept = [e for e in produced if e.verdict == "kept"]
-                improved = any([governor.update_frontier(e.primary_score(), direction) for e in kept])   # list: no short-circuit
+                frontier = best_comparable(list(Ledger(self.ledger_path).read_all()), self.profile,
+                                           kept_only=True)
+                improved = (governor.update_frontier(frontier.primary_score(), direction, scope=scope(frontier))
+                            if frontier else False)
                 governor.record_round(improved)
                 for alert in governor.alerts(self._spent()):
                     print(f"governor: {alert}", file=sys.stderr)

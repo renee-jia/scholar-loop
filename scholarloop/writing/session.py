@@ -714,7 +714,7 @@ class WritingSession:
         self.llm, self.profile = llm, profile
         self.out = Path(out_dir)
         self.out.mkdir(parents=True, exist_ok=True)
-        self.trace = trace or AgentTrace()
+        self.trace = trace or AgentTrace(path=self.out / "writing.agents.jsonl")
         self.max_rounds = max_rounds
         self.demo = demo
         self.scientific = ScientificReviewSession(llm, profile, review_dir or out_dir,

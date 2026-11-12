@@ -14,7 +14,7 @@ scholarloop/experiment/random_search.py). Writes compare.md and compare.json to 
 `--match rounds` gives both arms the same number of ideas; `--match runs` runs the agent first
 and gives random search the agent's mean number of training runs, since the funnel spends more
 compute on ideas that climb. Finished campaigns are kept (summary.json per repeat), so an
-interrupted comparison picks up where it stopped; delete --out to start over.
+interrupted campaigns are retained and reported rather than silently restarted.
 """
 
 from __future__ import annotations
@@ -22,15 +22,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from scholarloop.core.ledger import Ledger
+from scholarloop.review.contracts import atomic_json
 from scholarloop.core.profile import load_profile                          # noqa: E402
-from scholarloop.experiment.compare import campaign_summary, render, run_campaign   # noqa: E402
+from scholarloop.experiment.compare import campaign_summary, render, run_campaign, freeze_comparison   # noqa: E402
 from scholarloop.experiment.governor import cost_of                       # noqa: E402
 from scholarloop.experiment.orchestrator import Orchestrator              # noqa: E402
 from scholarloop.experiment.random_search import RandomProposer           # noqa: E402
@@ -63,25 +64,52 @@ def run_arm(arm: str, profile, out: Path, args, *, llm=None, max_train_runs=None
         if done.exists():                                   # finished earlier: keep it
             summaries.append(json.loads(done.read_text()))
             continue
+        if rep.exists() and any(rep.iterdir()):
+            s = {**campaign_summary(list(Ledger(rep / "experiments.jsonl").read_all()), profile),
+                 "status": "interrupted", "reason": "Existing unfinished campaign preserved; inspect before rerunning"}
+            atomic_json(done, s)
+            summaries.append(s)
+            continue
         if arm == "agent" and args.max_cost is not None:
-            spent = cost_of(llm.usage, llm.model) or 0.0
+            spent = cost_of(llm.usage, llm.model)
+            if spent is None:
+                summaries.append({**campaign_summary([], profile), "status": "not_started",
+                                  "reason": "unknown_model_price"})
+                continue
             if spent >= args.max_cost:
                 print(f"   agent: budget ${args.max_cost:.2f} reached after {k} new campaigns; stopping",
                       file=sys.stderr)
-                break
-        shutil.rmtree(rep, ignore_errors=True)              # an interrupted campaign restarts clean
-        rep.mkdir(parents=True)
+                s = {**campaign_summary([], profile), "status": "not_started", "reason": "cost_budget"}
+                summaries.append(s)
+                continue
+        rep.mkdir(parents=True, exist_ok=True)
         before = dict(llm.usage) if llm is not None else {}
         orch = (agent_orchestrator(profile, rep, llm, args.topic, warm_start=args.warm_start, seed=k)
                 if arm == "agent"
                 else random_orchestrator(profile, rep, seed=k))
-        bound = {"max_train_runs": max_train_runs} if max_train_runs else {"rounds": args.rounds}
-        entries = run_campaign(orch, **bound)
-        s = campaign_summary(entries, profile)
+        bound = {"max_train_runs": max_train_runs} if max_train_runs is not None else {"rounds": args.rounds}
+        try:
+            entries = run_campaign(orch, **bound)
+        except BaseException as exc:
+            s = {**campaign_summary(list(Ledger(rep / "experiments.jsonl").read_all()), profile),
+                 "status": "failed" if isinstance(exc, Exception) else "interrupted",
+                 "reason": f"{type(exc).__name__}: {exc}"}
+            if llm is not None:
+                used = {key: llm.usage.get(key, 0) - before.get(key, 0) for key in llm.usage}
+                s["llm"] = {"calls": used.get("calls", 0), "usd": cost_of(used, llm.model)}
+            atomic_json(done, s)
+            if not isinstance(exc, Exception):
+                raise
+            summaries.append(s)
+            continue
+        s = {**campaign_summary(entries, profile), "status": "completed",
+             "budget_target": bound,
+             "train_run_overshoot": max(0, campaign_summary(entries, profile)["train_runs"] - max_train_runs)
+                                     if max_train_runs is not None else None}
         if llm is not None:
             used = {key: llm.usage.get(key, 0) - before.get(key, 0) for key in llm.usage}
             s["llm"] = {"calls": used.get("calls", 0), "usd": cost_of(used, llm.model)}
-        done.write_text(json.dumps(s, indent=1))
+        atomic_json(done, s)
         summaries.append(s)
         best = s["best_full"]
         print(f"   {arm} {k + 1}/{args.repeats}: {s['ideas']} ideas, {s['train_runs']} train runs, best "
@@ -96,7 +124,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repeats", type=int, default=5, help="independent campaigns per arm")
     ap.add_argument("--rounds", type=int, default=8, help="funnel rounds (ideas) per campaign")
     ap.add_argument("--match", choices=["rounds", "runs"], default="rounds")
-    ap.add_argument("--max-cost", type=float, default=None, help="USD cap on the agent arm")
+    ap.add_argument("--max-calls", type=int, default=100, help="persistent hard request cap across repeats and retries")
+    ap.add_argument("--max-cost", type=float, default=None, help="estimated USD stop threshold between campaigns; use --max-calls for a hard request cap")
     ap.add_argument("--warm-start", type=int, default=0,
                     help="the agent's first N ideas are the random arm's draws (paired by repeat)")
     ap.add_argument("--topic", default=os.environ.get("SCHOLARLOOP_TOPIC",
@@ -119,8 +148,12 @@ def main(argv: list[str] | None = None) -> int:
             print("the agent arm needs ANTHROPIC_API_KEY (or run --arms random)", file=sys.stderr)
             return 1
         from scholarloop.core.llm import AnthropicLLM, model_from_env
-        llm = AnthropicLLM(model=model_from_env())
+        from scholarloop.core.call_budget import CallLimitedLLM
+        llm = CallLimitedLLM(AnthropicLLM(model=model_from_env()), args.max_calls,
+                             path=out / "comparison_call_budget.json")
 
+    freeze_comparison(out, profile, {**{k: v for k, v in vars(args).items() if k != "out"},
+                                      "model": getattr(llm, "model", None)})
     results: dict[str, list[dict]] = {}
     for arm in sorted(arms):                                # agent first: --match runs needs it
         budget = None
@@ -131,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 budget = round(sum(agent_runs) / len(agent_runs))
         print(f"=== {arm}: {args.repeats} campaigns on {profile.name}, "
-              + (f"{budget} train runs each" if budget else f"{args.rounds} rounds each") + " ===")
+              + (f"{budget} train runs each" if budget is not None else f"{args.rounds} rounds each") + " ===")
         results[arm] = run_arm(arm, profile, out, args, llm=llm, max_train_runs=budget)
 
     (out / "compare.json").write_text(json.dumps(results, indent=1))

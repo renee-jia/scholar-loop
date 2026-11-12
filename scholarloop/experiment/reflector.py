@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from scholarloop.core.agent import Agent
 from scholarloop.core.ledger import LedgerEntry
+from scholarloop.experiment.evidence import reference_score
 from scholarloop.experiment.skills import Skill
 
 REFLECTOR_SCHEMA = {
@@ -65,7 +66,11 @@ class Reflector(Agent):
             f"calibration_error: {pred.get('calibration_error')}.",
         ]
         if parent is not None:
-            lines.append(f"Parent {parent.id} scored {parent.primary_score()}.")
+            ref = reference_score(e, parent)
+            lines.append(f"Parent {parent.id}: comparable validation score {ref}." if ref is not None
+                         else f"Parent {parent.id}: comparison unavailable; incompatible observation scopes.")
+        lines.append("Observed associations do not establish causality. Do not infer a transferable "
+                     "effect from an execution failure or an unavailable comparison.")
         lines.append("\nWhat is the single transferable lesson (category, severity in (0,1], "
                      "mitigation)? If none, set worth_recording=false.")
         return "\n".join(lines)

@@ -17,6 +17,7 @@ from statistics import mean
 from jsonschema import Draft7Validator
 
 from scholarloop.core.ledger import LedgerEntry
+from scholarloop.core.candidates import CandidateStore, CandidateError, validate_snapshot, content_id
 from scholarloop.core.registry import VerifiedRegistry, _number_tokens
 from scholarloop.review.contracts import ARGUMENT_SCHEMA, ReviewBlocked, VERSION, digest, atomic_json
 
@@ -35,6 +36,27 @@ def snapshot(profile, ledger_path, registry_dir, research_dir=None) -> dict:
         paths[f"registry/{p.name}"] = p.resolve()
     for p in sorted((registry_dir / "protocols").glob("*.json")):
         paths[f"protocols/{p.name}"] = p.resolve()
+    # Include referenced candidates only; orphan proposals are not experimental evidence.
+    if ledger_path.is_file():
+        for line in ledger_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            row = _json(line)
+            if not isinstance(row, dict):
+                raise ReviewBlocked("Invalid ledger record")
+            cid = row.get("candidate_id")
+            if cid:
+                try:
+                    CandidateStore(registry_dir).load(cid)
+                except CandidateError as exc:
+                    raise ReviewBlocked(str(exc)) from exc
+                paths[f"candidates/{cid}.json"] = registry_dir / "candidates" / f"{cid}.json"
+    from scholarloop.experiment.test_boundary import access_records
+    try:
+        for path, record in access_records(ledger_path):
+            paths[f"test_access/{path.name}"] = path
+    except ValueError as exc:
+        raise ReviewBlocked(str(exc)) from exc
     files = {}
     for name, p in paths.items():
         raw = p.read_bytes() if p.is_file() else None
@@ -68,6 +90,16 @@ def build_dossier(inputs: dict) -> dict:
     files, profile = inputs["files"], inputs["profile"]
     runs, measurements, checks = [], {}, []
     seen = set()
+    candidates = {}
+    for name, file in files.items():
+        if name.startswith("candidates/"):
+            try:
+                candidate = validate_snapshot(_json(file["text"]))
+            except (ValueError, KeyError, TypeError) as exc:
+                raise ReviewBlocked(f"Invalid candidate snapshot: {name}: {exc}") from exc
+            if name != f"candidates/{candidate['id']}.json":
+                raise ReviewBlocked("Candidate snapshot filename disagrees with its identity")
+            candidates[candidate["id"]] = candidate
     for line in files["ledger"]["text"].splitlines():
         if not line.strip():
             continue
@@ -82,6 +114,20 @@ def build_dossier(inputs: dict) -> dict:
         seen.add(e.id)
         if e.domain != profile["name"] or e.metric_name != profile["metric"]["name"]:
             raise ReviewBlocked(f"Run {e.id} does not match this profile/metric")
+        if e.candidate_id:
+            candidate = candidates.get(e.candidate_id)
+            if candidate is None:
+                raise ReviewBlocked(f"{e.id}: candidate snapshot is missing")
+            spec = e.run_spec
+            if (not spec or spec.get("id") != content_id({k: v for k, v in spec.items() if k != "id"})
+                    or spec.get("candidate_id") != e.candidate_id
+                    or spec.get("implementation_id") != content_id(candidate["sources"])
+                    or [spec.get("fidelity")] != e.fidelity or spec.get("purpose") != e.purpose
+                    or spec.get("protocol") != e.protocol
+                    or spec.get("seeds") != e.metric.get("requested_seeds")
+                    or candidate["context"].get("domain") != e.domain
+                    or candidate["context"].get("metric") != e.metric_name):
+                checks.append(f"{e.id}: execution disagrees with its candidate/run specification")
         rid = e.registry_id or e.id
         if not re.fullmatch(r"[A-Za-z0-9_-]+", rid):
             raise ReviewBlocked(f"Invalid registry id: {rid}")
@@ -122,6 +168,14 @@ def build_dossier(inputs: dict) -> dict:
             elif m["seeds"] and abs(m["value"] - round(mean(m["seeds"]), 4)) > 1e-8:
                 checks.append(f"{e.id}: aggregate disagrees with its recorded seed measurements")
         runs.append(raw)
+    for name, file in files.items():
+        if name.startswith("test_access/"):
+            record = _json(file["text"])
+            matching = [r for r in runs if r["id"] == record["run_id"]
+                        and r.get("candidate_id") == record["candidate_id"]
+                        and r.get("protocol") == record["protocol"] and r.get("run_spec", {}).get("holdout")]
+            if len(matching) != 1:
+                checks.append("Unresolved final test access: " + record["run_id"])
     if not runs:
         checks.append("No experiments have been recorded")
     if not measurements:
@@ -178,7 +232,7 @@ def build_dossier(inputs: dict) -> dict:
     return {"schema_version": VERSION, "input_hash": digest(inputs), "profile": profile,
             "input_manifest": {k: {"path": v["path"], "sha256": v["sha256"]} for k, v in files.items()},
             "runs": runs, "measurements": measurements, "papers": papers, "research": research,
-            "protocols": protocols,
+            "protocols": protocols, "candidates": candidates,
             "current_code": {k: files[k]["text"] for k in ("train", "scorer")},
             "checks": checks,
             "provenance_note": "Current engine source is not proof of historical execution. "
@@ -187,7 +241,8 @@ def build_dossier(inputs: dict) -> dict:
 
 def evidence_ids(dossier):
     return ({r["id"] for r in dossier["runs"]} | set(dossier["papers"]) |
-            set(dossier.get("protocols", {})) | {"profile", "train", "scorer"})
+            set(dossier.get("protocols", {})) | set(dossier.get("candidates", {})) |
+            {"profile", "train", "scorer"})
 
 
 def validate_argument(argument: dict, dossier: dict) -> list[str]:
