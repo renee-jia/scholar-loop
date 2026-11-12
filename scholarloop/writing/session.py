@@ -384,6 +384,12 @@ class Outliner(Agent):
         unknown = self.bank.unknown(i for s in secs for i in s.get("evidence", []))
         if unknown:
             errs.append(f"unknown evidence ids {unknown}; use only the run ids, paper ids, or `baseline`")
+        if self.bank.approved_dossier is None:      # ids written inline in the prose, not only the lists
+            texts = [output.get("question", ""), output.get("nugget", ""), *output.get("contributions", []),
+                     *(sec.get("purpose", "") for sec in secs)]
+            inline = self.bank.unknown(i for t in texts for i in _ID_RX.findall(t))
+            if inline:
+                errs.append(f"unknown evidence ids in the outline text: {inline}")
         if not output.get("contributions"):
             errs.append("list at least one contribution")
         return errs
@@ -462,6 +468,9 @@ class KeyPointer(Agent):
                 unknown = self.bank.unknown(p.get("evidence", []))
                 if unknown:
                     errs.append(f"{s['heading']} point {i}: unknown evidence ids {unknown}")
+                inline = self.bank.unknown(_ID_RX.findall(p.get("claim", "")))
+                if inline:
+                    errs.append(f"{s['heading']} point {i}: unknown evidence ids in the claim text: {inline}")
                 if p.get("role") in _ROLES_NEEDING_EVIDENCE and not p.get("evidence"):
                     errs.append(f"{s['heading']} point {i}: a {p['role']} claim must cite evidence")
                 bad = self.bank.ungrounded(p.get("claim", ""))
