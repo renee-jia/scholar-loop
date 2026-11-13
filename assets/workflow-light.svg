@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 672" width="1200" height="672" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" role="img" aria-label="ScholarLoop workflow: ideation, experiments, review and writing, with the checks enforced in code">
+<defs>
+<marker id="n" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5 L8.5 5 L1 8.5" fill="none" stroke="#8a8fa8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>
+<marker id="a0" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5 L8.5 5 L1 8.5" fill="none" stroke="#6246ea" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>
+<marker id="a1" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5 L8.5 5 L1 8.5" fill="none" stroke="#0b9a86" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>
+<marker id="a2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5 L8.5 5 L1 8.5" fill="none" stroke="#d2741f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>
+</defs>
+<rect x="20" y="20" width="354" height="514" rx="18" fill="#f6f7fb" stroke="#e2e4ef"/>
+<rect x="44" y="42" width="5" height="26" rx="2.5" fill="#6246ea"/>
+<text x="60" y="54" font-size="14" font-weight="700" letter-spacing="1.4" fill="#1b1d2a">IDEATION</text>
+<text x="60" y="70" font-size="12" fill="#5d6179">you choose what is worth running</text>
+<rect x="69" y="86" width="280" height="62" rx="12" fill="#ffffff" stroke="#6246ea" stroke-width="1.2" stroke-dasharray="5 4"/>
+<text x="85" y="112" font-size="15" font-weight="650" fill="#1b1d2a">Topic</text>
+<text x="85" y="131" font-size="12" fill="#5d6179">one sentence from you</text>
+<path d="M209.0 151 V172" stroke="#8a8fa8" stroke-width="1.6" fill="none" marker-end="url(#n)"/>
+<rect x="69" y="176" width="280" height="62" rx="12" fill="#ffffff" stroke="#d3d6e4" stroke-width="1.2"/>
+<text x="85" y="202" font-size="15" font-weight="650" fill="#1b1d2a">Literature review</text>
+<text x="85" y="221" font-size="12" fill="#5d6179">arXiv + OpenAlex, every citation checked</text>
+<path d="M209.0 241 V262" stroke="#8a8fa8" stroke-width="1.6" fill="none" marker-end="url(#n)"/>
+<rect x="69" y="266" width="280" height="62" rx="12" fill="#ffffff" stroke="#d3d6e4" stroke-width="1.2"/>
+<text x="85" y="292" font-size="15" font-weight="650" fill="#1b1d2a">Ideas</text>
+<text x="85" y="311" font-size="12" fill="#5d6179">tied to open gaps and to what was tried</text>
+<path d="M209.0 331 V352" stroke="#8a8fa8" stroke-width="1.6" fill="none" marker-end="url(#n)"/>
+<rect x="69" y="356" width="280" height="62" rx="12" fill="#ffffff" stroke="#d3d6e4" stroke-width="1.2"/>
+<text x="85" y="382" font-size="15" font-weight="650" fill="#1b1d2a">Tournament</text>
+<text x="85" y="401" font-size="12" fill="#5d6179">each pair judged twice, order swapped</text>
+<path d="M209.0 421 V442" stroke="#8a8fa8" stroke-width="1.6" fill="none" marker-end="url(#n)"/>
+<rect x="69" y="446" width="280" height="62" rx="12" fill="#ece8ff" stroke="#6246ea" stroke-width="1.6"/>
+<text x="85" y="472" font-size="15" font-weight="650" fill="#1b1d2a">Pick an idea</text>
+<text x="85" y="491" font-size="12" fill="#5d6179">or push back, or bring your own</text>
+<rect x="295" y="457" width="42" height="20" rx="10" fill="#6246ea"/>
+<text x="316" y="471" font-size="10.5" font-weight="700" letter-spacing="0.8" text-anchor="middle" fill="#ffffff">YOU</text>
+<rect x="423" y="20" width="354" height="514" rx="18" fill="#f6f7fb" stroke="#e2e4ef"/>
+<rect x="447" y="42" width="5" height="26" rx="2.5" fill="#0b9a86"/>
+<text x="463" y="54" font-size="14" font-weight="700" letter-spacing="1.4" fill="#1b1d2a">EXPERIMENTS</text>
+<text x="463" y="70" font-size="12" fill="#5d6179">runs unattended</text>
+<rect x="472" y="86" width="280" height="62" rx="12" fill="#ffffff" stroke="#d3d6e4" stroke-width="1.2"/>
+<text x="488" y="112" font-size="15" font-weight="650" fill="#1b1d2a">Propose a run</text>
+<text x="488" y="131" font-size="12" fill="#5d6179">control or treatment of your idea</text>
+<path d="M612.0 151 V172" stroke="#8a8fa8" stroke-width="1.6" fill="none" marker-end="url(#n)"/>
+<rect x="472" y="176" width="280" height="62" rx="12" fill="#ffffff" stroke="#d3d6e4" stroke-width="1.2"/>
+<text x="488" y="202" font-size="15" font-weight="650" fill="#1b1d2a">Debate gate</text>
+<text x="488" y="221" font-size="12" fill="#5d6179">three critics vote: worth the compute?</text>
+<path d="M612.0 241 V262" stroke="#8a8fa8" stroke-width="1.6" fill="none" marker-end="url(#n)"/>
+<rect x="472" y="266" width="280" height="62" rx="12" fill="#ffffff" stroke="#d3d6e4" stroke-width="1.2"/>
+<text x="488" y="292" font-size="15" font-weight="650" fill="#1b1d2a">Funnel</text>
+<text x="488" y="311" font-size="12" fill="#5d6179">smoke → verify → full, most ideas die early</text>
+<path d="M612.0 331 V352" stroke="#8a8fa8" stroke-width="1.6" fill="none" marker-end="url(#n)"/>
+<rect x="472" y="356" width="280" height="62" rx="12" fill="#ffffff" stroke="#d3d6e4" stroke-width="1.2"/>
+<text x="488" y="382" font-size="15" font-weight="650" fill="#1b1d2a">Frozen scorer</text>
+<text x="488" y="401" font-size="12" fill="#5d6179">the only source of a reported number</text>
+<path d="M612.0 421 V442" stroke="#8a8fa8" stroke-width="1.6" fill="none" marker-end="url(#n)"/>
+<rect x="472" y="446" width="280" height="62" rx="12" fill="#ffffff" stroke="#d3d6e4" stroke-width="1.2"/>
+<text x="488" y="472" font-size="15" font-weight="650" fill="#1b1d2a">Reflect and calibrate</text>
+<text x="488" y="491" font-size="12" fill="#5d6179">lessons kept, predictions scored</text>
+<rect x="826" y="20" width="354" height="514" rx="18" fill="#f6f7fb" stroke="#e2e4ef"/>
+<rect x="850" y="42" width="5" height="26" rx="2.5" fill="#d2741f"/>
+<text x="866" y="54" font-size="14" font-weight="700" letter-spacing="1.4" fill="#1b1d2a">REVIEW &#43; WRITING</text>
+<text x="866" y="70" font-size="12" fill="#5d6179">you approve the argument</text>
+<rect x="875" y="86" width="280" height="62" rx="12" fill="#ffffff" stroke="#d3d6e4" stroke-width="1.2"/>
+<text x="891" y="112" font-size="15" font-weight="650" fill="#1b1d2a">Scientific review</text>
+<text x="891" y="131" font-size="12" fill="#5d6179">four critics question every claim</text>
+<path d="M1015.0 151 V172" stroke="#8a8fa8" stroke-width="1.6" fill="none" marker-end="url(#n)"/>
+<rect x="875" y="176" width="280" height="62" rx="12" fill="#fdeedd" stroke="#d2741f" stroke-width="1.6"/>
+<text x="891" y="202" font-size="15" font-weight="650" fill="#1b1d2a">Approve the release</text>
+<text x="891" y="221" font-size="12" fill="#5d6179">bound to a hash of the evidence</text>
+<rect x="1101" y="187" width="42" height="20" rx="10" fill="#d2741f"/>
+<text x="1122" y="201" font-size="10.5" font-weight="700" letter-spacing="0.8" text-anchor="middle" fill="#ffffff">YOU</text>
+<path d="M1015.0 241 V262" stroke="#8a8fa8" stroke-width="1.6" fill="none" marker-end="url(#n)"/>
+<rect x="875" y="266" width="280" height="62" rx="12" fill="#fdeedd" stroke="#d2741f" stroke-width="1.6"/>
+<text x="891" y="292" font-size="15" font-weight="650" fill="#1b1d2a">Staged writing</text>
+<text x="891" y="311" font-size="12" fill="#5d6179">outline → key points → draft</text>
+<rect x="1101" y="277" width="42" height="20" rx="10" fill="#d2741f"/>
+<text x="1122" y="291" font-size="10.5" font-weight="700" letter-spacing="0.8" text-anchor="middle" fill="#ffffff">YOU</text>
+<path d="M1015.0 331 V352" stroke="#8a8fa8" stroke-width="1.6" fill="none" marker-end="url(#n)"/>
+<rect x="875" y="356" width="280" height="62" rx="12" fill="#ffffff" stroke="#d3d6e4" stroke-width="1.2"/>
+<text x="891" y="382" font-size="15" font-weight="650" fill="#1b1d2a">Reviewer panel</text>
+<text x="891" y="401" font-size="12" fill="#5d6179">three reviewers score the draft</text>
+<path d="M1015.0 421 V442" stroke="#8a8fa8" stroke-width="1.6" fill="none" marker-end="url(#n)"/>
+<rect x="875" y="446" width="280" height="62" rx="12" fill="#ffffff" stroke="#d2741f" stroke-width="1.2" stroke-dasharray="5 4"/>
+<text x="891" y="472" font-size="15" font-weight="650" fill="#1b1d2a">Paper + evidence map</text>
+<text x="891" y="491" font-size="12" fill="#5d6179">every number traces to a run</text>
+<path d="M469 477.0 H458 Q448 477.0 448 467.0 V142 Q448 132 458 132 H468" stroke="#0b9a86" stroke-width="1.6" fill="none" marker-end="url(#a1)"/>
+<text transform="translate(440 317.0) rotate(-90)" font-size="11.5" text-anchor="middle" fill="#0b9a86">next round, until the governor stops it</text>
+<path d="M352 477.0 H388.5 Q398.5 477.0 398.5 467.0 V114 Q398.5 104 408.5 104 H468" stroke="#6246ea" stroke-width="1.8" fill="none" marker-end="url(#a0)"/>
+<text transform="translate(389.5 341.0) rotate(-90)" font-size="11.5" text-anchor="middle" fill="#6246ea">handoff.json</text>
+<path d="M755 387.0 H791.5 Q801.5 387.0 801.5 377.0 V140 Q801.5 130 811.5 130 H871" stroke="#0b9a86" stroke-width="1.8" fill="none" marker-end="url(#a1)"/>
+<text transform="translate(792.5 296.0) rotate(-90)" font-size="11.5" text-anchor="middle" fill="#0b9a86">ledger + registry</text>
+<path d="M872 102 H757" stroke="#d2741f" stroke-width="1.6" stroke-dasharray="6 4" fill="none" marker-end="url(#a2)"/>
+<text x="813.5" y="94" font-size="11.5" text-anchor="middle" fill="#d2741f">more experiments</text>
+<rect x="20" y="556" width="1160" height="96" rx="18" fill="#f6f7fb" stroke="#e2e4ef"/>
+<text x="44" y="588" font-size="14" font-weight="700" letter-spacing="1.4" fill="#1b1d2a">ENFORCED IN CODE</text>
+<text x="216" y="588" font-size="12" fill="#5d6179">a model output that fails a check is rejected and retried</text>
+<rect x="44.0" y="604" width="131.5" height="30" rx="15" fill="#ffffff" stroke="#d3d6e4"/>
+<path d="M57.0 619.5 l3.6 3.6 l6.4 -7.4" stroke="#0b9a86" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="73.0" y="623.5" font-size="11.5" fill="#1b1d2a">citations exist</text>
+<rect x="201.1" y="604" width="162.0" height="30" rx="15" fill="#ffffff" stroke="#d3d6e4"/>
+<path d="M214.1 619.5 l3.6 3.6 l6.4 -7.4" stroke="#0b9a86" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="230.1" y="623.5" font-size="11.5" fill="#1b1d2a">numbers are measured</text>
+<rect x="388.6" y="604" width="174.2" height="30" rx="15" fill="#ffffff" stroke="#d3d6e4"/>
+<path d="M401.6 619.5 l3.6 3.6 l6.4 -7.4" stroke="#0b9a86" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="417.6" y="623.5" font-size="11.5" fill="#1b1d2a">edits stay in train.py</text>
+<rect x="588.4" y="604" width="168.1" height="30" rx="15" fill="#ffffff" stroke="#d3d6e4"/>
+<path d="M601.4 619.5 l3.6 3.6 l6.4 -7.4" stroke="#0b9a86" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="617.4" y="623.5" font-size="11.5" fill="#1b1d2a">test set stays sealed</text>
+<rect x="782.0" y="604" width="186.4" height="30" rx="15" fill="#ffffff" stroke="#d3d6e4"/>
+<path d="M795.0 619.5 l3.6 3.6 l6.4 -7.4" stroke="#0b9a86" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="811.0" y="623.5" font-size="11.5" fill="#1b1d2a">approval tracks evidence</text>
+<rect x="994.0" y="604" width="162.0" height="30" rx="15" fill="#ffffff" stroke="#d3d6e4"/>
+<path d="M1007.0 619.5 l3.6 3.6 l6.4 -7.4" stroke="#0b9a86" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1023.0" y="623.5" font-size="11.5" fill="#1b1d2a">every attempt logged</text>
+</svg>

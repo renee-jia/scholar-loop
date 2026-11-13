@@ -2,61 +2,58 @@
 
 # 🔬 Scholar Loop
 
-### An auditable research loop: literature review, ideas, real experiments, scientific review, and a paper whose every number traces to a measurement.
+**A research loop that shows its work.**
+
+Literature review → ideas → real experiments → scientific review → a paper,<br>
+with you at the two decisions that matter and code checking everything that can be checked.
 
 [![tests](https://github.com/renee-jia/scholar-loop/actions/workflows/ci.yml/badge.svg)](https://github.com/renee-jia/scholar-loop/actions/workflows/ci.yml)
-[![python](https://img.shields.io/badge/python-3.10%2B-blue)](#-quickstart)
+[![python](https://img.shields.io/badge/python-3.10%2B-blue)](#-try-it-in-a-minute)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![status](https://img.shields.io/badge/status-research%20preview-orange)](#-status-and-limits)
+[![status](https://img.shields.io/badge/status-research%20preview-orange)](#-limits)
+
+[Try it](#-try-it-in-a-minute) · [How it works](#-how-it-works) · [The rules](#%EF%B8%8F-rules-the-model-cannot-talk-its-way-around) · [Results](#-what-we-have-measured) · [Limits](#-limits) · [Reference](#-reference)
+
+<br>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/workflow-dark.svg">
+  <img src="assets/workflow-light.svg" alt="The ScholarLoop workflow. Ideation: topic, literature review, ideas, tournament, and you pick an idea. Experiments: propose a control or treatment run, debate gate, three-tier funnel, frozen scorer, reflect and calibrate, repeated until the governor stops. Review and writing: scientific review, your approval of the release, staged writing, reviewer panel, and a paper with an evidence map. Below: the checks enforced in code." width="100%">
+</picture>
 
 </div>
 
----
+## What this is
 
-ScholarLoop runs the loop a PhD student runs. It reads the literature and writes a review,
-proposes ideas and ranks them in a tournament, lets **you pick one**, runs real ML experiments
-that must test that idea against a matched control, has critics review the evidence before a
-word of the paper is written, and then writes the paper in stages that **you approve**.
+Ask a language model to "do research" and you get a confident paper. The trouble starts when
+you check it: a citation that does not exist, a number nobody measured, a headline idea that
+was never actually run.
 
-The language model does the open-ended reasoning. Everything that can be checked is checked in
-code: which papers may be cited, which numbers may be reported, which files an experiment may
-edit, when the held-out test set may be opened, and whether your approval still matches the
-evidence. A model output that fails a check is rejected and retried with the errors as feedback.
+ScholarLoop is built around that problem. The model still does the thinking: it reads papers,
+proposes ideas, designs experiments and writes. But it works inside a harness that keeps the
+books. Every run goes into an append-only ledger. Every number in the paper has to match a
+measurement from a scorer the model cannot touch. Every citation has to be a paper that was
+actually retrieved. When an output breaks a rule, the harness rejects it, hands the errors
+back, and the model tries again.
 
-What this project claims, and what it does not:
+You make two calls yourself: which idea is worth running, and whether the evidence supports
+the argument before any prose is written.
 
-- **Claimed:** a faithful, inspectable research workflow. Each claim in the paper is bound to
-  runs in an append-only ledger, each number to a frozen-scorer measurement, each citation to a
-  retrieved paper.
-- **Not claimed:** that the agent is a better optimizer than simple baselines. On a five-knob
-  search it does not beat random search ([measured below](#-evidence-so-far)). Passing the
-  checks means an output is traceable, not that it is scientifically correct.
+> [!IMPORTANT]
+> ScholarLoop does not claim to be a better scientist or a better optimizer. Against random
+> search on a five-knob problem, the agent loses or ties ([numbers below](#-what-we-have-measured)).
+> What it offers is a research process you can audit line by line.
 
-```text
- IDEATION (you choose)              EXPERIMENTS (autonomous)            REVIEW + WRITING (you approve)
+## 🚀 Try it in a minute
 
- topic ─▶ literature review ─▶ ideas ─▶ pick ─▶ control vs treatment ─▶ scientific review ─▶ release ─▶ outline ─▶ key points ─▶ draft ─▶ reviewers
-            ▲ your feedback      ▲ tournament     smoke → verify → full      │        ▲          ▲ you       ▲ you        ▲ you
-                                                   ledger + registry          └ experiments or narrower claims
-```
-
-## 🚀 Quickstart
-
-No GPU and no API key are needed for the demos. They use a scripted model and local engines.
+The demos need no GPU and no API key. A scripted model stands in for the real one.
 
 ```bash
-pip install -e ".[dev]"             # pyyaml + jsonschema + pytest
-python examples/quickstart.py       # one idea through the smoke → verify → full funnel
-python examples/ideation_demo.py    # review → feedback → ideas → pick → the loop runs it
-python examples/writing_demo.py     # outline → panel debate → approve → key points → prose → review
-
-pip install -e ".[dev,engines]"     # adds torch + scikit-learn for the real engines
-python examples/campaign_demo.py    # the whole agent chain on real torch training, scripted model
-python examples/governed_campaign.py   # parallel population funnel under a self-stopping governor
-pytest -q
+pip install -e ".[dev]"
+python examples/quickstart.py          # one idea climbs smoke → verify → full
+python examples/ideation_demo.py       # review → your feedback → ideas → you pick → it runs
+python examples/writing_demo.py        # outline → panel debate → you approve → prose → review
 ```
-
-`quickstart.py` prints:
 
 ```text
 baseline to beat: 4.9% val_top1_err
@@ -66,81 +63,85 @@ baseline to beat: 4.9% val_top1_err
   full   val_top1_err=3.8208%  [kept]
 ```
 
-Live runs need `pip install -e ".[llm]"` and `ANTHROPIC_API_KEY`. The AG News engine also needs
-`".[nlp]"` for a one-time dataset download.
-
-## 🧭 The workflow, stage by stage
-
-| Stage | What happens | You | Artifacts |
-|---|---|---|---|
-| **Literature review** | plans queries, retrieves papers from arXiv and OpenAlex (citation-ranked, with slots reserved for recent preprints), writes themes, per-paper notes and open gaps | approve, or ask for more coverage | `lit_review.md` |
-| **Ideas** | proposes ideas tied to the gaps, your engine's metric and knobs, and what the ledger already tried; ranks them by a pairwise tournament | pick one, push back, inject your own | `ideas.md`, `tournament.json`, `handoff.json` |
-| **Experiments** | proposes runs, a debate panel votes on whether each deserves compute, a three-tier funnel runs them, a frozen scorer measures them | none (unattended) | `experiments.jsonl`, `registry/`, `run.md` |
-| **Scientific review** | four role-specific critics answer evidence questions for every claim; open concerns require experiments or narrower claims | approve the exact review hash | `scientific_review.md` |
-| **Writing** | outline, then key points, then prose; each stage argued by a Skeptic, an Editor and a Methodologist | approve the outline and the key points | `outline.md`, `key_points.md`, `paper.md` |
-| **Reviewer panel** | three persona reviewers score the draft against a checklist | read it | `review.md` |
-
-### 1. Ideation: a review you can read, ideas you can choose
+Real training, still free:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+pip install -e ".[dev,engines]"        # torch + scikit-learn
+python examples/campaign_demo.py       # the full agent chain on real torch runs
+python examples/governed_campaign.py   # parallel funnel that decides when to stop
+pytest -q
+```
+
+For live runs, add `".[llm]"` and set `ANTHROPIC_API_KEY`.
+
+## 🧭 How it works
+
+### 1 · Ideation: you choose what is worth running
+
+```bash
 python -m scholarloop.ideation --profile profiles/digits-mlp.yaml \
     --topic "regularization recipes for small MLPs" --out runs/s1
 #   (a)pprove · (r)efine <feedback> · (q)uit  >  r also cover data-side regularization such as mixup
 #   (s)elect <n> · (r)efine <feedback> · (q)uit >  s 2
 ```
 
-Ideas are not ranked by the model grading its own work. A rotating panel compares every pair
-twice with the order swapped; a win in only one order counts as a draw, which cancels position
-bias. Elo is computed in code and the match log is saved. A meta-reviewer turns the judges'
-recurring complaints into at most five recommendations, each citing the matches behind it, and
-the next round of ideas is written against them.
+You give a topic. ScholarLoop plans queries, pulls papers from arXiv and OpenAlex, and writes a
+review with themes, per-paper notes and open gaps. Read it and push back if something is
+missing. Then it proposes ideas, each tied to a gap and to an experiment your engine can run.
 
-Scripted use: `--stop-after review` writes the report and exits for a human; `--feedback "…"`
-and `--select 2` resume from another process; `--auto` picks the tournament's top idea. Add
-`--deep --brief examples/research_brief.json` for independent mechanism, transfer and
-contradiction strategies with per-idea retrieval. `--inject-idea` accepts a human-authored
-candidate, and `--decision reject|refine|merge|revive` records your decisions on stable idea IDs.
+The model does not get to rank its own ideas. A panel of judges compares every pair twice, with
+the order swapped. A win in only one order counts as a draw, which cancels the bias toward
+whichever idea is shown first. Elo is computed in code and the full match log is saved.
 
-### 2. Experiments: the chosen idea must actually be tested
+You pick one, or reject them all, or write your own with `--inject-idea`. The choice is saved to
+`handoff.json`.
+
+<details>
+<summary>Scripted and deeper modes</summary>
+
+`--stop-after review` writes the report and exits for a human. `--feedback "…"` and
+`--select 2` resume from another process. `--auto` takes the tournament's top idea.
+`--deep --brief examples/research_brief.json` generates ideas by independent strategies
+(mechanism, transfer, contradiction) with retrieval per idea.
+`--decision reject|refine|merge|revive --idea-ids …` records your decisions against stable
+idea IDs. `python -m scholarloop.ideation.pilot` runs a small validation-only pilot across
+several ideas before you commit to one.
+
+A meta-reviewer turns the judges' recurring complaints into at most five recommendations. Each
+must cite the matches that show it, and the next round of ideas is written against them.
+
+</details>
+
+### 2 · Experiments: the idea you picked gets tested
 
 ```bash
 SCHOLARLOOP_HANDOFF=runs/s1/handoff.json SCHOLARLOOP_OUT=runs/s1 \
-    python examples/run_to_paper.py       # campaign, scientific review, write-up
+    python examples/run_to_paper.py
 ```
 
-One round of the loop:
+This part runs on its own. Each round, the Reasoner proposes runs, three critics vote on
+whether each one deserves compute, and the survivors climb a funnel: one seed, then three, then
+five. Most ideas die after the first cheap run.
 
-```text
-  Reasoner proposes N ideas ─▶ debate panel votes ─▶ parallel smoke screen (1 seed, cheap)
-                                                              │ survivors only
-                                                              ▼
-                            verify (3 seeds + noise margin) ─▶ full (5 seeds)
-                                                              │
-       calibrate each agent's prediction against the result · distill one lesson into the skill library
-                                                              │
-                              governor: budget? round cap? converged? ─▶ stop, or next round
-```
+Four things keep it honest:
 
-- **Treatment versus control.** When a campaign adopts your idea, every proposal declares
-  whether it applies the idea (`treatment`) or is the matched run without it (`control`). The
-  harness allows one control at most before the first treatment, and the loop cannot pivot away
-  before a treatment has run. An idea that no hyperparameter expresses is implemented by
-  replacing the training script through the edit channel, which runs in an isolated copy.
-- **Frozen scoring.** The training script only trains and saves weights. A separate frozen
-  scorer, run from the pristine repository, produces the number. The agent cannot print a metric.
-- **Budget-aware funnel.** Most ideas die after one cheap run. Only survivors get more seeds.
-- **Predict, then verify.** Each proposal predicts its effect before it runs. Predictions are
-  scored against the result, and each agent's track record is shown to it in later rounds.
-- **Held-out test.** Exploration never scores the test split. Opening it needs an explicit
-  confirmation request and closes the campaign to further exploration.
+- **Your idea cannot be tuned around.** Every proposal says whether it applies the idea
+  (`treatment`) or is the matched run without it (`control`). The harness allows one control
+  before the first treatment and will not let the loop change direction until a treatment has
+  run. If no hyperparameter expresses the idea, the Reasoner rewrites the training script, and
+  that edit runs in an isolated copy.
+- **The model never reports its own score.** The training script trains and saves weights.
+  A separate, frozen scorer produces the number.
+- **Predictions are checked.** Each proposal predicts its effect before it runs. The loop
+  scores those predictions and shows each agent its track record.
+- **The test set stays sealed.** Exploration only sees validation data. Opening the held-out
+  split takes an explicit request and ends exploration for that campaign.
 
-### 3. Scientific review, then writing
+### 3 · Review and writing: you approve the argument
 
 ```bash
 python -m scholarloop.review review  --profile profiles/digits-mlp.yaml \
     --ledger runs/s1/experiments.jsonl --registry runs/s1/registry --research runs/s1 --out runs/s1
-# Read scientific_review.md. Approve only a READY_FOR_AUTHOR review, by its exact hash:
 python -m scholarloop.review approve --profile profiles/digits-mlp.yaml \
     --ledger runs/s1/experiments.jsonl --registry runs/s1/registry --research runs/s1 --out runs/s1 \
     --author Researcher --review-hash EXACT_REVIEW_HASH
@@ -148,186 +149,191 @@ python -m scholarloop.writing --profile profiles/digits-mlp.yaml \
     --ledger runs/s1/experiments.jsonl --registry runs/s1/registry --research runs/s1 --out runs/s1
 ```
 
-Writing does not start until the review is approved. Your approval is bound to a hash of the
-evidence, the argument and the tracked execution inputs; if any of them changes, the release is
-void and writing stops. When the critics ask for controls or ablations
-(`NEEDS_EXPERIMENTS`), `python -m scholarloop.experiment.agenda` freezes them as a protocol,
-runs every condition, keeps negative results and failed seeds, and returns the evidence for
-re-review. Completing experiments never approves writing.
+Before any prose exists, four critics go through the evidence claim by claim. If they want a
+control or an ablation, `python -m scholarloop.experiment.agenda` freezes it as a protocol,
+runs every condition, and keeps the negative results. Then the critics look again.
 
-A one-shot "write the paper" call gives fluent prose over a weak argument. The writing session
-builds the argument first: the outline is debated and approved, then the key points, and only
-then is each section drafted from the agreed points. The writing guidance ships in the repo
-(`scholarloop/writing/skills/`), not in a chat window.
+Nothing gets written until you approve the review, and your approval is tied to a hash of the
+evidence. Change a run, the argument or the code afterwards and the approval is void.
 
-## 🛡️ What is enforced in code
+Writing then happens in three passes. A Skeptic, an Editor and a Methodologist argue over the
+outline until they accept it, and you sign off. The same happens for the key points. Only then
+is each section drafted, from points everyone already agreed on. A final panel of three
+reviewers scores the draft.
 
-| Check | What it rejects |
+## 🛡️ Rules the model cannot talk its way around
+
+These live in code. A prompt can ask for good behaviour; a check can refuse the output.
+
+| Rule | What gets rejected |
 |---|---|
-| **Citation grounding** | a paper id that is not in the retrieved corpus, in the review, an idea, the outline, a key point or the prose |
-| **Number grounding** | a number that no measurement supports. In reviewed writing each sentence must cite an approved statement, and its numbers are checked against the statements cited in that sentence |
-| **Evidence ids** | a run id or statement id that does not exist; a result claim with no evidence |
-| **Frozen scoring** | a metric produced by anything other than the frozen scorer; edits outside the training entrypoint; a scorer file that changed during the run |
-| **Idea testing** | a second control before the first treatment of an adopted idea |
-| **Test-set boundary** | scoring the held-out split during exploration; continuing to explore after it was opened |
-| **Release binding** | writing against a review whose evidence, argument or code has since changed |
-| **Tournament and meta-review** | a win that holds in only one presentation order; a recommendation that no recorded match supports |
-| **Prose lint** | em-dashes, "not X, but Y", stacked connectives, hype phrases and common machine vocabulary |
-| **Budgets** | requests past a persistent call cap; training attempts past a reservation; spend past a shared dollar cap |
+| Citations must exist | a paper id that is not in the retrieved corpus, anywhere from the review to the final prose |
+| Numbers must be measured | a number no measurement supports. In reviewed writing, each sentence cites an approved statement and its numbers must come from that statement |
+| Evidence must exist | an unknown run or statement id; a result claim with no evidence behind it |
+| Scores come from the frozen scorer | a metric from anywhere else; an edit outside the training script; a scorer file that changed mid-run |
+| The idea gets tested | a second control before the first treatment |
+| The test set stays sealed | scoring it during exploration; exploring after it was opened |
+| Approval follows the evidence | writing against a review whose evidence, argument or code has changed |
+| Rankings must be robust | a tournament win that holds in only one order; a recommendation no match supports |
+| Prose stays plain | em-dashes, "not X, but Y", stacked connectives, hype phrases |
+| Budgets hold | requests past a call cap, training runs past a reservation, spend past a dollar cap |
 
-Every agent attempt is logged to `*.agents.jsonl` with its inputs' fingerprints, the structured
-output, the validation errors and the outcome, so a rejected attempt stays visible.
+Every attempt by every agent is logged with its output, its validation errors and its outcome,
+so the rejected attempts stay on the record too.
 
-These are deterministic checks, not OS isolation. They defeat the realistic threat, a language
-model proposing edits, and not a hostile process with filesystem access.
+## 📊 What we have measured
 
-## 📊 Evidence so far
+<table>
+<tr>
+<td align="center" width="33%"><h3>3.33%</h3>held-out error in the live digits run<br><sub>baseline 3.8% · and the paper was still rejected</sub></td>
+<td align="center" width="33%"><h3>0 of 9</h3>campaign pairs where the agent beat random search<br><sub>before a warm start made it a tie</sub></td>
+<td align="center" width="33%"><h3>97% · 0%</h3>of injected fabrications and misattributions caught<br><sub>617 faults, no false alarms on 14 clean artifacts</sub></td>
+</tr>
+</table>
 
-### The full flow, live, on digit classification
+### A full live run, and why its own reviewers rejected it
 
-One complete run with `claude-opus-5-5` as every agent is captured verbatim in
-[`examples/sample_runs/digits`](examples/sample_runs/digits/): literature review, five ideas, a
-tournament pick, 18 real training runs, a staged write-up and a three-reviewer panel.
+[`examples/sample_runs/digits`](examples/sample_runs/digits/) is a verbatim capture of one
+complete run with `claude-opus-5-5`: a literature review, five ideas, a tournament pick, 18 real
+training runs, a staged write-up and a review. It cost about $0.94 for the campaign and $5.53
+for the write-up.
 
-| | |
-|---|---|
-| Result | 3.27% validation error, 3.33% on the held-out test, against a logistic-regression baseline of 3.8% |
-| Cost | about $0.94 for the campaign and $5.53 for the write-up |
-| Reviewer panel | **reject, 2.2/10** |
+The result beat the baseline, 3.33% held-out error against 3.8%. The reviewer panel gave it
+2.2 out of 10 anyway, and they were right. The tournament had picked an augmentation idea, the
+campaign only tuned hyperparameters, and so the paper's own hypothesis was never tested. The
+run also showed that the funnel's tiers were being compared on different validation folds.
 
-The panel rejected the paper for the right reason. The tournament picked an augmentation idea,
-and the campaign only tuned hyperparameters, so the hypothesis was never tested. The same run
-exposed that the fidelity tiers were compared on different validation folds. Both are fixed:
-adopted ideas are now tested as treatment versus control, and tiers are compared on shared
-folds. The capture's [README](examples/sample_runs/digits/README.md) lists everything the run
-exposed.
+Both are fixed now. That failure is where the treatment-versus-control rule comes from. The
+capture's [README](examples/sample_runs/digits/README.md) lists everything else the run exposed.
 
-### Agent versus random search, at a matched budget
+### Agent versus random search
 
-`examples/compare_search.py --arms agent,random --repeats 3 --rounds 6 --match runs`, on digits:
+Same number of training runs for each side, three campaigns each, on digits
+(`examples/compare_search.py`):
 
-| Agent version | Held-out error | Random search | Outcome |
+| Agent | Agent held-out error | Random search | Result |
 |---|---|---|---|
-| first version | 4.22 (1 of 3 campaigns reached the full tier) | 3.13 ± 0.08 (3 of 3) | random wins |
-| given knob ranges and an explore phase | 3.72 ± 0.24 (3 of 3) | 3.13 | random wins all 9 pairs |
-| warm-started on random draws | 3.14 | 3.13 | tie, and every agent best was one of the random draws |
+| first version | 4.22 (only 1 of 3 campaigns finished the funnel) | 3.13 ± 0.08 | random wins |
+| told the knob ranges, with an explore phase | 3.72 ± 0.24 | 3.13 | random wins all 9 pairs |
+| warm-started on random draws | 3.14 | 3.13 | a tie, and every agent best was one of the random draws |
 
-On a five-knob search, a language model proposing configurations does not beat random search.
-Its advantage, if it has one, is in structural changes to the training script, which is what the
-treatment-versus-control path now exercises. These results are reported as they came out.
+A language model proposing hyperparameters does not beat random search on a small search
+space. If it has an edge, it is in changing the method, which is what the edit channel and the
+treatment rule are for. We have not yet shown that it does.
 
-### How reliable are the guards?
+### Do the checks actually catch things?
 
-`scholarloop.reliability` measures the checks themselves, without a model as judge. It changes
-one site at a time in artifacts the guards had accepted and passes each variant through the
-production check. On the run behind the digits capture (617 injected faults, 14 unmodified
-controls, none falsely rejected):
+`scholarloop.reliability` tests the guards directly. It takes artifacts the guards accepted,
+changes one thing at a time, and runs each variant through the production check. On the digits
+run:
 
-| Fault tier | Example | Detected |
+| Kind of fault | Example | Caught |
 |---|---|---|
-| Fabrication | a citation, run id or number that does not exist; a required section removed | 276 / 284 (97%) |
-| Misattribution | a real citation, run id or measurement used in the wrong place; a flipped direction word | 0 / 333 (0%) |
+| Fabrication | a citation, run id or number that does not exist; a required section removed | 276 of 284 (97%) |
+| Misattribution | a real citation or measurement used in the wrong place; "lower" flipped to "higher" | 0 of 333 (0%) |
 
-Three things follow. The study found a real gap: identifiers written inline in outline and
-key-point text were not checked. Closing it moved fabrication detection from 88% to 97%. The
-remaining misses are numbers in the outline, which may state derived quantities such as
-differences and cannot be looked up. And a lexical check cannot see misattribution at all. That
-capture predates reviewed writing, where numbers are bound to the statements a sentence cites;
-the same study runs in reviewed mode on newer runs.
+The zero is the important number. A check that looks up whether something exists cannot tell
+whether it is used correctly. That run predates reviewed writing, which binds each sentence's
+numbers to the statements it cites; the study now runs in that mode on newer runs.
+
+The study also found a real hole. Identifiers written inline in the outline and key points
+were not being checked, only the evidence lists. Closing it took fabrication detection from 88%
+to 97%. The remaining misses are numbers in the outline, which can be derived quantities such
+as differences and so cannot be looked up.
 
 ```bash
 python -m scholarloop.reliability inject   --profile profiles/digits-mlp.yaml --run runs/s1 --out runs/s1/reliability
-python -m scholarloop.reliability traces   --traces runs/s1 --out runs/s1/reliability      # natural fault rate
+python -m scholarloop.reliability traces   --traces runs/s1 --out runs/s1/reliability
 python -m scholarloop.reliability baseline --profile profiles/digits-mlp.yaml --run runs/s1 \
-    --out runs/s1/reliability --repeats 3                                                  # USES THE API
+    --out runs/s1/reliability --repeats 3      # uses the API
 ```
 
-`traces` reads the attempt logs: a rejected first attempt is the output a harness without checks
-would have used. `baseline` asks one model call to write the whole paper with the grounding
-rules stated only in the prompt, then audits it with the same checkers.
+`traces` counts how often a first attempt was rejected in a real run, which is what would have
+gone through with the checks off. `baseline` has one model call write the whole paper with the
+rules stated in the prompt only, then audits it with the same checkers.
 
-## 🧪 Engines and domains
+## 🧪 Engines
 
-A domain is a YAML profile plus an engine: a frozen `prepare.py` (data, model construction,
-scoring) and an editable `train.py`. Adding one needs no change to the orchestrator.
+A domain is a YAML profile plus two files: a frozen `prepare.py` that owns the data, the model
+definition and the scorer, and a `train.py` the agent may rewrite. Adding a domain does not
+touch the orchestrator.
 
 | Profile | Task | Notes |
 |---|---|---|
-| `digits-mlp` | 8x8 digit classification with an MLP | no download; about 1-2 s per run on CPU; 5-fold validation and a held-out test |
-| `agnews-bow` | AG News topic classification, bag-of-embeddings | fixed 10,000-article subset; about 1 s per run on CPU; one-time download |
-| `image-classification` | deterministic stub | used by the free demos and tests |
-| `cheater` | adversarial fixture | a training script that tries to fabricate its metric, for the scoring tests |
+| `digits-mlp` | 8x8 digit classification, MLP | no download · 1-2 s per run on CPU · 5-fold validation + held-out test |
+| `agnews-bow` | AG News topic classification, bag of embeddings | fixed 10,000-article subset · about 1 s per run · one-time download (`".[nlp]"`) |
+| `image-classification` | deterministic stub | powers the free demos and the tests |
+| `cheater` | a training script that tries to fake its score | the adversarial fixture for the scoring tests |
 
-### NLP case study under one spend cap
+### An NLP case study under a spend cap
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 pip install -e ".[dev,engines,llm,nlp]"
-bash examples/case_study_agnews.sh        # USES THE API; CAP=10 (USD) by default
+bash examples/case_study_agnews.sh        # uses the API · stops at CAP=10 dollars by default
 ```
 
-The script runs ideation, the campaign, scientific review, the staged write-up and the
-reliability evaluation in one directory, and resumes each stage from saved state. Run it in a
-terminal: scientific review and writing wait for your decision. On this task a method change
-has a measurable effect (word dropout lowers error by about a point at the default training
-length) and a competing explanation (stopping earlier does about as well), which is what the
-control, the treatment and the critics are for. A captured run is not yet published.
+One script runs the whole flow on AG News in one directory, and every stage resumes from where
+it stopped. Run it in a terminal, because the review and the writing wait for you. The task was
+chosen because it has something to argue about: word dropout lowers error by about a point at
+the default training length, and so does simply stopping earlier. A captured run is not
+published yet.
 
-## 💸 Cost and budget controls
+## 💸 Keeping spend under control
 
-| Control | Scope |
+| Control | What it does |
 |---|---|
-| `SCHOLARLOOP_SPEND_CAP` + `SCHOLARLOOP_SPEND_FILE` | a hard dollar cap shared by every command pointed at the same file; checked before each request, so it can be overshot by at most the request in flight |
-| `--max-llm-calls`, `--max-calls` | a persistent cap on model requests, retries included |
-| `SCHOLARLOOP_MAX_COST`, `Governor(max_cost=…)` | an estimated threshold checked between rounds and stages |
-| training reservations | a cap on training attempts; failed attempts stay charged |
+| `SCHOLARLOOP_SPEND_CAP` + `SCHOLARLOOP_SPEND_FILE` | a hard dollar cap shared by every command that points at the same file. Checked before each request, so the most it can overshoot is the request in flight |
+| `--max-llm-calls`, `--max-calls` | a cap on model requests that survives restarts and counts retries |
+| `SCHOLARLOOP_MAX_COST` | a softer threshold checked between rounds and stages |
+| training reservations | a cap on training attempts. Failed attempts still count |
 
-Spend is estimated from token counts and a price table. A model without a price is refused while
-a dollar cap is set.
+Spend is estimated from token counts and a price table. With a dollar cap set, a model that has
+no listed price is refused.
 
-## 🗂️ Repository layout
+## 🗂️ What is in the repo
 
 ```text
 scholarloop/
-├── core/            agent harness, LLM clients, profile (+ schema), ledger, registry, budgets
-├── ideation/        literature retrieval and review, ideator, tournament, meta-review, session
-├── experiment/      orchestrator, runner, reasoner, debate, advisor, director, reflector,
-│                    skills, calibration, governor, experiment agenda, research cycle, comparisons
+├── core/            agent harness, model clients, profiles, ledger, registry, budgets
+├── ideation/        retrieval, literature review, ideator, tournament, meta-review
+├── experiment/      orchestrator, runner, reasoner, debate, advisor, reflector, governor,
+│                    experiment agenda, research cycle, comparisons
 ├── review/          evidence dossier, critics, issue history, author release
-├── writing/         staged writing session, one-shot fallback, skills/*.md
+├── writing/         staged writing session, one-shot fallback, writing guides
 ├── reliability.py   fault injection, attempt-log analysis, single-call baseline
-└── evaluation.py    read-only workflow diagnostics
-engines/             a frozen prepare.py and an editable train.py per domain
-profiles/            domain profiles (YAML)
-examples/            runnable demos, the live flow, the case-study script, sample_runs/digits
-tests/               mirrors the package; runs offline with a scripted model
+└── evaluation.py    read-only run diagnostics
+engines/             prepare.py (frozen) + train.py (editable) per domain
+profiles/            domain profiles
+examples/            demos, the live flow, the case-study script, a captured run
+assets/              the workflow diagram and the script that draws it
+tests/               mirrors the package and runs offline
 ```
 
-Command-line entry points: `python -m scholarloop.ideation`, `.review`, `.writing`,
-`.reliability`, `.evaluation`, `.experiment.agenda`, `.experiment.research_cycle`,
+Command-line entry points, each with `--help`: `python -m scholarloop.ideation`, `.review`,
+`.writing`, `.reliability`, `.evaluation`, `.experiment.agenda`, `.experiment.research_cycle`,
 `.experiment.suite`, `.experiment.decision_bench`, `.experiment.decision_policy`,
-`.ideation.pilot`. Each takes `--help`.
+`.ideation.pilot`.
 
-## 📌 Status and limits
+## 📌 Limits
 
-Research preview. The whole workflow runs end to end on real experiments and has been run live
-against the Anthropic API. What is not there yet, or not shown:
+This is a research preview. It runs end to end on real experiments and has been run live, but
+several things are missing or unproven.
 
-- **No evidence of better research.** The mechanisms are tested as software. Their effect on
-  research quality needs matched-budget evaluation with expert judgment, which has not been done.
-- **No OS isolation.** The frozen-scorer hash detects tampering but does not prevent filesystem
-  writes, and deterministic splits over public data can be reconstructed. Container isolation and
-  a runner-provisioned private test set are not implemented.
-- **Semantic errors pass lexical checks.** A real citation attached to the wrong claim is caught,
-  if at all, by the critics and the semantic reviewer, which are model judgments.
-- **Roles are declared, order is enforced.** Whether a run labelled `treatment` really implements
-  the idea is the agent's claim. The role, the edit and the candidate's source are recorded for
-  review.
-- **Novelty is provisional.** Novelty checks compare against retrieved abstracts and do not
-  certify originality.
-- **One model provider.** Live runs use the Anthropic SDK through an `LLMClient` interface; other
-  providers need a client implementation.
-- **Small tasks.** The shipped domains train in seconds on CPU. Nothing here has been run at scale.
+- **It has not been shown to produce better research.** The mechanisms are tested as software.
+  Whether they improve research quality needs a matched-budget study with expert judges.
+- **There is no real sandbox yet.** A hash detects a tampered scorer, but nothing stops
+  a process from writing to disk, and splits over public data can be reconstructed. The guards
+  are designed for a model proposing edits, not for hostile code. Container isolation is not
+  implemented.
+- **Wrong-but-real references get through the lexical checks.** Catching a real citation on the
+  wrong claim falls to the critics and the semantic reviewer, and those are model judgments.
+- **"Treatment" is a label the agent applies.** The harness enforces the order of control and
+  treatment and records the edit for review. It does not verify that the edit implements the idea.
+- **Novelty checks are provisional.** They compare against retrieved abstracts.
+- **One model provider.** Live runs go through the Anthropic SDK. Other providers need a small
+  client class.
+- **Small tasks only.** The shipped domains train in seconds on a CPU.
 
 ## 📖 Reference
 
