@@ -13,7 +13,7 @@ import math
 import re
 from dataclasses import asdict
 from pathlib import Path
-from statistics import mean
+from statistics import mean, median, stdev
 
 from jsonschema import Draft7Validator
 
@@ -161,7 +161,8 @@ def build_dossier(inputs: dict) -> dict:
                 raise ReviewBlocked(f"{e.id}/{key}: negative standard deviation")
             ref = f"{e.id}::{key}"
             measurements[ref] = {"run_id": e.id, "key": key, "value": value,
-                                 "seeds": m.get("seeds", []), "std": m.get("std")}
+                                 "seeds": m.get("seeds", []), "std": m.get("std"),
+                                 **_seed_summary(m.get("seeds", []))}
         if e.primary_score() is not None:
             tier = next(f for f in ("full", "verify", "smoke") if f in e.metric)
             m = measurements.get(f"{e.id}::{e.metric_name}.{tier}")
@@ -226,7 +227,8 @@ def build_dossier(inputs: dict) -> dict:
                 if c["status"] == "complete":
                     key = f"{spec['metric']}.difference.{c['condition']}"
                     measurements[f"{ref}::{key}"] = {"run_id": ref, "key": key,
-                        "value": c["mean_difference"], "seeds": c["deltas"], "std": None}
+                        "value": c["mean_difference"], "seeds": c["deltas"], "std": None,
+                        **_seed_summary(c["deltas"])}
     for r in runs:
         pid = r.get("protocol", {}).get("id")
         if pid and f"protocol:{pid}" not in protocols:
@@ -331,6 +333,15 @@ def evidence_ids(dossier):
             {"profile", "train", "scorer"})
 
 
+def _seed_summary(seeds) -> dict:
+    """The median and sample standard deviation of the per-seed values, computed here so that a
+    claim can state them and a reviewer can ask for them: a number that no record holds cannot be
+    written, and reviewers kept asking for these two."""
+    if not isinstance(seeds, list) or len(seeds) < 2:
+        return {}
+    return {"median": round(median(seeds), 6), "seed_sd": round(stdev(seeds), 6)}
+
+
 def explain_unknown(ids, known, dossier) -> str:
     """Say what is wrong with each id that is not citable evidence, and what to write instead.
     'unknown evidence' alone sent models round the same mistake three times."""
@@ -386,6 +397,10 @@ def validate_argument(argument: dict, dossier: dict) -> list[str]:
                 reg.capture(ref, m["value"])
                 if m["std"] is not None:
                     reg.capture(ref + ".std", m["std"])
+                for stat in ("median", "seed_sd"):
+                    if m.get(stat) is not None:
+                        reg.capture(f"{ref}.{stat}", abs(m[stat]))
+                        reg.capture(f"{ref}.{stat}.signed", m[stat])
                 # Per-seed values are recorded measurements too: a claim that binds the
                 # aggregate may state the seeds it was computed from.
                 for i, seed_value in enumerate(m["seeds"]):

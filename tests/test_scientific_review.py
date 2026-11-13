@@ -619,3 +619,14 @@ def test_a_concern_is_tracked_by_a_previous_issue_that_stays_open(tmp_path):
     assert check_claim_assessments(output, dossier)                     # nothing tracks the concern
     closed = {**output, "dispositions": [{**output["dispositions"][0], "status": "verified"}]}
     assert check_claim_assessments(closed, dossier, previous)
+
+
+def test_a_claim_may_state_the_median_and_spread_of_its_seeds(tmp_path):
+    dossier = build_dossier(session(setup(tmp_path)).inputs())
+    dossier["measurements"]["exp_0001::delta"] = {"run_id": "exp_0001", "key": "delta", "value": -1.12,
+        "seeds": [-0.2, -0.8, 0.2, -4.4, -0.4], "std": None, "median": -0.4, "seed_sd": 1.87}
+    claim = {**ARGUMENT["claims"][0], "measurements": ["exp_0001::delta"],
+             "text": "The mean difference was -1.12, the median -0.4, and the seed spread 1.87."}
+    assert validate_argument({**ARGUMENT, "claims": [claim]}, dossier) == []
+    measured = {k: v for k, v in dossier["measurements"].items() if k != "exp_0001::delta"}
+    assert measured and all(("median" in m) == (len(m["seeds"]) >= 2) for m in measured.values())
