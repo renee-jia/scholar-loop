@@ -169,3 +169,16 @@ def test_spend_cap_refuses_an_unpriced_model(monkeypatch, tmp_path):
     with pytest.raises(SpendCapExceeded, match="no price"):
         AnthropicLLM("some-unpriced-model", client=fake).complete("q")
     assert fake.messages.last_kwargs is None
+
+
+def test_api_schema_drops_only_the_array_bounds_the_api_rejects():
+    from scholarloop.core.llm import api_schema
+    schema = {"type": "object", "properties": {
+        "maxItems": {"type": "integer"},                       # a property that happens to share the name
+        "queries": {"type": "array", "minItems": 3, "maxItems": 5, "uniqueItems": True,
+                    "items": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}}}
+    out = api_schema(schema)
+    assert out["properties"]["queries"] == {"type": "array", "minItems": 1, "items": {
+        "type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}
+    assert out["properties"]["maxItems"] == {"type": "integer"}
+    assert schema["properties"]["queries"]["maxItems"] == 5    # the full schema is left for local validation

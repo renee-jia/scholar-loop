@@ -129,6 +129,26 @@ class MockLLM(LLMClient):
         return self._jsons.pop(0)
 
 
+def api_schema(schema):
+    """The schema as the structured-output API accepts it. The API rejects some array bounds
+    (`maxItems`, `uniqueItems`, `minItems` above 1), so they are dropped from the request only:
+    the Agent harness still validates every response against the full schema and retries with
+    the violation, so the bounds stay enforced."""
+    if isinstance(schema, list):
+        return [api_schema(v) for v in schema]
+    if not isinstance(schema, dict):
+        return schema
+    out = {}
+    for key, value in schema.items():
+        if key == "properties" and isinstance(value, dict):    # property names are not keywords
+            out[key] = {name: api_schema(sub) for name, sub in value.items()}
+        elif key not in ("maxItems", "uniqueItems"):
+            out[key] = api_schema(value)
+    if isinstance(out.get("minItems"), int) and out["minItems"] > 1 and out.get("type") == "array":
+        out["minItems"] = 1
+    return out
+
+
 class AnthropicLLM(LLMClient):
     """Anthropic SDK-backed client. The `anthropic` package is imported lazily so the
     framework (and its tests) run without it installed; only real runs need it.
@@ -193,7 +213,7 @@ class AnthropicLLM(LLMClient):
                       max_tokens: int = 16000) -> dict:
         kwargs = {"model": self.model, "max_tokens": max_tokens,
                   "messages": [{"role": "user", "content": prompt}],
-                  "output_config": {"format": {"type": "json_schema", "schema": schema}}}
+                  "output_config": {"format": {"type": "json_schema", "schema": api_schema(schema)}}}
         if system is not None:
             kwargs["system"] = system
         return json.loads(self._text_of(self._create(**kwargs)))
