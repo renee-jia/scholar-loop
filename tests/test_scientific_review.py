@@ -650,3 +650,14 @@ def test_after_the_first_round_a_new_minor_issue_is_a_note_that_does_not_block(t
         assert "do not block approval" in (s.out / "scientific_review.md").read_text()
         s.approve(author="Researcher", review_hash=state["review_hash"])
         s.require_release()
+
+
+def test_a_reviewer_cannot_keep_an_issue_open_and_raise_it_again(tmp_path):
+    from scholarloop.review.critics import ScientificCritic
+    dossier = {**build_dossier(session(setup(tmp_path)).inputs()), "argument": ARGUMENT}
+    kept = {"issue_id": "r1:experimental:1", "status": "open", "reason": "Still missing.", "evidence": ["exp_0001"]}
+    output = {**REVISE, "issues": [{**ISSUE, "action": "reframe"}], "dispositions": [kept]}
+    ctx = {"dossier": dossier, "round": 2, "previous_issues": [{"id": "r1:experimental:1", "target": "claim_error"}]}
+    errors = ScientificCritic(MockLLM(jsons=[]), "experimental").postcheck(output, ctx)
+    assert any("you kept r1:experimental:1 open" in e for e in errors)
+    assert not ScientificCritic(MockLLM(jsons=[]), "experimental").postcheck({**output, "issues": []}, ctx)

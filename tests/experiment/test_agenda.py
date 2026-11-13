@@ -82,7 +82,7 @@ def test_real_stub_protocol_runs_negative_conditions_and_rereviews(tmp_path):
     assert a.review.load()["issues"][0]["status"] == "open"
     dossier = build_dossier(a.review.inputs())
     assert not dossier["checks"]
-    assert dossier["measurements"][f"protocol:{pid}::val_top1_err.difference.ablation"]["value"] == diff
+    assert dossier["measurements"][f"protocol:{pid}::val_top1_err.difference.ablation"]["value"] == round(diff, 10)
     with pytest.raises(ReviewBlocked, match="ran but no claim reports their recorded value"):
         a.review.review(argument=ARGUMENT)                 # refused before any reviewer is called
     argument, passing = _reporting_every_arm(dossier)

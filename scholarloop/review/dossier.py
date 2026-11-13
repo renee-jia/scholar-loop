@@ -227,18 +227,18 @@ def build_dossier(inputs: dict) -> dict:
                 if c["status"] == "complete":
                     key = f"{spec['metric']}.difference.{c['condition']}"
                     measurements[f"{ref}::{key}"] = {"run_id": ref, "key": key,
-                        "value": c["mean_difference"], "seeds": c["deltas"], "std": None,
-                        **_seed_summary(c["deltas"])}
+                        "value": _tidy(c["mean_difference"]), "seeds": [_tidy(x) for x in c["deltas"]],
+                        "std": None, **_seed_summary(c["deltas"])}
             # Every arm is paired with the reference on the same seeds, so two arms are paired
             # with each other too. Reviewers ask for these contrasts; a claim can only state a
             # number that a record holds, so they are recorded here.
             done = [c for c in analysis["comparisons"] if c["status"] == "complete"]
             for i, first in enumerate(done):
                 for second in done[i + 1:]:
-                    deltas = [round(x - y, 6) for x, y in zip(first["deltas"], second["deltas"])]
+                    deltas = [_tidy(x - y) for x, y in zip(first["deltas"], second["deltas"])]
                     key = f"{spec['metric']}.difference.{first['condition']}.minus.{second['condition']}"
                     measurements[f"{ref}::{key}"] = {"run_id": ref, "key": key,
-                        "value": round(mean(deltas), 6), "seeds": deltas, "std": None,
+                        "value": _tidy(mean(deltas)), "seeds": deltas, "std": None,
                         **_seed_summary(deltas)}
     for r in runs:
         pid = r.get("protocol", {}).get("id")
@@ -342,6 +342,12 @@ def evidence_ids(dossier):
     return ({r["id"] for r in dossier["runs"]} | set(dossier["papers"]) |
             set(dossier.get("protocols", {})) | set(dossier.get("candidates", {})) |
             {"profile", "train", "scorer"})
+
+
+def _tidy(x: float) -> float:
+    """A difference of two recorded values without the binary floating-point tail: a statement
+    built from the dossier is printed in the paper, and -1.1200000000000003 is not a result."""
+    return round(x, 10)
 
 
 def _seed_summary(seeds) -> dict:

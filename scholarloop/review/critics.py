@@ -178,6 +178,15 @@ class ScientificCritic(Agent):
                 errors.append(f"issue {n} needs evidence (use profile/train/scorer for protocol or code gaps)")
         previous = {i["id"] for i in ctx.get("previous_issues", [])}
         dispositions = output["dispositions"]
+        # A reviewer that keeps an issue open and raises it again doubles the open list each round.
+        kept = {x["issue_id"] for x in dispositions if x["status"] == "open"}
+        still_open = {i["target"]: i["id"] for i in ctx.get("previous_issues", [])
+                      if i["id"] in kept and i["target"] != "dossier"}
+        for n, issue in enumerate(output["issues"], 1):
+            if issue["target"] in still_open:
+                errors.append(f"issue {n}: you kept {still_open[issue['target']]} open on {issue['target']!r}; "
+                              "say what is still missing in that disposition's reason and drop this "
+                              "issue (a new issue on a claim waits until the earlier one is closed)")
         if {x["issue_id"] for x in dispositions} != previous or len(dispositions) != len(previous):
             errors.append("Provide exactly one disposition for every assigned previous issue")
         for item in dispositions:
