@@ -567,3 +567,29 @@ def test_a_claim_may_quote_what_a_cited_run_reported_about_itself(tmp_path):
     assert validate_argument({**ARGUMENT, "claims": [claim]}, dossier) == []
     other = {**claim, "text": "The error is 7.25 percent; the run reported switching at step 800."}
     assert "numbers lack explicitly bound measurements: ['800']" in validate_argument({**ARGUMENT, "claims": [other]}, dossier)[0]
+
+
+def test_a_round_that_failed_part_way_is_continued_not_repeated(tmp_path):
+    paths = setup(tmp_path)
+    s = session(paths, MockLLM(jsons=[PASS, REVISE]))          # two reviewers answer, the third call fails
+    with pytest.raises(AssertionError):
+        s.review(argument=ARGUMENT)
+    failed = s.load()
+    assert failed["status"] == "REVIEW_FAILED" and [r["role"] for r in failed["reports"]] == ["implementation", "experimental"]
+    resumed = MockLLM(jsons=[PASS, PASS])
+    state = session(paths, resumed).review(argument=ARGUMENT)
+    assert len(resumed.calls) == 2 and state["round"] == failed["round"]          # only the two missing roles
+    assert [r["role"] for r in state["reports"]] == ["implementation", "experimental", "falsification", "argument"]
+    assert state["resumed_roles"] == ["implementation", "experimental"]
+    assert state["status"] == "NEEDS_EXPERIMENTS"                                  # the earlier dissent still counts
+    assert [i["id"] for i in state["issues"]] == ["r1:experimental:1"]
+
+
+def test_a_failed_round_is_not_continued_when_the_argument_or_feedback_changed(tmp_path):
+    paths = setup(tmp_path)
+    s = session(paths, MockLLM(jsons=[PASS]))
+    with pytest.raises(AssertionError):
+        s.review(argument=ARGUMENT)
+    fresh = MockLLM(jsons=[PASS] * 4)
+    state = session(paths, fresh).review(argument=ARGUMENT, feedback="A new instruction.")
+    assert len(fresh.calls) == 4 and state["round"] == 2 and "resumed_roles" not in state

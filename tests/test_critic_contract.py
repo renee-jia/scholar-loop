@@ -80,9 +80,17 @@ def test_valid_partial_dissent_survives_a_later_critic_failure(tmp_path):
     state = s.load()
     assert state["status"] == "REVIEW_FAILED" and len(state["reports"]) == 2
     assert state["issues"][0]["id"] == "r1:implementation:1"
-    s.llm = MockLLM(jsons=[PASS] * 4)  # no disposition for the earlier dissent
+    # The same round continues with the two missing reviewers. The dissent already returned is
+    # kept as it stands: later passes cannot outvote it or make it disappear.
+    s.llm = MockLLM(jsons=[PASS] * 4)
+    state = s.review(argument=ARGUMENT)
+    assert len(s.llm.calls) == 2 and state["status"] == "NEEDS_EXPERIMENTS"
+    assert s.load()["issues"][0]["status"] == "open" and state["reports"][0]["verdict"] == "revise"
+    # Reviewing a changed argument is a new round, and there the dissent needs a disposition.
+    changed = {**ARGUMENT, "limitations": [*ARGUMENT["limitations"], "One more limit."]}
+    s.llm = MockLLM(jsons=[PASS] * 4)
     with pytest.raises(AgentError):
-        s.review(argument=ARGUMENT)
+        s.review(argument=changed)
     assert s.load()["issues"][0]["status"] == "open"
 
 

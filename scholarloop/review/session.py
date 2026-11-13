@@ -88,6 +88,16 @@ class ScientificReviewSession:
                     state["status"] = "INSUFFICIENT_EVIDENCE"
                     self._save(state)
                     return state
+                # A round that failed part-way is continued, not repeated: same evidence, same
+                # argument, same feedback, so the reviews already returned still apply.
+                before = old.get("dossier") or {}
+                done = []
+                if (old.get("status") == "REVIEW_FAILED" and before.get("argument") and iteration is None
+                        and before.get("input_hash") == dossier["input_hash"]
+                        and old.get("feedback", "") == feedback
+                        and argument in (None, before["argument"])):
+                    argument, done = before["argument"], list(old.get("reports", []))
+                    state["round"], state["resumed_roles"] = old["round"], [r["role"] for r in done]
                 if argument is None:
                     argument = ArgumentBuilder(self.llm, trace=self.trace).run({
                         "dossier": dossier, "previous_argument": (old.get("dossier") or {}).get("argument"),
@@ -99,9 +109,13 @@ class ScientificReviewSession:
                 if gaps:        # found before any reviewer is paid, not two stages into writing
                     raise ReviewBlocked("The argument cannot support a paper: " + "; ".join(gaps))
                 dossier["argument"] = argument
-                pending = [i for i in state["issues"] if i["status"] == "open"]
-                reports = []
+                this_round = f"r{state['round']}:"
+                pending = [i for i in state["issues"] if i["status"] == "open" and not i["id"].startswith(this_round)]
+                reports = list(done)
+                state["reports"] = list(reports)
                 for role in ROLES:
+                    if any(r["role"] == role for r in done):
+                        continue
                     # Each role sees only its own historical issues, never this round's peer reviews.
                     client = self.critic_llms.get(role, self.llm)
                     report = ScientificCritic(client, role, trace=self.trace).run({
