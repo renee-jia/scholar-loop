@@ -330,6 +330,19 @@ def evidence_ids(dossier):
             {"profile", "train", "scorer"})
 
 
+def _where_recorded(tokens, claim, dossier) -> str:
+    """Tell the author of a rejected claim what to do about each number: bind the measurement
+    that records it, or remove it."""
+    hints = []
+    for tok in dict.fromkeys(tokens):
+        owners = [ref for ref, m in dossier["measurements"].items() if ref not in claim["measurements"]
+                  and any(isinstance(v, (int, float)) and abs(v - float(tok)) < 1e-9
+                          for v in (m["value"], m["std"], *m["seeds"]))]
+        hints.append(f"{tok} is recorded by {owners[:3]}: add it to `measurements` and cite its run"
+                     if owners else f"{tok} is in no measurement: remove it or use words")
+    return " (" + "; ".join(hints) + ")"
+
+
 def validate_argument(argument: dict, dossier: dict) -> list[str]:
     errors = [e.message for e in Draft7Validator(ARGUMENT_SCHEMA).iter_errors(argument)]
     if errors:
@@ -357,10 +370,15 @@ def validate_argument(argument: dict, dossier: dict) -> list[str]:
                 reg.capture(ref, m["value"])
                 if m["std"] is not None:
                     reg.capture(ref + ".std", m["std"])
+                # Per-seed values are recorded measurements too: a claim that binds the
+                # aggregate may state the seeds it was computed from.
+                for i, seed_value in enumerate(m["seeds"]):
+                    reg.capture(f"{ref}.seed{i}", seed_value)
         # No global small-integer/config/year exceptions for scientific claims.
         bad = reg.audit_text(c["text"])
         if bad:
-            errors.append(f"{c['id']}: numbers lack explicitly bound measurements: {bad}")
+            errors.append(f"{c['id']}: numbers lack explicitly bound measurements: {bad}"
+                          + _where_recorded(bad, c, dossier))
     visiting, done = set(), set()
 
     def visit(cid):

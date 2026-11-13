@@ -19,9 +19,10 @@ class ArgumentBuilder(Agent):
         "Use words for structural counts. Novelty and generalization must stay within evidence. "
         "Include concrete limitations and competing explanations. Never silently remove a "
         "previous objection: explain reframing through the revised claims and limitations. "
-        "A claim may contain only numerals that are the value of a measurement it binds, or one "
-        "of that measurement's per-seed values: no rounding to a different figure, no sums, "
-        "differences, ranges or counts written as digits."
+        "A claim may contain only numerals that are the value, the standard deviation or a "
+        "per-seed value of a measurement listed in that claim's own `measurements`: no rounding "
+        "to a different figure, no sums, differences, ranges, thresholds, seed indices or counts "
+        "written as digits. Use words for those."
     )
 
     def build_context(self, ctx):

@@ -402,3 +402,14 @@ def test_prompt_view_states_repeated_text_once_and_leaves_the_dossier_alone(tmp_
     assert view["current_code"]["train"] == versions[0]
     assert set(view["citable_ids"]["evidence"]) == evidence_ids(dossier)
     assert view["measurements"] == dossier["measurements"] and view["runs"] == dossier["runs"]
+
+
+def test_a_claim_may_state_the_seed_values_of_a_measurement_it_binds(tmp_path):
+    dossier = build_dossier(session(setup(tmp_path)).inputs())
+    ref = "exp_0001::val_top1_err.full"
+    claim = {**ARGUMENT["claims"][0], "measurements": [ref],
+             "text": "The error is 7.25 percent, from seeds at 7.0 and 7.5."}
+    assert validate_argument({**ARGUMENT, "claims": [claim]}, dossier) == []
+    unbound = {**claim, "measurements": [], "text": "One seed reached 7.5 and another 9.9."}
+    (error,) = validate_argument({**ARGUMENT, "claims": [unbound]}, dossier)
+    assert f"7.5 is recorded by ['{ref}']" in error and "9.9 is in no measurement" in error
