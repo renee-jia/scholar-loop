@@ -84,6 +84,7 @@ def validate_study(spec, profile, idea, *, min_seeds=5):
 
 class IdeaStudyPlanner(Agent):
     name = "idea_study_planner"
+    max_tokens = 64000      # a protocol carries one full train-script replacement per condition
     schema = STUDY_SCHEMA
     system = (
         "Turn a researcher's chosen idea into one frozen, executable comparison. The goal is to "

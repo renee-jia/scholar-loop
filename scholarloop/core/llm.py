@@ -129,9 +129,21 @@ class MockLLM(LLMClient):
         return self._jsons.pop(0)
 
 
+_STREAM_ABOVE = 16000
+
+
+class OutputTruncated(RuntimeError):
+    """The model's output was cut off at the token limit."""
+
+
+_API_UNSUPPORTED = ("maxItems", "uniqueItems", "minimum", "maximum", "exclusiveMinimum",
+                    "exclusiveMaximum", "multipleOf")
+
+
 def api_schema(schema):
     """The schema as the structured-output API accepts it. The API rejects some array bounds
-    (`maxItems`, `uniqueItems`, `minItems` above 1), so they are dropped from the request only:
+    (`maxItems`, `uniqueItems`, `minItems` above 1) and numeric bounds (`minimum`, `maximum`,
+    ...), so they are dropped from the request only:
     the Agent harness still validates every response against the full schema and retries with
     the violation, so the bounds stay enforced."""
     if isinstance(schema, list):
@@ -142,7 +154,7 @@ def api_schema(schema):
     for key, value in schema.items():
         if key == "properties" and isinstance(value, dict):    # property names are not keywords
             out[key] = {name: api_schema(sub) for name, sub in value.items()}
-        elif key not in ("maxItems", "uniqueItems"):
+        elif key not in _API_UNSUPPORTED:
             out[key] = api_schema(value)
     if isinstance(out.get("minItems"), int) and out["minItems"] > 1 and out.get("type") == "array":
         out["minItems"] = 1
@@ -181,10 +193,13 @@ class AnthropicLLM(LLMClient):
         if self.effort is not None:
             kwargs["output_config"] = {**kwargs.get("output_config", {}), "effort": self.effort}
         _spend(self.model)                              # refuse before sending once the cap is reached
-        if self.fallbacks:
-            resp = self._client.beta.messages.create(betas=[_FALLBACK_BETA], fallbacks="default", **kwargs)
+        api = self._client.beta.messages if self.fallbacks else self._client.messages
+        extra = {"betas": [_FALLBACK_BETA], "fallbacks": "default"} if self.fallbacks else {}
+        if kwargs.get("max_tokens", 0) > _STREAM_ABOVE:    # long outputs must stream or the SDK refuses them
+            with api.stream(**extra, **kwargs) as stream:
+                resp = stream.get_final_message()
         else:
-            resp = self._client.messages.create(**kwargs)
+            resp = api.create(**extra, **kwargs)
         u = getattr(resp, "usage", None)
         _spend(self.model, {"input": getattr(u, "input_tokens", 0) or 0,
                             "output": getattr(u, "output_tokens", 0) or 0})
@@ -192,6 +207,10 @@ class AnthropicLLM(LLMClient):
             self.usage["input_tokens"] += getattr(u, "input_tokens", 0) or 0
             self.usage["output_tokens"] += getattr(u, "output_tokens", 0) or 0
         self.usage["calls"] += 1
+        if getattr(resp, "stop_reason", None) == "max_tokens":
+            # Not a ValueError: a retry would be cut off at the same place and billed again.
+            raise OutputTruncated(f"the response hit max_tokens={kwargs.get('max_tokens')} before it was "
+                                  "complete; raise the agent's max_tokens or ask for less output")
         if getattr(resp, "stop_reason", None) == "refusal":
             details = getattr(resp, "stop_details", None)
             raise RefusalError(f"the model declined the request (category "

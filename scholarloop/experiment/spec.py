@@ -146,6 +146,7 @@ def frozen_context(profile, spec):
 
 class ExperimentPlanner(Agent):
     name = "experiment_planner"
+    max_tokens = 64000      # a protocol carries one full train-script replacement per condition
     schema = SPEC_SCHEMA
     system = (
         "Turn open scientific-review experiment requests into one frozen, executable protocol. "

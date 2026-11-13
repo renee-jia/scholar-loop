@@ -76,6 +76,7 @@ class Agent(ABC):
     system: str = ""
     schema: dict = {}
     max_retries: int = 2
+    max_tokens: int = 0     # output limit for this agent's calls; 0 keeps the client's default
 
     def __init__(self, llm: LLMClient, *, trace: AgentTrace | None = None,
                  max_retries: int | None = None):
@@ -119,7 +120,8 @@ class Agent(ABC):
             status, output, errors = "exception", {}, []
             try:
                 try:
-                    output = self.llm.complete_json(prompt, self.schema, system=self.system)
+                    limit = {"max_tokens": self.max_tokens} if self.max_tokens else {}
+                    output = self.llm.complete_json(prompt, self.schema, system=self.system, **limit)
                 except ValueError as exc:
                     errors = [f"response was not valid JSON ({exc})"]
                     status = "invalid_json"

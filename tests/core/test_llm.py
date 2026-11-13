@@ -175,10 +175,41 @@ def test_api_schema_drops_only_the_array_bounds_the_api_rejects():
     from scholarloop.core.llm import api_schema
     schema = {"type": "object", "properties": {
         "maxItems": {"type": "integer"},                       # a property that happens to share the name
+        "seed": {"type": "integer", "minimum": 0, "maximum": 9},
         "queries": {"type": "array", "minItems": 3, "maxItems": 5, "uniqueItems": True,
                     "items": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}}}
     out = api_schema(schema)
     assert out["properties"]["queries"] == {"type": "array", "minItems": 1, "items": {
         "type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}
     assert out["properties"]["maxItems"] == {"type": "integer"}
+    assert out["properties"]["seed"] == {"type": "integer"}
     assert schema["properties"]["queries"]["maxItems"] == 5    # the full schema is left for local validation
+
+
+def test_long_outputs_stream_and_a_truncated_response_is_not_retried():
+    from types import SimpleNamespace
+    from scholarloop.core.llm import AnthropicLLM, OutputTruncated
+    seen = []
+
+    def message(stop):
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text='{"a": 1}')], stop_reason=stop,
+                               usage=SimpleNamespace(input_tokens=1, output_tokens=1))
+
+    class Stream:
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def get_final_message(self): return message("end_turn")
+
+    class Messages:
+        def create(self, **kw):
+            seen.append(("create", kw["max_tokens"]))
+            return message("max_tokens")
+        def stream(self, **kw):
+            seen.append(("stream", kw["max_tokens"]))
+            return Stream()
+
+    llm = AnthropicLLM(model="claude-haiku-4-5", client=SimpleNamespace(messages=Messages()), fallbacks=False)
+    assert llm.complete_json("p", {"type": "object"}, max_tokens=64000) == {"a": 1}
+    with pytest.raises(OutputTruncated):
+        llm.complete_json("p", {"type": "object"})
+    assert seen == [("stream", 64000), ("create", 16000)]

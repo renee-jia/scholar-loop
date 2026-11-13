@@ -52,6 +52,7 @@ def validate_pilot(spec, profile, ideas):
 
 class PilotPlanner(Agent):
     name = "pilot_planner"
+    max_tokens = 48000
     schema = PILOT_SCHEMA
     system = (
         "Design a small validation-only feasibility pilot for the requested idea portfolio. "
