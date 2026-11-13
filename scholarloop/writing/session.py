@@ -286,7 +286,9 @@ PANEL_SCHEMA = {
         "issues": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
             "properties": {"target": {"type": "string"}, "issue": {"type": "string"},
-                           "suggestion": {"type": "string"}},
+                           "suggestion": {"type": "string"},
+                           # blocking: the stage cannot advance; suggestion: recorded for the author
+                           "severity": {"type": "string", "enum": ["blocking", "suggestion"]}},
             "required": ["target", "issue", "suggestion"]}},
     },
     "required": ["verdict", "issues"],
@@ -422,23 +424,47 @@ class Panelist(Agent):
         self.role = role
         self.name = f"panel:{role}"
         self.system = (PERSONAS.get(role, f"You are the {role} on a paper-planning panel.")
-                       + " Vote accept if the plan is sound as it stands; vote revise and list concrete, "
-                         "actionable issues (target + issue + suggestion) otherwise. Do not request "
-                         "experiments that were not run; work with the evidence given.\n\n"
+                       + " List concrete, actionable issues (target + issue + suggestion) and give each a "
+                         "severity. `blocking` is for what would make the paper wrong or unusable if "
+                         "written from this plan: a statement the evidence does not support or that "
+                         "contradicts it, a required element that is missing, a plan a reader could "
+                         "not follow. `suggestion` is for everything that would merely make it "
+                         "better: wording, order, emphasis, repetition, extra detail. Vote revise "
+                         "only if you list a blocking issue; otherwise vote accept, with or without "
+                         "suggestions. Do not request experiments that were not run; work with the "
+                         "evidence given.\n\n"
                        + load_skill("review"))
 
     def postcheck(self, output: dict, ctx: dict) -> list[str]:
-        if output.get("verdict") == "revise" and not output.get("issues"):
-            return ["a revise vote must list at least one issue"]
+        blocking = blocking_issues(output)
+        if output.get("verdict") == "revise" and not blocking:
+            return ["a revise vote must list at least one blocking issue; with only suggestions, accept"]
+        if output.get("verdict") == "accept" and blocking:
+            return ["an accept vote cannot carry a blocking issue; vote revise or mark it a suggestion"]
         return []
 
     def build_prompt(self, ctx: dict) -> str:
-        return (f"Stage: {ctx['stage']}.\n\nEvidence available:\n{ctx['evidence']}\n\n"
-                f"Proposal under discussion:\n{ctx['artifact']}\n\n"
-                f"As the {self.role}: accept, or revise with issues.")
+        parts = [f"Stage: {ctx['stage']}.", f"Evidence available:\n{ctx['evidence']}",
+                 f"Proposal under discussion:\n{ctx['artifact']}"]
+        if ctx.get("previous"):
+            parts.append(
+                "This is a revision. The blocking issues you raised on the previous version:\n"
+                + "\n".join(f"- {i['target']}: {i['issue']}" for i in ctx["previous"])
+                + "\nFirst check each of them against the revision and raise again, as blocking, any "
+                  "that is not resolved. You have already read this plan once: a point you could "
+                  "have raised then and did not is a suggestion now, unless the revision itself "
+                  "introduced an unsupported or contradictory statement.")
+        parts.append(f"As the {self.role}: accept, or revise with issues.")
+        return "\n\n".join(parts)
 
-    def critique(self, stage: str, artifact: str, evidence: str) -> dict:
-        return self.run({"stage": stage, "artifact": artifact, "evidence": evidence})
+    def critique(self, stage: str, artifact: str, evidence: str, previous=None) -> dict:
+        return self.run({"stage": stage, "artifact": artifact, "evidence": evidence,
+                         "previous": list(previous or [])})
+
+
+def blocking_issues(review: dict) -> list[dict]:
+    """A review's blocking issues. An issue without a severity blocks, as every issue once did."""
+    return [i for i in review.get("issues", []) if i.get("severity", "blocking") == "blocking"]
 
 
 class KeyPointer(Agent):
@@ -580,13 +606,19 @@ class PaperReviewer(Agent):
 def discuss(propose, panel: list[Panelist], stage: str, render, evidence: str,
             *, max_rounds: int = 2) -> tuple[dict, list[dict]]:
     """propose(issues|None) -> artifact; each panelist critiques render(artifact); the proposer
-    revises against the union of issues until every panelist accepts or `max_rounds` revisions
-    have been made. Returns (final artifact, transcript)."""
+    revises against the union of blocking issues until no panelist has one or `max_rounds`
+    revisions have been made. From the second round on a panelist is shown the blocking issues
+    it raised before, so a round checks the revision instead of reading the plan afresh.
+    Suggestions never hold the stage; they stay in the transcript for the author.
+    Returns (final artifact, transcript)."""
     transcript: list[dict] = []
     artifact = propose(None)
+    raised: dict[str, list[dict]] = {}
     for rnd in range(max_rounds + 1):
-        reviews = [{"role": p.role, **p.critique(stage, render(artifact), evidence)} for p in panel]
-        issues = [i for r in reviews if r["verdict"] == "revise" for i in r["issues"]]
+        reviews = [{"role": p.role, **p.critique(stage, render(artifact), evidence, raised.get(p.role))}
+                   for p in panel]
+        raised = {r["role"]: blocking_issues(r) for r in reviews}
+        issues = [i for r in reviews for i in raised[r["role"]]]
         transcript.append({"round": rnd + 1, "artifact": artifact, "reviews": reviews,
                            "accepted": not issues})
         if not issues or rnd == max_rounds:
@@ -617,11 +649,13 @@ def render_keypoints_block(kp: dict) -> str:
 def _render_transcript(transcript: list[dict]) -> list[str]:
     out = ["## Discussion", ""]
     for t in transcript:
-        status = "✅ accepted by the whole panel" if t["accepted"] else "🔁 revised"
+        status = ("✅ no blocking issue left" if t["accepted"] else
+                  "🔁 revised" if t is not transcript[-1] else "⛔ blocking issues remain")
         out.append(f"### Round {t['round']} — {status}")
         for r in t["reviews"]:
             out.append(f"- **{r['role']}**: {r['verdict']}")
-            out += [f"  - [{i['target']}] {i['issue']} → *{i['suggestion']}*" for i in r.get("issues", [])]
+            out += [f"  - ({i.get('severity', 'blocking')}) [{i['target']}] {i['issue']} → *{i['suggestion']}*"
+                    for i in r.get("issues", [])]
         out.append("")
     return out
 

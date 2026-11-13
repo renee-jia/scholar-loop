@@ -255,3 +255,44 @@ def test_draft_keeps_best_attempt_and_flags_when_lint_never_passes(tmp_path):
 def test_render_outline_block_is_what_the_panel_sees():
     block = render_outline_block(OUTLINE)
     assert "Question: Does warmup" in block and "4. Limitations" in block
+
+
+# ---- panel convergence: blocking issues hold a stage, suggestions do not ---------------------
+def _issue(severity=None, target="Results"):
+    issue = {"target": target, "issue": "unclear", "suggestion": "clarify"}
+    return {**issue, "severity": severity} if severity else issue
+
+
+def test_suggestions_do_not_hold_a_stage_and_stay_in_the_transcript():
+    from scholarloop.writing.session import Panelist, discuss
+    polish = {"verdict": "accept", "issues": [_issue("suggestion")]}
+    llm = MockLLM(jsons=[polish, {"verdict": "accept", "issues": []}])
+    proposals = []
+    artifact, transcript = discuss(lambda issues: proposals.append(issues) or {"v": len(proposals)},
+                                   [Panelist(llm, "Skeptic"), Panelist(llm, "Editor")], "outline", str, "evidence")
+    assert proposals == [None] and transcript[-1]["accepted"]            # one round, no revision
+    assert transcript[0]["reviews"][0]["issues"][0]["severity"] == "suggestion"
+
+
+def test_a_revision_round_shows_each_panelist_only_its_own_blocking_issues():
+    from scholarloop.writing.session import Panelist, discuss
+    llm = MockLLM(jsons=[{"verdict": "revise", "issues": [_issue("blocking", "Abstract"), _issue("suggestion", "Title")]},
+                         {"verdict": "accept", "issues": []},
+                         {"verdict": "accept", "issues": []}, {"verdict": "accept", "issues": []}])
+    proposals = []
+    _, transcript = discuss(lambda issues: proposals.append(issues) or {"v": len(proposals)},
+                            [Panelist(llm, "Skeptic"), Panelist(llm, "Editor")], "outline", str, "evidence")
+    assert [i["target"] for i in proposals[1]] == ["Abstract"]           # the proposer fixes what blocks
+    skeptic, editor = llm.calls[2]["prompt"], llm.calls[3]["prompt"]
+    assert "- Abstract: unclear" in skeptic and "Title" not in skeptic
+    assert "This is a revision" not in editor and "This is a revision" not in llm.calls[0]["prompt"]
+    assert [t["accepted"] for t in transcript] == [False, True]
+
+
+def test_a_vote_must_agree_with_the_severity_of_its_issues():
+    from scholarloop.writing.session import Panelist, blocking_issues
+    panelist = Panelist(MockLLM(), "Skeptic")
+    assert panelist.postcheck({"verdict": "revise", "issues": [_issue("suggestion")]}, {})
+    assert panelist.postcheck({"verdict": "accept", "issues": [_issue("blocking")]}, {})
+    assert panelist.postcheck({"verdict": "accept", "issues": [_issue("suggestion")]}, {}) == []
+    assert blocking_issues({"issues": [_issue()]}) == [_issue()]          # no severity means blocking
