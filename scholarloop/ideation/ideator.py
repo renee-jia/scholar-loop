@@ -45,6 +45,10 @@ IDEAS_SCHEMA = {
                     "novelty_rationale": {"type": "string"},
                     "feasibility": {"type": "number"},
                     "impact": {"type": "number"},
+                    # Present when the author chose directions (direction.py): the id of the
+                    # direction this idea belongs to and how it follows the author's steer.
+                    "direction": {"type": "string"},
+                    "steer_link": {"type": "string"},
                 },
                 "required": ["title", "description", "gap", "sources", "hypothesis",
                              "experiment_plan", "novelty_rationale", "feasibility", "impact"],
@@ -74,9 +78,15 @@ class Idea:
     design: dict = field(default_factory=dict)
     novelty_review: dict = field(default_factory=dict)
     status: str = "candidate"
+    direction: str = ""                   # id of the author-chosen direction, when one was chosen
+    steer_link: str = ""                  # how the idea follows the author's steer
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        for k in ("direction", "steer_link"):     # absent when unsteered, so older idea ids hold
+            if not d[k]:
+                del d[k]
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Idea":
@@ -128,6 +138,16 @@ class Ideator(Agent):
         titles = [" ".join(i.get("title", "").lower().split()) for i in ideas]
         if len(set(titles)) != len(titles):
             errs.append("ideas must have distinct titles")
+        chosen = [d["id"] for d in ctx.get("directions") or []]
+        if chosen:
+            for i, idea in enumerate(ideas, 1):
+                if idea.get("direction") not in chosen:
+                    errs.append(f"idea {i}: `direction` must be one of the chosen ids {chosen}")
+                if not (idea.get("steer_link") or "").strip():
+                    errs.append(f"idea {i}: say in `steer_link` how it follows the author's steer")
+            unused = [d for d in chosen if d not in {i.get("direction") for i in ideas}]
+            if unused and len(ideas) >= len(chosen):
+                errs.append(f"no idea belongs to chosen direction(s) {unused}")
         return errs
 
     def _setting(self) -> str:
@@ -144,6 +164,14 @@ class Ideator(Agent):
         parts = [f"Topic: {review.topic}",
                  f"Experimental setting every idea must be testable in: {self._setting()}", "",
                  "Literature review:", review.to_prompt_block()]
+        if ctx.get("directions"):
+            from scholarloop.ideation.direction import directions_block, steer_block
+            parts += ["", "The author's steer:", steer_block(ctx["steer"]), "",
+                      "Directions the author CHOSE. Generate ideas only inside these, spread "
+                      "across them, and never what the author asked to avoid or already knows:",
+                      directions_block(ctx["directions"])]
+            if ctx.get("direction_note"):
+                parts += [f"The author's note on the choice: {ctx['direction_note']}"]
         if ctx.get("tried"):
             parts += ["", "Hypotheses the lab has ALREADY tested (do not re-propose):"]
             parts += [f"- {t}" for t in ctx["tried"]]
@@ -163,18 +191,28 @@ class Ideator(Agent):
                   "experiment_plan concrete enough to run in the setting above (which knobs or edits, "
                   "what to compare against), a novelty_rationale (why the reviewed papers have not "
                   "done this), feasibility 1-5, impact 1-5."]
+        if ctx.get("directions"):
+            parts += ["Also give each idea `direction` (the id of the chosen direction it belongs "
+                      "to) and `steer_link` (one sentence: which part of the author's steer it "
+                      "acts on, and what the author would learn from it). An idea is a specific, "
+                      "testable step inside a direction, not a restatement of the direction."]
         return "\n".join(parts)
 
     def ideate(self, review: LitReview, *, n: int = 5, tried: list[str] | None = None,
                previous: list[str] | None = None, feedback: str = "",
-               meta_review: list[str] | None = None, lessons: str = "") -> list[Idea]:
+               meta_review: list[str] | None = None, lessons: str = "",
+               steer: dict | None = None, directions: list[dict] | None = None,
+               direction_note: str = "") -> list[Idea]:
         out = self.run({"review": review, "n": n, "tried": tried or [],
                         "previous": previous or [], "feedback": feedback,
-                        "meta_review": meta_review or [], "lessons": lessons})
+                        "meta_review": meta_review or [], "lessons": lessons,
+                        "steer": steer or {}, "directions": directions or [],
+                        "direction_note": direction_note})
         return [Idea(title=i["title"], description=i["description"], gap=i["gap"],
                      sources=list(i["sources"]), hypothesis=dict(i["hypothesis"]),
                      experiment_plan=i["experiment_plan"], novelty_rationale=i["novelty_rationale"],
-                     feasibility=float(i["feasibility"]), impact=float(i["impact"]))
+                     feasibility=float(i["feasibility"]), impact=float(i["impact"]),
+                     direction=i.get("direction", ""), steer_link=i.get("steer_link", ""))
                 for i in out["ideas"]]
 
 
@@ -228,13 +266,17 @@ def novelty_check(idea: Idea, review: LitReview, tried: list[str] | None = None,
 
 
 def render_markdown(topic: str, ideas: list[Idea], *, feedback: list[str] | None = None,
-                    meta_review: list[dict] | None = None) -> str:
+                    meta_review: list[dict] | None = None, directions: list[dict] | None = None) -> str:
     """`ideas.md` — the human-facing candidate list for the second checkpoint."""
     ranked = any("elo" in i.tournament for i in ideas)
+    names = {d["id"]: d["name"] for d in directions or []}
     how = ("ranked by a pairwise Elo tournament (each pair judged twice, order swapped)" if ranked
            else "ranked by the Ideator's own feasibility + impact")
     out = [f"# Research ideas — {topic}", "",
            f"_{len(ideas)} candidates · {how} · novelty check is lexical and advisory_", ""]
+    if names:
+        out += ["> Generated inside the directions you chose ([directions.md](directions.md)): "
+                + " / ".join(names.values()), ""]
     if feedback:
         out += ["> Feedback applied: " + " / ".join(feedback), ""]
     elo_h, elo_sep = (" Elo (W-D-L) |", "---|") if ranked else ("", "")
@@ -258,6 +300,8 @@ def render_markdown(topic: str, ideas: list[Idea], *, feedback: list[str] | None
     for i, idea in enumerate(ideas, 1):
         out += [f"## {i}. {idea.title}" + ("  ✅ selected" if idea.selected else ""), "",
                 idea.description, "",
+                *([f"- **Direction:** {names.get(idea.direction, idea.direction)}",
+                   f"- **Follows your steer:** {idea.steer_link}"] if idea.direction else []),
                 f"- **Gap:** {idea.gap}",
                 f"- **Hypothesis:** {idea.hypothesis.get('claim', '')} → *{idea.hypothesis.get('predicted_effect', '')}*",
                 f"- **Experiment:** {idea.experiment_plan}",

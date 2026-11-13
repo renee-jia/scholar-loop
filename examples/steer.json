@@ -1,0 +1,10 @@
+{
+  "interest": "I want to know which cheap regularizers actually help a small bag-of-embeddings text classifier when labels are scarce, and why, rather than collecting another leaderboard point.",
+  "hunches": [
+    "Word dropout helps mostly because it stops the model from leaning on a few topic-specific tokens, not because it acts like generic noise.",
+    "Part of any reported gain is early stopping in disguise: a regularized model simply peaks later within the same epoch budget."
+  ],
+  "avoid": ["Pretrained encoders or external data", "Pure hyperparameter sweeps with no mechanism behind them"],
+  "contribution": "A mechanism claim with a matched control; a clean negative result is welcome.",
+  "known": ["A logistic-regression baseline reaches about 13.3% error on this split"]
+}

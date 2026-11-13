@@ -76,18 +76,34 @@ For live runs, add `".[llm]"` and set `ANTHROPIC_API_KEY`.
 
 ## 🧭 How it works
 
-### 1 · Ideation: you choose what is worth running
+### 1 · Ideation: you say where to dig, then choose what is worth running
 
 ```bash
 python -m scholarloop.ideation --profile profiles/digits-mlp.yaml \
     --topic "regularization recipes for small MLPs" --out runs/s1
+#   What do you want to find out, and why does it matter to you?
+#   > whether dropout or weight decay is doing the work on a tiny MLP, and why
+#   Hunches or mechanisms you want tested
+#   > most of the dropout gain is the model peaking later, not regularization
 #   (a)pprove · (r)efine <feedback> · (q)uit  >  r also cover data-side regularization such as mixup
+#   (c)hoose <n,n> [| note] · (o)wn <your direction> · (r)emap <feedback> >  c 1,3 | one knob per idea
 #   (s)elect <n> · (r)efine <feedback> · (q)uit >  s 2
 ```
 
-You give a topic. ScholarLoop plans queries, pulls papers from arXiv and OpenAlex, and writes a
-review with themes, per-paper notes and open gaps. Read it and push back if something is
-missing. Then it proposes ideas, each tied to a gap and to an experiment your engine can run.
+Nothing is generated from a bare topic. ScholarLoop first asks for your steer: what you want to
+find out, the hunches you want tested, what to stay away from, what you already know. The steer
+shapes the search queries, and ideation refuses to start without it.
+
+It then plans queries, pulls papers from arXiv and OpenAlex, and writes a review with themes,
+per-paper notes and open gaps. Read it and push back if something is missing.
+
+Between the review and the ideas sits a direction map (`directions.md`): three to five lines of
+inquiry, each tied to reviewed papers, with an open question, a cheap first experiment and the
+most likely way it turns out dull. Every hunch you gave must be addressed, and the map is not
+allowed to only agree with you: at least one direction has to challenge a hunch or come from
+outside your steer. You choose directions, or write your own. Ideas are generated only inside
+the directions you chose, and each one says which direction it belongs to and what you would
+learn from it.
 
 The model does not get to rank its own ideas. A panel of judges compares every pair twice, with
 the order swapped. A win in only one order counts as a draw, which cancels the bias toward
@@ -99,8 +115,12 @@ You pick one, or reject them all, or write your own with `--inject-idea`. The ch
 <details>
 <summary>Scripted and deeper modes</summary>
 
-`--stop-after review` writes the report and exits for a human. `--feedback "…"` and
-`--select 2` resume from another process. `--auto` takes the tournament's top idea.
+`--steer examples/steer.json` (or `--interest "…" --hunch "…" --avoid "…"`) gives the steer
+without a terminal. The run then stops at the direction map; `--directions 1,3`,
+`--own-direction "…"` and `--direction-note "…"` record your choice and continue.
+`--stop-after review|directions|ideas` writes that page and exits for a human. `--feedback "…"`
+and `--select 2` resume from another process. `--auto` chooses every mapped direction and the
+tournament's top idea; `--unsteered` waives the steer. Both are logged as not being your call.
 `--deep --brief examples/research_brief.json` generates ideas by independent strategies
 (mechanism, transfer, contradiction) with retrieval per idea.
 `--decision reject|refine|merge|revive --idea-ids …` records your decisions against stable
@@ -296,7 +316,7 @@ no listed price is refused.
 ```text
 scholarloop/
 ├── core/            agent harness, model clients, profiles, ledger, registry, budgets
-├── ideation/        retrieval, literature review, ideator, tournament, meta-review
+├── ideation/        retrieval, literature review, steer and direction map, ideator, tournament, meta-review
 ├── experiment/      orchestrator, runner, reasoner, debate, advisor, reflector, governor,
 │                    experiment agenda, research cycle, comparisons
 ├── review/          evidence dossier, critics, issue history, author release

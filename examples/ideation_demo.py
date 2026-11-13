@@ -4,12 +4,16 @@ Deterministic and free — the agents are scripted by `MockLLM`, the "human" is 
 function, retrieval reads a canned arXiv feed, and the experiment runs on the dependency-free stub
 engine — so the whole shape of a human-in-the-loop research session shows in under a second:
 
+  [0/3]  steer           the human says what they want to find out and which hunch to test
   [1/3]  lit_review.md   the human reads it and asks for one change (feedback → re-review)
+         directions.md   a map of directions that develop, challenge or go beyond the hunch;
+                         the human chooses two, and ideas are generated only inside those
   [2/3]  ideas.md        the human picks idea 2
   [3/3]  handoff.json    the Orchestrator adopts it and climbs smoke → verify → full
 
 With a real key the same flow runs on real literature and a real LLM:
-    python -m scholarloop.ideation --profile profiles/digits-mlp.yaml --topic "..." --out runs/s1
+    python -m scholarloop.ideation --profile profiles/digits-mlp.yaml --topic "..." --out runs/s1 \
+        --steer examples/steer.json
 
 Run from the repo root:  python examples/ideation_demo.py
 """
@@ -25,6 +29,7 @@ from scholarloop.core.llm import MockLLM
 from scholarloop.experiment.orchestrator import Orchestrator
 from scholarloop.core.profile import load_profile
 from scholarloop.ideation.session import ResearchSession
+from scholarloop.ideation.direction import with_id
 from scholarloop.ideation.metareview import MetaReviewer
 from scholarloop.ideation.tournament import Tournament
 
@@ -68,22 +73,52 @@ REVIEW_2 = {**REVIEW_1,
             "paper_notes": REVIEW_1["paper_notes"] + [{"id": M, "contribution": "interpolated training pairs", "limitation": "interacts with schedules in unknown ways"}],
             "gaps": REVIEW_1["gaps"] + [{"gap": "mixup under a cosine+warmup schedule is untested.", "why_open": "no joint study", "sources": [M, S]}]}
 
+def _direction(name, thesis, stance, hunches, link, gap, sources, question, first, risk):
+    return {"name": name, "thesis": thesis, "stance": stance, "hunches": hunches, "steer_link": link,
+            "gap": gap, "sources": sources, "open_question": question, "first_experiment": first, "risk": risk}
+
+
+DIRECTIONS = {"directions": [
+    _direction("Schedule interactions on small nets",
+               "At small scale the learning-rate trajectory, not the architecture, sets the final error.",
+               "develops", [1], "Takes your hunch at face value and asks which schedule pieces interact.",
+               "warmup x cosine on small nets", [S, W], "Does warmup still matter once the batch is small?",
+               "warmup 0 vs 5 under the same cosine decay", "the effect sits inside seed noise"),
+    _direction("Is depth the real lever?",
+               "If shortcuts change the picture below 20 layers, the schedule story is incomplete.",
+               "challenges", [1], "Your hunch is wrong if a shortcut gain survives a matched schedule.",
+               "shortcut trade-offs below 20 layers", [R], "Where does depth start to hurt without shortcuts?",
+               "depth 18 vs 20 with and without shortcuts", "no depth effect at this size"),
+    _direction("Label-side regularization",
+               "Interpolating labels may matter more than either schedule or depth.",
+               "outside", [], "Not in your steer; the review's newest gap points here.",
+               "mixup x schedule", [M, S], "Is mixup's gain independent of the schedule?",
+               "mixup on/off at the baseline schedule", "needs a data-pipeline edit"),
+]}
+D_SCHEDULE, D_DEPTH = (with_id(d)["id"] for d in DIRECTIONS["directions"][:2])
+STEER_ANSWERS = ["which cheap training-recipe changes matter for small nets, and why",
+                 "at small scale the schedule matters more than the architecture",
+                 "larger models; longer training", "a mechanism with a matched control", ""]
+
 IDEAS = {"ideas": [
     {"title": "Residual shortcuts in a 20-layer net", "description": "Add identity shortcuts to a mid-depth net and re-tune depth.",
      "gap": "shortcut trade-offs below 20 layers", "sources": [R],
      "hypothesis": {"claim": "shortcuts let depth 20 beat depth 18", "predicted_effect": "-0.5 err"},
      "experiment_plan": "depth=20 vs 18 at lr=0.05, same schedule", "novelty_rationale": "ResNet reports 18+ only",
-     "feasibility": 4, "impact": 2},
+     "feasibility": 4, "impact": 2, "direction": D_DEPTH,
+     "steer_link": "The direct test of whether your schedule-first hunch survives a depth change."},
     {"title": "Warmup + cosine on a small net", "description": "Combine a 5-epoch warmup with cosine decay and a higher peak lr.",
      "gap": "warmup x cosine on small nets", "sources": [S, W],
      "hypothesis": {"claim": "warmup lets a higher peak lr converge better", "predicted_effect": "-1.0 err"},
      "experiment_plan": "lr=0.1, warmup=5, weight_decay=5e-4, depth=20; compare to the no-warmup baseline",
-     "novelty_rationale": "the two papers never combine them", "feasibility": 5, "impact": 4},
+     "novelty_rationale": "the two papers never combine them", "feasibility": 5, "impact": 4,
+     "direction": D_SCHEDULE, "steer_link": "Acts on your hunch: isolates one schedule piece against a matched baseline."},
     {"title": "mixup under cosine+warmup", "description": "Apply mixup while training with the warmup+cosine recipe.",
      "gap": "mixup x schedule", "sources": [M, S],
      "hypothesis": {"claim": "mixup adds a further gain on top of the schedule", "predicted_effect": "-0.3 err"},
      "experiment_plan": "requires an augmentation edit in train.py", "novelty_rationale": "no joint study",
-     "feasibility": 3, "impact": 3},
+     "feasibility": 3, "impact": 3, "direction": D_SCHEDULE,
+     "steer_link": "Asks whether the schedule effect you suspect absorbs a data-side regularizer."},
 ]}
 
 PROPOSAL = {"rationale": "follow the chosen plan: warmup=5 with lr=0.1 and cosine-style decay",
@@ -103,9 +138,11 @@ def main() -> int:
         REVIEW_1,
         {"queries": ["mixup data augmentation"], "rationale": "the reader asked for data-side regularization"},
         REVIEW_2,
+        DIRECTIONS,
         IDEAS,
     ])
-    human = iter(["r also cover data-side regularization such as mixup", "a", "s 2"])
+    human = iter([*STEER_ANSWERS, "r also cover data-side regularization such as mixup", "a",
+                  "c 1,2 | change one thing per idea", "s 2"])
     # the idea tournament's judges: scripted to prefer mixup > warmup+cosine > residual shortcuts,
     # whichever slot an idea is shown in (the Ideator's self-scores put warmup+cosine first)
     prefer = ["Residual shortcuts", "Warmup + cosine", "mixup under"]
@@ -126,7 +163,7 @@ def main() -> int:
     s = ResearchSession(session_llm, profile, tmp / "session", topic="training recipes for small nets",
                         sources=[ArxivClient(fetcher=lambda q, n: next(feeds))],
                         tournament=Tournament(MockLLM(router=judge), profile),
-                        meta_reviewer=MetaReviewer(meta_llm))
+                        meta_reviewer=MetaReviewer(meta_llm), require_direction=True)
 
     def ask(prompt):
         answer = next(human)
@@ -150,7 +187,7 @@ def main() -> int:
     for e in produced:
         print(f"    {e.fidelity[0]:<6} {e.metric_name}={e.primary_score()}%  [{e.verdict}]")
     print(f"\n  the idea climbed {len(produced)} tier(s); every run cites {produced[0].hypothesis.source}.")
-    print(f"  session artifacts: {tmp / 'session'}  (lit_review.md · ideas.md · tournament.json · handoff.json · session.json)")
+    print(f"  session artifacts: {tmp / 'session'}  (lit_review.md · directions.md · ideas.md · tournament.json · handoff.json · session.json)")
     shutil.rmtree(tmp, ignore_errors=True)
     return 0
 

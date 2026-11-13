@@ -7,6 +7,9 @@ of the loop and persists everything between them:
     topic ──▶ [1] literature review ──▶ lit_review.md   ◀── read it; approve, or send feedback
                      │                                       (feedback re-plans queries, re-reviews)
                      ▼
+              [·] direction map ──▶ directions.md    ◀── choose where to dig, or write your own
+                     │                                       (needs your steer; see direction.py)
+                     ▼
               [2] candidate ideas ──▶ ideas.md         ◀── pick one, or send feedback
                      │                                       (feedback re-ideates, keeps the corpus)
                      ▼
@@ -32,7 +35,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from scholarloop.ideation import ideator, litreview
+from scholarloop.ideation import direction, ideator, litreview
 from scholarloop.core.agent import AgentError, AgentTrace
 from scholarloop.ideation.ideator import Idea, Ideator, novelty_check, tried_claims
 from scholarloop.core.ledger import Ledger
@@ -65,6 +68,12 @@ class SessionState:
     research_brief: dict = field(default_factory=dict)
     brief_history: list[dict] = field(default_factory=list)
     review_pending: bool = False
+    steer: dict = field(default_factory=dict)                # the author's directional input
+    direction_map: list[dict] = field(default_factory=list)  # what the DirectionMapper laid out
+    chosen_directions: list[str] = field(default_factory=list)   # dir_* ids the author chose
+    direction_note: str = ""
+    direction_log: list[dict] = field(default_factory=list)  # append-only steer/choice decisions
+    unsteered: bool = False                                  # the author explicitly waived the steer
 
     def to_dict(self) -> dict:
         return {"topic": self.topic, "stage": self.stage, "review": self.review,
@@ -72,7 +81,10 @@ class SessionState:
                 "handoff": self.handoff, "meta_review": self.meta_review,
                 "tournament_rounds": self.tournament_rounds, "idea_graph": self.idea_graph,
                 "deep_ideation": self.deep_ideation, "research_brief": self.research_brief,
-                "brief_history": self.brief_history, "review_pending": self.review_pending}
+                "brief_history": self.brief_history, "review_pending": self.review_pending,
+                "steer": self.steer, "direction_map": self.direction_map,
+                "chosen_directions": self.chosen_directions, "direction_note": self.direction_note,
+                "direction_log": self.direction_log, "unsteered": self.unsteered}
 
     @classmethod
     def from_dict(cls, d: dict) -> "SessionState":
@@ -92,8 +104,11 @@ class ResearchSession:
                  ledger_path: str | Path | None = None, trace: AgentTrace | None = None,
                  max_papers: int = 20, per_query: int = 8, tournament: Tournament | None = None,
                  meta_reviewer: MetaReviewer | None = None, skills: SkillLibrary | None = None,
-                 deep_ideation: bool = False):
+                 deep_ideation: bool = False, require_direction: bool = False):
         self.llm, self.profile = llm, profile
+        # With require_direction, ideate() refuses to run until the author has given a steer and
+        # chosen directions (or explicitly waived both). The CLI always sets it.
+        self.require_direction = require_direction
         self.out = Path(out_dir)
         self.out.mkdir(parents=True, exist_ok=True)
         self.sources = sources if sources is not None else [OpenAlexClient(), ArxivClient()]
@@ -103,6 +118,7 @@ class ResearchSession:
         self.planner = QueryPlanner(llm, trace=self.trace)
         self.reviewer = LitReviewer(llm, trace=self.trace)
         self.ideator = Ideator(llm, profile, trace=self.trace)
+        self.mapper = direction.DirectionMapper(llm, self.ideator._setting(), trace=self.trace)
         self.tournament = tournament            # None: rank by the Ideator's self-scores
         self.meta_reviewer = meta_reviewer      # distills the tournament's rationales; needs a tournament
         self.skills = skills                    # the experiment loop's lessons, read-only here
@@ -137,7 +153,10 @@ class ResearchSession:
             archive.mkdir(exist_ok=True)
             handoff_path.replace(archive / f"{digest(handoff_path.read_text())}.json")
         if self.state.stage != "ideated":
-            atomic_json(self.out / "idea_pending_decisions.json", [])
+            waiting = self.state.stage == "reviewed" and self.state.direction_map and not self.state.chosen_directions
+            atomic_json(self.out / "idea_pending_decisions.json", [{
+                "kind": "choose_directions", "direction_ids": [d["id"] for d in self.state.direction_map],
+                "choices": ["choose", "add_own", "remap", "pause"]}] if waiting else [])
 
     @property
     def stage(self) -> str:
@@ -161,6 +180,101 @@ class ResearchSession:
 
     def _feedback_for(self, stage: str) -> list[str]:
         return [f["text"] for f in self.state.feedback if f["stage"] == stage]
+
+    # ---- the author's steer and the direction map ---------------------------------------------
+    @property
+    def chosen(self) -> list[dict]:
+        return [d for d in self.state.direction_map if d["id"] in self.state.chosen_directions]
+
+    def _context_brief(self) -> dict:
+        """The brief the idea graph hashes and the judges read. The steer and the chosen directions
+        are part of it, so candidates generated under another choice cannot be selected."""
+        brief = self.state.research_brief
+        if not self.state.steer:
+            return brief
+        return {**brief, "steer": self.state.steer, "directions": self.chosen,
+                "direction_note": self.state.direction_note}
+
+    def _log_direction(self, action, *, actor, kind="human", **fields):
+        if not actor.strip():
+            raise ValueError("A direction decision needs an actor")
+        self.state.direction_log.append({"action": action, "actor": actor, "kind": kind,
+                                         **fields, "timestamp": time.time()})
+
+    def _reset_directions(self):
+        self.state.direction_map, self.state.chosen_directions, self.state.direction_note = [], [], ""
+
+    def set_steer(self, steer, *, actor):
+        """Record what the author wants to find out. A new steer invalidates the direction map and
+        the candidates; an existing review is kept (send review feedback to extend the corpus)."""
+        steer = direction.validate_steer(steer)
+        if steer == self.state.steer:
+            return
+        self._log_direction("steer", actor=actor, steer=steer)
+        self.state.steer, self.state.unsteered = steer, False
+        self._reset_directions()
+        self.state.stage = "reviewed" if self.state.review else "new"
+        self.state.ideas, self.state.selected, self.state.handoff = [], None, None
+        self._save()
+        atomic_json(self.out / "steer.json", steer)
+
+    def waive_steer(self, *, actor, reason, kind="human"):
+        """Let ideation run with no steer. Explicit, attributed and written to the log."""
+        if not reason.strip():
+            raise ValueError("Waiving the steer needs a reason")
+        self._log_direction("waive", actor=actor, kind=kind, reason=reason)
+        self.state.unsteered = True
+        self._save()
+
+    def map_directions(self, feedback: str = "") -> list[dict]:
+        """Lay out research directions from the review and the steer. Writes directions.md."""
+        rev = self.review_obj
+        if rev is None or self.state.review_pending:
+            raise RuntimeError("run review() before map_directions()")
+        if not self.state.steer:
+            raise ValueError("Give a steer before mapping directions (set_steer / --steer)")
+        self._note_feedback("directions", feedback)
+        previous = [f"{d['name']}: {d['thesis']}" for d in self.state.direction_map]
+        own = [d for d in self.state.direction_map if d["origin"] == "author"]
+        mapped = self.mapper.map(rev, self.state.steer, previous=previous,
+                                 feedback="\n".join(f"- {t}" for t in self._feedback_for("directions")))
+        self.state.direction_map = mapped + own               # the author's own directions survive a remap
+        self.state.chosen_directions, self.state.direction_note = [], ""
+        self.state.ideas, self.state.selected, self.state.handoff = [], None, None
+        self.state.stage = "reviewed"
+        self._save()
+        self._write_directions()
+        return self.state.direction_map
+
+    def choose_directions(self, picks=(), *, actor, note="", own=(), kind="human") -> list[dict]:
+        """Choose where ideas will be generated: 1-based positions on the map and/or directions
+        the author writes (`own`). Replaces any earlier choice and drops its candidates."""
+        if not self.state.steer:
+            raise ValueError("Give a steer before choosing directions")
+        added = [direction.own_direction(text) for text in own]
+        known = {d["id"] for d in self.state.direction_map}
+        board = self.state.direction_map + [d for d in added if d["id"] not in known]
+        picks = list(picks)
+        if any(not isinstance(i, int) or not 1 <= i <= len(self.state.direction_map) for i in picks):
+            raise ValueError(f"Choose directions by their number on the map (1..{len(self.state.direction_map)})")
+        ids = list(dict.fromkeys([self.state.direction_map[i - 1]["id"] for i in picks] + [d["id"] for d in added]))
+        if not ids:
+            raise ValueError("Choose at least one direction, or write your own")
+        self._log_direction("choose", actor=actor, kind=kind, direction_ids=ids, note=note)
+        self.state.direction_map, self.state.chosen_directions, self.state.direction_note = board, ids, note
+        self.state.ideas, self.state.selected, self.state.handoff = [], None, None
+        self.state.stage = "reviewed"
+        self._save()
+        self._write_directions()
+        return self.chosen
+
+    def _write_directions(self) -> None:
+        (self.out / "directions.md").write_text(direction.render_markdown(
+            self.topic, self.state.steer, self.state.direction_map, self.state.chosen_directions,
+            self.state.direction_note))
+        atomic_json(self.out / "directions.json", {"steer": self.state.steer, "map": self.state.direction_map,
+                                                   "chosen": self.state.chosen_directions,
+                                                   "note": self.state.direction_note, "log": self.state.direction_log})
 
     def set_brief(self, brief, *, actor):
         validate_brief(brief)
@@ -190,6 +304,8 @@ class ResearchSession:
         domain = _domain_blurb(self.profile)
         if self.state.research_brief:
             domain += "\nResearch brief: " + json.dumps(self.state.research_brief, ensure_ascii=False)
+        if self.state.steer:       # queries and the review's gaps are planned around the author's steer
+            domain += "\n" + direction.steer_block(self.state.steer)
         queries = self.planner.plan(self.topic, domain=domain,
                                     previous=previous_queries, feedback="\n".join(self._feedback_for("review")))
         fresh = retrieve(self.sources, queries, per_query=self.per_query, max_total=self.max_papers)
@@ -203,6 +319,7 @@ class ResearchSession:
         self.state.review_pending = False
         self.state.stage = "reviewed"
         self.state.ideas, self.state.selected, self.state.handoff = [], None, None   # downstream is stale
+        self._reset_directions()                               # a map drawn from the old review is stale too
         self._save()
         (self.out / "lit_review.md").write_text(litreview.render_markdown(rev))
         (self.out / "lit_review.json").write_text(json.dumps(rev.to_dict(), indent=2, ensure_ascii=False))
@@ -218,6 +335,13 @@ class ResearchSession:
             raise RuntimeError("run review() before ideate()")
         if self.state.review_pending:
             raise RuntimeError("The requested literature update is incomplete; finish review() before ideation")
+        if self.require_direction and not self.state.unsteered:
+            if not self.state.steer:
+                raise ValueError("Ideation starts from your steer: say what you want to find out "
+                                 "(--steer FILE or --interest \"...\"), or waive it with --unsteered")
+            if not self.chosen:
+                raise ValueError("Choose the directions to generate ideas in first "
+                                 "(see directions.md; --directions 1,3 or --own-direction \"...\")")
         self._note_feedback("ideas", feedback)
         self.state.selected, self.state.handoff = None, None
         self.state.stage = "ideated" if self.state.ideas else "reviewed"
@@ -239,6 +363,9 @@ class ResearchSession:
                    "meta_review": standing, "lessons": lessons}
         if self.state.research_brief:
             context["feedback"] += "\nAuthor's research brief: " + json.dumps(self.state.research_brief, ensure_ascii=False)
+        if self.chosen:
+            context.update(steer=self.state.steer, directions=self.chosen,
+                           direction_note=self.state.direction_note)
         audits = []
         if self.state.deep_ideation or parents:
             from scholarloop.ideation.deep import generate
@@ -253,7 +380,7 @@ class ResearchSession:
         if self.tournament is not None and len(ideas) > 1:
             ideas = self._rank(ideas)
         record_round(graph, ideas, review=rev, profile=self.profile, feedback=feedback,
-                     parents=parents, relation=relation, audits=audits, brief=self.state.research_brief)
+                     parents=parents, relation=relation, audits=audits, brief=self._context_brief())
         self.state.ideas = [i.to_dict() for i in ideas]
         self.state.stage = "ideated"
         self.state.selected, self.state.handoff = None, None
@@ -266,7 +393,7 @@ class ResearchSession:
         novelty last), so idea 1 in ideas.md is the tournament's pick. Every round's match log is
         appended to tournament.json for audit (meta-review support ids point into it)."""
         res = self.tournament.run(self.topic, ideas, evidence={
-            "brief": self.state.research_brief,
+            "brief": self._context_brief(),
             "dissent": self.state.meta_review[-5:],
             "papers": [asdict(p) for p in self.review_obj.papers] if self.review_obj else []})
         for i, idea in enumerate(ideas):
@@ -296,7 +423,7 @@ class ResearchSession:
 
     def _write_ideas(self) -> None:
         rendered = ideator.render_markdown(self.topic, self.ideas, feedback=self._feedback_for("ideas"),
-                                           meta_review=self.state.meta_review)
+                                           meta_review=self.state.meta_review, directions=self.chosen)
         if self.state.idea_graph.get("observations"):
             rendered += "\nPilot observations: [pilot_feedback.json](pilot_feedback.json). Hypotheses remain unresolved.\n"
         (self.out / "ideas.md").write_text(rendered)
@@ -360,13 +487,13 @@ class ResearchSession:
         idea.novelty = novelty_check(idea, self.review_obj)
         candidates = self.ideas
         rounds = self.state.idea_graph["rounds"]
-        if rounds and rounds[-1]["context_hash"] != context_hash(self.review_obj, self.profile, self.state.research_brief):
+        if rounds and rounds[-1]["context_hash"] != context_hash(self.review_obj, self.profile, self._context_brief()):
             candidates = []  # injecting one idea must not revalidate stale peers
         for candidate in candidates:
             candidate.selected = False
         candidates.append(idea)
         record_round(self.state.idea_graph, candidates, review=self.review_obj, profile=self.profile,
-                     feedback=reason, brief=self.state.research_brief)
+                     feedback=reason, brief=self._context_brief())
         # Exact repeats retain their stable identity and do not duplicate the visible list.
         candidates = list({i.idea_id: i for i in candidates}.values())
         record_decision(self.state.idea_graph, "inject", [idea.idea_id], actor=actor, reason=reason)
@@ -390,7 +517,7 @@ class ResearchSession:
             raise ValueError("This idea was rejected; explicitly revive/re-evaluate it first")
         if ideas[index - 1].status != "candidate":
             raise ValueError("This human seed needs literature grounding; refine it before selection")
-        if self.state.idea_graph["rounds"][-1]["context_hash"] != context_hash(self.review_obj, self.profile, self.state.research_brief):
+        if self.state.idea_graph["rounds"][-1]["context_hash"] != context_hash(self.review_obj, self.profile, self._context_brief()):
             raise ValueError("Review/profile changed since ideation; generate candidates again")
         record_decision(self.state.idea_graph, "select", [ideas[index - 1].idea_id],
                          actor=actor, reason=reason, kind=kind)
@@ -407,6 +534,12 @@ class ResearchSession:
         self.state.handoff = build_handoff(ideas[index - 1], self.review_obj)
         self.state.handoff["selection_decision"] = self.state.idea_graph["decisions"][-1]
         self.state.handoff["research_brief"] = self.state.research_brief
+        if self.state.steer:
+            picked = ideas[index - 1]
+            self.state.handoff["author_direction"] = {
+                "steer": self.state.steer, "note": self.state.direction_note,
+                "direction": next((d for d in self.chosen if d["id"] == picked.direction), None),
+                "steer_link": picked.steer_link}
         self.state.stage = "selected"
         self._save()
         self._write_ideas()
@@ -434,6 +567,8 @@ class ResearchSession:
         """Drive the session from a terminal (or any `input_fn`, e.g. a scripted one in tests).
         Returns the handoff, or None if the human quits."""
         say = print_fn
+        if self.require_direction and not self.state.steer and not self.state.unsteered:
+            self.set_steer(direction.ask_steer(input_fn, say), actor="local-user")
         if self.stage == "new" or self.state.review_pending:
             say(f"[1/3] reviewing the literature on {self.topic!r} ...")
             self.review()
@@ -445,6 +580,8 @@ class ResearchSession:
                 say(f"      gap {i}: {g['gap']}")
             cmd, arg = _parse(input_fn("      (a)pprove · (r)efine <feedback> · (q)uit > "))
             if cmd == "a":
+                if self.state.steer and not self.chosen and not self._choose_interactively(input_fn, say):
+                    return None
                 say(f"[2/3] generating {n_ideas} ideas ...")
                 self.ideate(n_ideas)
             elif cmd == "r" and arg:
@@ -493,6 +630,50 @@ class ResearchSession:
         say(f"      handoff → {self.out / 'handoff.json'}  (adopt it with Orchestrator.adopt, or "
             f"SCHOLARLOOP_HANDOFF=... examples/run_to_paper.py)")
         return self.state.handoff
+
+
+def _choose_interactively(self, input_fn, say) -> bool:
+    """The direction checkpoint of interactive(): map, show, and wait for the author's choice."""
+    if not self.state.direction_map:
+        say("      mapping research directions from the review and your steer ...")
+        self.map_directions()
+    own = []
+    while True:
+        say(f"      directions → {self.out / 'directions.md'}")
+        for i, d in enumerate(self.state.direction_map, 1):
+            tag = "yours" if d["origin"] == "author" else d["stance"]
+            say(f"      {i}. [{tag}] {d['name']}: {d['thesis']}")
+        for text in own:
+            say(f"      +  [yours] {text}")
+        cmd, arg = _parse(input_fn("      (c)hoose <n,n> [| note] · (o)wn <your direction> · "
+                                  "(r)emap <feedback> · (q)uit > "))
+        try:
+            if cmd == "c":
+                picks, _, note = arg.partition("|")
+                self.choose_directions(_numbers(picks), actor="local-user", note=note.strip(), own=own)
+                return True
+            if cmd == "o" and arg:
+                direction.own_direction(arg)
+                own.append(arg)
+            elif cmd == "r" and arg:
+                say("      remapping with your feedback ...")
+                self.map_directions(feedback=arg)
+            elif cmd == "q":
+                return False
+            else:
+                say("      type c 1,3 (c alone keeps only your own), o <direction>, r <feedback>, or q")
+        except ValueError as exc:
+            say("      " + str(exc))
+
+
+ResearchSession._choose_interactively = _choose_interactively
+
+
+def _numbers(text: str) -> list[int]:
+    try:
+        return [int(x) for x in text.replace(",", " ").split()]
+    except ValueError:
+        raise ValueError("Give direction numbers such as 1,3") from None
 
 
 def _parse(line: str) -> tuple[str, str]:
@@ -545,6 +726,16 @@ def _run_cli(argv: list[str]) -> int:
     ap.add_argument("--out", required=True, help="session directory (resumes if session.json exists)")
     ap.add_argument("--topic", help="required for a new session")
     ap.add_argument("--brief", help="JSON research brief: question, success_criteria, constraints, non_goals, resources, literature_scope")
+    ap.add_argument("--steer", help="JSON steer: interest (required), hunches, avoid, contribution, known "
+                    "(see examples/steer.json). Ideation does not start without a steer")
+    ap.add_argument("--interest", help="inline steer: what you want to find out and why")
+    ap.add_argument("--hunch", action="append", default=[], help="inline steer: a hunch to test (repeatable)")
+    ap.add_argument("--avoid", action="append", default=[], help="inline steer: a direction to stay away from (repeatable)")
+    ap.add_argument("--directions", help="choose directions by number on directions.md, e.g. 1,3")
+    ap.add_argument("--own-direction", action="append", default=[], help="add and choose a direction you write (repeatable)")
+    ap.add_argument("--direction-note", default="", help="a note the Ideator reads with your choice")
+    ap.add_argument("--unsteered", action="store_true",
+                    help="waive the steer and the direction choice; recorded with --actor and --reason")
     ap.add_argument("--model", default=model_from_env())
     ap.add_argument("--max-llm-calls", type=int, default=60,
                     help="cumulative request cap for this ideation directory, including retries")
@@ -565,7 +756,7 @@ def _run_cli(argv: list[str]) -> int:
     ap.add_argument("--select", type=int, help="non-interactive: pick this idea (1-based)")
     ap.add_argument("--auto", action="store_true",
                     help="non-interactive: run review → ideas → pick the top-ranked idea")
-    ap.add_argument("--stop-after", choices=["review", "ideas"],
+    ap.add_argument("--stop-after", choices=["review", "directions", "ideas"],
                     help="non-interactive: produce this artifact and exit for a human to read")
     a = ap.parse_args(argv)
     if sum(bool(x) for x in (a.select, a.decision, a.inject_idea)) > 1:
@@ -581,11 +772,27 @@ def _run_cli(argv: list[str]) -> int:
     skills = (SkillLibrary(a.skills) if a.skills else SkillLibrary.for_domain(profile.name)
               if os.environ.get("SCHOLARLOOP_PERSIST_SKILLS") == "1" else None)
     s = ResearchSession(llm, profile, a.out, topic=a.topic, ledger_path=a.ledger,
-                        max_papers=a.max_papers, skills=skills, deep_ideation=a.deep,
+                        max_papers=a.max_papers, skills=skills, deep_ideation=a.deep, require_direction=True,
                         tournament=None if a.no_tournament else Tournament(llm, profile),
                         meta_reviewer=None if a.no_tournament else MetaReviewer(llm))
     if a.brief:
         s.set_brief(json.loads(Path(a.brief).read_text()), actor=a.actor)
+    try:
+        if a.steer or a.interest:
+            steer = json.loads(Path(a.steer).read_text()) if a.steer else {}
+            if a.interest:
+                steer["interest"] = a.interest
+            for key, extra in (("hunches", a.hunch), ("avoid", a.avoid)):
+                if extra:
+                    steer[key] = list(steer.get(key, [])) + extra
+            s.set_steer(steer, actor=a.actor)
+        elif a.hunch or a.avoid:
+            ap.error("--hunch/--avoid add to a steer; give --interest or --steer as well")
+        if a.unsteered and not s.state.steer and not s.state.unsteered:
+            s.waive_steer(actor=a.actor, reason=a.reason or "Waived on the command line")
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     if a.inject_idea:
         try:
             idea = s.inject(json.loads(Path(a.inject_idea).read_text()), actor=a.actor, reason=a.reason)
@@ -612,22 +819,49 @@ def _run_cli(argv: list[str]) -> int:
         print(f"selected idea {s.state.selected} → {s.out / 'handoff.json'}")
         return 0
 
-    non_interactive = any([a.feedback, a.select, a.auto, a.stop_after])
+    choosing = bool(a.directions or a.own_direction)
+    non_interactive = any([a.feedback, a.select, a.auto, a.stop_after, choosing])
     if not non_interactive:
         return 0 if s.interactive(n_ideas=a.n_ideas) else 1
 
-    if a.feedback:                                   # feedback applies to whatever stage we're at
-        if s.stage in ("new", "reviewed"):
-            s.review(feedback=a.feedback)
-        else:
-            s.ideate(a.n_ideas, feedback=a.feedback)
-    if s.stage == "new" or s.state.review_pending:
-        s.review()
-    if a.stop_after == "review":
-        print(f"literature review → {s.out / 'lit_review.md'}")
-        return 0
-    if s.stage == "reviewed":
-        s.ideate(a.n_ideas)
+    steered = bool(s.state.steer)
+    if not steered and not s.state.unsteered and s.stage in ("new", "reviewed"):
+        print("Ideation starts from your steer. Say what you want to find out with --steer FILE or "
+              "--interest \"...\" (add --hunch/--avoid), run without flags to be asked, or pass "
+              "--unsteered to waive it.", file=sys.stderr)
+        return 2
+    try:
+        if a.feedback:                               # feedback applies to whatever stage we're at
+            if s.stage == "new" or (s.stage == "reviewed" and not s.state.direction_map):
+                s.review(feedback=a.feedback)
+            elif s.stage == "reviewed":              # a map exists: the feedback redraws it
+                s.map_directions(feedback=a.feedback)
+            else:
+                s.ideate(a.n_ideas, feedback=a.feedback)
+        if s.stage == "new" or s.state.review_pending:
+            s.review()
+        if a.stop_after == "review":
+            print(f"literature review → {s.out / 'lit_review.md'}")
+            return 0
+        if s.stage == "reviewed" and steered:
+            if not s.state.direction_map and not (a.own_direction and not a.directions):
+                s.map_directions()
+            if choosing:
+                s.choose_directions(_numbers(a.directions or ""), actor=a.actor, note=a.direction_note,
+                                    own=a.own_direction)
+            elif a.auto and not s.chosen:
+                s.choose_directions(range(1, len(s.state.direction_map) + 1), actor="auto-selector",
+                                    kind="automated", note="Every mapped direction, chosen without a human")
+            if not s.chosen or a.stop_after == "directions":
+                print(f"directions → {s.out / 'directions.md'}\n"
+                      "read them, then choose: --directions 1,3  (or --own-direction \"...\", "
+                      "or --feedback \"...\" for a new map)")
+                return 0
+        if s.stage == "reviewed":
+            s.ideate(a.n_ideas)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     if a.stop_after == "ideas":
         print(f"ideas → {s.out / 'ideas.md'}")
         return 0
