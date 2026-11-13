@@ -158,3 +158,45 @@ def test_cli_writes_reports(run, tmp_path, capsys):
     assert "Detection by fault" in (out / "injection.md").read_text()
     assert json.loads((out / "injection.json").read_text())["version"] == 1
     assert main(["traces", "--traces", str(tmp_path), "--out", str(out)]) == 1   # no traces present
+
+
+# ---- reviewed mode: guards bound to an approved scientific release ----------------------------
+@pytest.fixture
+def reviewed_run(tmp_path):
+    from scholarloop.writing.session import WritingSession
+    from tests.test_scientific_review import PANEL_PASS, released, setup, writing_outputs
+    paths = setup(tmp_path)
+    released(paths)
+    profile, ledger, registry, out = paths
+    outline, kp, bodies = writing_outputs()
+    llm = MockLLM(jsons=[outline, *([PANEL_PASS] * 3), kp, *([PANEL_PASS] * 3), *bodies,
+                         {"verdict": "pass", "issues": []}])
+    w = WritingSession(llm, profile, out, ledger_path=ledger, registry_dir=registry)
+    w.outline(), w.key_points(), w.draft()
+    return profile, {"ledger": ledger, "registry": registry, "research": out, "writing": out / "writing.json"}
+
+
+def test_reviewed_mode_uses_the_release_and_sees_sentence_local_misattribution(reviewed_run):
+    profile, paths = reviewed_run
+    cases, ctx = load_cases(profile, **paths)
+    assert ctx.mode == "reviewed" and "claim_error" in ctx.statements
+    report = run_injection(cases, ctx)
+    assert report["mode"] == "reviewed" and report["controls"]["false_positives"] == 0
+    by = report["by_fault_and_target"]
+    assert by["fabrication/fabricated_statement_id/section"]["rate"] == 1.0
+    assert by["fabrication/uncited_sentence/section"]["rate"] == 1.0
+    assert by["fabrication/fabricated_number/section"]["rate"] == 1.0
+    # a sentence about the measured error, re-cited to the limitation, no longer has its number
+    wrong = [t for t in report["trials"] if t["fault"] == "wrong_statement_id" and t["target"] == "section"
+             and "claim_error →" in t["change"]]
+    assert wrong and all(t["detected"] for t in wrong)
+    # key points and the outline must copy approved statements, so any edit to them is caught
+    assert by["fabrication/fabricated_number/key_points"]["rate"] == 1.0
+
+
+def test_a_release_that_no_longer_validates_falls_back_and_says_so(reviewed_run):
+    profile, paths = reviewed_run
+    with paths["ledger"].open("a") as stream:              # evidence changed after approval
+        stream.write(paths["ledger"].read_text().splitlines()[0].replace("exp_0001", "exp_0002") + "\n")
+    _, ctx = load_cases(profile, **paths)
+    assert ctx.mode.startswith("legacy (the writing cites a release that no longer validates")

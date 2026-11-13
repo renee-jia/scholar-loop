@@ -91,7 +91,7 @@ PROPOSAL = {"rationale": "follow the chosen plan: warmup=5 with lr=0.1 and cosin
                        {"name": "weight_decay", "value": 5e-4}, {"name": "warmup", "value": 5}],
             "hypothesis": {"claim": "warmup lets a higher peak lr converge better", "source": W,
                            "predicted_effect": "-1.0 err"},
-            "predicted_delta": -1.0}
+            "predicted_delta": -1.0, "idea_role": "treatment"}
 
 
 def main() -> int:

@@ -1,0 +1,55 @@
+# NLP engine profile (AG News topic classification, bag-of-embeddings). Validate:
+#   python -m scholarloop.core.profile validate profiles/agnews-bow.yaml
+# The first run downloads AG News through `datasets` (pip install -e ".[nlp]") and caches a fixed
+# 10,000-article subset under ~/.cache/scholarloop (override with $SCHOLARLOOP_DATA_DIR).
+name: agnews-bow
+paradigm: supervised
+train_entrypoint: engines/text_cls/train.py
+fixed_module: engines/text_cls/prepare.py
+
+metric:
+  name: val_top1_err          # lower is better
+  direction: minimize
+
+budget:
+  smoke_sec: 120              # one run is ~1-2s on CPU
+  verify_sec: 300
+  full_sec: 900
+
+datasets:
+  - ag-news-10k-subset
+
+baselines:
+  # Must-beat val error (%) = sklearn LogisticRegression on hashed bag-of-words counts over the
+  # same frozen folds (5-fold CV mean 13.3, std 0.7; 14.5 on the held-out test). The default
+  # recipe gets ~13.8: with 6,400 training articles the model overfits within a few epochs, so
+  # the open question is regularization, not capacity.
+  - logreg@13.3
+
+# The loop selects on val every round, so the best val number is optimistically biased. Full-tier
+# runs are also scored once on the held-out test, which only the paper sees.
+holdout: true
+# One val fold is 1,600 articles. Seed s validates on fold s % 5; the full tier's five seeds are a
+# 5-fold CV estimate.
+cv_folds: 5
+
+knobs:                        # tunable hyperparameters (name → default) the agent sets in `config`
+  lr: 0.003
+  embed_dim: 64
+  hidden: 64
+  depth: 1
+  weight_decay: 0.0001
+  epochs: 8
+
+allowed_edits:
+  - optimizer
+  - schedule
+  - regularization
+  - augmentation
+  - loss
+
+forbidden_edits:
+  - "**/prepare.py"
+  - prepare.py
+
+debate_roles: [Innovator, Pragmatist, Contrarian]

@@ -34,7 +34,7 @@ import random
 import re
 import sys
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -98,6 +98,8 @@ class Context:
     bank: object                                 # EvidenceBank
     papers: list[str]                            # corpus paper ids
     runs: list[str]                              # ledger run ids
+    statements: list[str] = field(default_factory=list)   # approved statement ids (reviewed mode)
+    mode: str = "legacy"                         # "reviewed": guards bound to an approved release
 
 
 def _get(obj, path):
@@ -113,7 +115,13 @@ def _set(obj, path, value):
 
 
 def load_cases(profile, *, ledger, registry, research, writing) -> tuple[list[Case], Context]:
-    """Build cases from one captured run: its ledger, registry, research session and writing state."""
+    """Build cases from one captured run: its ledger, registry, research session and writing state.
+
+    When the writing state is bound to a scientific release that still validates, the guards
+    run in `reviewed` mode, exactly as they did in production: prose must cite approved
+    statements and numbers are checked per sentence against the statements cited there.
+    Otherwise they run in `legacy` mode (numbers and ids checked against the whole evidence
+    bank), and `Context.mode` says why."""
     from scholarloop.core.ledger import Ledger
     from scholarloop.ideation.ideator import Ideator
     from scholarloop.ideation.litreview import LitReview, LitReviewer
@@ -121,30 +129,35 @@ def load_cases(profile, *, ledger, registry, research, writing) -> tuple[list[Ca
 
     research = Path(research)
     entries = list(Ledger(ledger).read_all())
-    raw_review = json.loads((research / "lit_review.json").read_text())
-    review = LitReview.from_dict(raw_review)
+    lit_path = research / "lit_review.json"
+    raw_review = json.loads(lit_path.read_text()) if lit_path.exists() else None
+    review = LitReview.from_dict(raw_review) if raw_review else None
     handoff = research / "handoff.json"
     idea = json.loads(handoff.read_text()).get("idea") if handoff.exists() else None
     bank = EvidenceBank.build(entries, registry, profile, review=review, idea=idea)
-    ctx = Context(bank, [p.arxiv_id for p in review.papers], [e.id for e in entries])
+    ctx = Context(bank, [p.arxiv_id for p in review.papers] if review else [], [e.id for e in entries])
+    state = json.loads(Path(writing).read_text())
+    if state.get("release_id"):
+        ctx.mode = _bind_release(profile, bank, ctx, ledger=ledger, registry=registry,
+                                 research=research, review_dir=Path(writing).parent)
     cases: list[Case] = []
 
-    reviewer = LitReviewer(None)
-    lit = {k: raw_review[k] for k in ("themes", "paper_notes", "gaps") if k in raw_review}
-    cases.append(Case("lit_review", "lit_review", lit,
-                      lambda a: reviewer.postcheck(a, {"papers": review.papers}), [],
-                      [("themes", i, "papers") for i in range(len(lit.get("themes", [])))]
-                      + [("gaps", i, "sources") for i in range(len(lit.get("gaps", [])))]))
+    if review:
+        reviewer = LitReviewer(None)
+        lit = {k: raw_review[k] for k in ("themes", "paper_notes", "gaps") if k in raw_review}
+        cases.append(Case("lit_review", "lit_review", lit,
+                          lambda a: reviewer.postcheck(a, {"papers": review.papers}), [],
+                          [("themes", i, "papers") for i in range(len(lit.get("themes", [])))]
+                          + [("gaps", i, "sources") for i in range(len(lit.get("gaps", [])))]))
 
     ideas_path = research / "ideas.json"
-    if ideas_path.exists():
+    if ideas_path.exists() and review:
         ideas = {"ideas": json.loads(ideas_path.read_text())}
         ideator = Ideator(None, profile)
         cases.append(Case("ideas", "ideas", ideas,
                           lambda a: ideator.postcheck(a, {"review": review}), [],
                           [("ideas", i, "sources") for i in range(len(ideas["ideas"]))]))
 
-    state = json.loads(Path(writing).read_text())
     outline, points = state.get("outline"), state.get("key_points")
     if outline:
         outliner = Outliner(None, bank)
@@ -166,6 +179,26 @@ def load_cases(profile, *, ledger, registry, research, writing) -> tuple[list[Ca
     return cases, ctx
 
 
+def _bind_release(profile, bank, ctx, *, ledger, registry, research, review_dir) -> str:
+    """Attach the approved dossier the writing was bound to, if its release still validates."""
+    from scholarloop.review.contracts import ReviewBlocked
+    from scholarloop.review.dossier import approved_statements
+    from scholarloop.review.session import ScientificReviewSession
+    reason = "no release"
+    for research_dir in (research, None):           # the review may or may not have had a research dir
+        gate = ScientificReviewSession(None, profile, review_dir, ledger_path=ledger,
+                                       registry_dir=registry, research_dir=research_dir)
+        try:
+            dossier, _release = gate.require_release()
+        except ReviewBlocked as exc:
+            reason = str(exc)
+            continue
+        bank.approved_dossier = dossier
+        ctx.statements = sorted(approved_statements(dossier))
+        return "reviewed"
+    return f"legacy (the writing cites a release that no longer validates: {reason})"
+
+
 # ---------------------------------------------------------------------------------------------
 # Fault operators — each yields (description, mutated artifact) for every applicable site
 # ---------------------------------------------------------------------------------------------
@@ -173,6 +206,8 @@ _DECIMAL = re.compile(r"(?<![\w:./])\d+\.\d{2,}(?![\w/]|\.\d)")
 _PAPER_ID = re.compile(r"(arXiv:\d{4}\.\d{4,5}|doi:[\w./\-()]+\d|openalex:\w+|s2:\w+)")
 _RUN_ID = re.compile(r"exp_\d{4,}")
 _SEED_COUNT = re.compile(r"\b([2-9])(?=[ -]seeds?\b)")
+_STATEMENT = re.compile(r"(?<=\[)(?:claim_[A-Za-z0-9_]+|scope_question|scope_method|limit_\d+)(?=\])")
+_STATEMENT_CITE = re.compile(r"\s*\[(?:claim_[A-Za-z0-9_]+|scope_question|scope_method|limit_\d+)\]")
 _FLIPS = [("below", "above"), ("lower", "higher"), ("rose", "fell"), ("larger", "smaller"),
           ("increase", "decrease"), ("worse", "better")]
 
@@ -289,6 +324,37 @@ def fabricated_number(rng, case, ctx):
     yield from _text_edits(case, _DECIMAL, lambda m: _fabricated_number(rng, m.group(0), ctx))
 
 
+def fabricated_statement_id(rng, case, ctx):
+    def fresh(_old=None):
+        while True:
+            sid = f"claim_x{rng.randint(100, 999)}"
+            if sid not in ctx.statements:
+                return sid
+    if not ctx.statements:
+        return
+    yield from _text_edits(case, _STATEMENT, lambda m: fresh())
+    yield from _list_edits(case, lambda ids: _swap_in_list(
+        ids, lambda xs: [x for x in xs if x in ctx.statements], fresh))
+
+
+def uncited_sentence(rng, case, ctx):
+    if ctx.statements:
+        yield from _text_edits(case, _STATEMENT_CITE, lambda m: "")
+
+
+def wrong_statement_id(rng, case, ctx):
+    def other(sid, exclude=()):
+        pool = [s for s in ctx.statements if s != sid and s not in exclude]
+        return rng.choice(pool) if pool else None
+    yield from _text_edits(case, _STATEMENT, lambda m: other(m.group(0)))
+
+    def swap(ids):
+        present = [x for x in ids if x in ctx.statements]
+        new = other(present[0], exclude=ids) if present else None
+        return None if new is None else (f"{present[0]} → {new}", [new if i == present[0] else i for i in ids])
+    yield from _list_edits(case, swap)
+
+
 def dropped_limitations(rng, case, ctx):
     if case.target != "outline":
         return
@@ -372,12 +438,15 @@ FAULTS: dict[str, tuple[str, Callable]] = {
     "near_miss_citation": ("fabrication", near_miss_citation),
     "fabricated_run_id": ("fabrication", fabricated_run_id),
     "fabricated_number": ("fabrication", fabricated_number),
+    "fabricated_statement_id": ("fabrication", fabricated_statement_id),
+    "uncited_sentence": ("fabrication", uncited_sentence),
     "uncited_claim": ("fabrication", uncited_claim),
     "dropped_section": ("fabrication", dropped_section),
     "dropped_limitations": ("fabrication", dropped_limitations),
     "misattributed_number": ("misattribution", misattributed_number),
     "miscitation": ("misattribution", miscitation),
     "wrong_run_id": ("misattribution", wrong_run_id),
+    "wrong_statement_id": ("misattribution", wrong_statement_id),
     "changed_seed_count": ("misattribution", changed_seed_count),
     "direction_flip": ("misattribution", direction_flip),
 }
@@ -433,10 +502,12 @@ def run_injection(cases: list[Case], ctx: Context, *, seed: int = 0, per_case: i
                 row[f"without_{guard}"] = _rate(still, len(subset))
         ablation[tier] = row
     false_positives = [c for c in controls if c["errors"]]
-    return {"version": 1, "seed": seed, "per_case": per_case,
+    return {"version": 1, "seed": seed, "per_case": per_case, "mode": ctx.mode,
             "interpretation": "Detection of single-site injected faults by the production postchecks. "
-                              "Fabrication faults are the guards' design target; misattribution faults "
-                              "are not lexically detectable and mark the boundary of deterministic checking.",
+                              "Fabrication faults refer to something absent from the evidence; "
+                              "misattribution faults use real evidence in the wrong place. In legacy "
+                              "mode a lexical check cannot see misattribution. In reviewed mode numbers "
+                              "are bound to the statements a sentence cites, so part of it is visible.",
             "controls": {"cases": len(controls), "false_positives": len(false_positives),
                          "details": false_positives},
             "by_tier": table(lambda t: t["tier"]),
@@ -455,6 +526,7 @@ def render_injection(report: dict) -> str:
     c = report["controls"]
     lines = ["# Guard reliability: fault injection", "",
              report["interpretation"], "",
+             f"Guard mode: {report.get('mode', 'legacy')}. "
              f"Seed {report['seed']}, at most {report['per_case']} sites per fault and artifact. "
              f"Unmodified controls: {c['false_positives']} of {c['cases']} accepted artifacts rejected.", "",
              "## Detection by fault", "", "| tier | fault | detected |", "|---|---|---|"]
@@ -688,6 +760,9 @@ def main(argv=None) -> int:
     llm = CallLimitedLLM(AnthropicLLM(model=a.model or model_from_env()), a.repeats,
                          path=out / "baseline_call_budget.json")
     review = LitReview.from_dict(json.loads((Path(paths["research"]) / "lit_review.json").read_text()))
+    # The baseline sees the raw evidence and is audited against all of it (does each number
+    # trace to some measurement, does each cited id exist), whatever mode the staged writer used.
+    ctx.bank.approved_dossier = None
     report = run_baseline(llm, ctx.bank, review.to_prompt_block(), out, repeats=a.repeats)
     state = json.loads(Path(paths["writing"]).read_text())
     if state.get("sections"):

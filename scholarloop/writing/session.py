@@ -182,7 +182,10 @@ class EvidenceBank:
                    "score": score, "seeds": list(e.metric.get("seeds") or []), "std": None,
                    "config": dict(e.config or {}), "claim": e.hypothesis.claim,
                    "source": e.hypothesis.source, "parent": e.parent,
-                   "error": e.metric.get("error"), "holdout": e.holdout_score()}
+                   "error": e.metric.get("error"), "holdout": e.holdout_score(),
+                   # set while a chosen idea was under test: did this run apply it, and by code?
+                   "role": (e.reasoning or {}).get("idea_role"),
+                   "edited": bool((e.reasoning or {}).get("edits"))}
             for k, v in (e.config or {}).items():
                 if isinstance(v, (int, float)) and not isinstance(v, bool):
                     reg.capture(f"{e.id}.cfg.{k}", float(v))
@@ -234,8 +237,10 @@ class EvidenceBank:
         spread = f" ± {r['std']} std" if r["std"] is not None else ""
         held = (f", held-out test {self.metric_name}={r['holdout']} (scored once on unseen data, never "
                 f"selected on: report it as the final number)") if r.get("holdout") is not None else ""
+        role = (f", idea test role: {r['role']}" + (" (train script edited)" if r.get("edited") else "")
+                ) if r.get("role") else ""
         return (f"{eid} ({r['fidelity']}, {len(r['seeds'])} seed(s)): {self.metric_name}={r['score']}{spread}"
-                f"{held}, verdict {r['verdict']}, config {r['config']}, idea: {r['claim']} (source {r['source']})")
+                f"{held}, verdict {r['verdict']}{role}, config {r['config']}, idea: {r['claim']} (source {r['source']})")
 
     def to_prompt_block(self) -> str:
         if self.approved_dossier is not None:

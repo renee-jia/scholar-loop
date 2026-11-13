@@ -146,13 +146,15 @@ def fmt_run(profile, entries, skills, usage, model, trace, calibration: str = ""
         for f in lit.get("findings", []):
             out.append(f"- **{f.get('technique')}** ({f.get('source')}) — {f.get('predicted_effect')}")
     out += ["", "## 🪜 Experiments (real torch · multi-fidelity funnel)", "",
-            f"| id | tier | {profile.metric.name} | held-out test | verdict | predicted→measured | grounded source |",
-            "|---|---|---|---|---|---|---|"]
+            f"| id | tier | {profile.metric.name} | held-out test | verdict | idea test | predicted→measured | grounded source |",
+            "|---|---|---|---|---|---|---|---|"]
     for e in entries:
         p = e.prediction or {}
         pm = f"{p.get('predicted')}→{p.get('measured')}" if p.get("measured") is not None else "—"
         held = f"{e.holdout_score()}{u}" if e.holdout_score() is not None else "—"
-        out.append(f"| {e.id} | {e.fidelity[0]} | {e.primary_score()}{u} | {held} | {e.verdict} | {pm} | "
+        r = e.reasoning or {}
+        role = (r.get("idea_role") or "—") + (" · edit" if r.get("edits") else "")
+        out.append(f"| {e.id} | {e.fidelity[0]} | {e.primary_score()}{u} | {held} | {e.verdict} | {role} | {pm} | "
                    f"{e.hypothesis.source[:60]} |")
     if any(e.holdout_score() is not None for e in entries):
         out += ["", "_Held-out test: scored once on full-tier runs, on data the loop never selected on. "

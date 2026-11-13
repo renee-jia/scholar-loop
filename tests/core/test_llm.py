@@ -117,3 +117,55 @@ def test_refusal_raises_a_retryable_error():
     with pytest.raises(RefusalError):
         llm.complete_json("q", {"type": "object"})
     assert issubclass(RefusalError, ValueError)                 # the Agent harness retries ValueErrors
+
+
+# ---- shared hard spend cap -------------------------------------------------------------------
+class _Usage:
+    input_tokens, output_tokens = 100_000, 10_000          # $0.40 + $0.20 on the default model
+
+
+class _MeteredMessages(_FakeMessages):
+    def create(self, **kwargs):
+        resp = super().create(**kwargs)
+        resp.usage = _Usage()
+        return resp
+
+
+def _metered():
+    fake = _FakeClient()
+    fake.messages = _MeteredMessages()
+    return fake
+
+
+def test_spend_cap_is_off_by_default(monkeypatch, tmp_path):
+    monkeypatch.delenv("SCHOLARLOOP_SPEND_CAP", raising=False)
+    monkeypatch.chdir(tmp_path)
+    AnthropicLLM(client=_metered(), fallbacks=False).complete("q")
+    assert not (tmp_path / "scholarloop_spend.json").exists()
+
+
+def test_spend_cap_is_shared_across_clients_and_refuses_before_sending(monkeypatch, tmp_path):
+    import json
+    from scholarloop.core.llm import SpendCapExceeded
+    path = tmp_path / "spend.json"
+    monkeypatch.setenv("SCHOLARLOOP_SPEND_CAP", "1.0")
+    monkeypatch.setenv("SCHOLARLOOP_SPEND_FILE", str(path))
+    AnthropicLLM(client=_metered(), fallbacks=False).complete("q")           # $0.60
+    assert json.loads(path.read_text())["usd"] == pytest.approx(0.6)
+    second = _metered()
+    AnthropicLLM(client=second, fallbacks=False).complete("q")               # a new client, same file: $1.20
+    third = _metered()
+    with pytest.raises(SpendCapExceeded, match="spend cap reached"):
+        AnthropicLLM(client=third, fallbacks=False).complete("q")
+    assert third.messages.last_kwargs is None                               # nothing was sent
+    assert json.loads(path.read_text())["requests"] == 2
+
+
+def test_spend_cap_refuses_an_unpriced_model(monkeypatch, tmp_path):
+    from scholarloop.core.llm import SpendCapExceeded
+    monkeypatch.setenv("SCHOLARLOOP_SPEND_CAP", "1.0")
+    monkeypatch.setenv("SCHOLARLOOP_SPEND_FILE", str(tmp_path / "spend.json"))
+    fake = _metered()
+    with pytest.raises(SpendCapExceeded, match="no price"):
+        AnthropicLLM("some-unpriced-model", client=fake).complete("q")
+    assert fake.messages.last_kwargs is None

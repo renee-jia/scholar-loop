@@ -149,7 +149,7 @@ def test_handoff_adopted_by_orchestrator_drives_a_real_funnel(tmp_path):
     proposal = {"rationale": "follow the plan", "config": [{"name": "lr", "value": 0.1}, {"name": "depth", "value": 20},
                 {"name": "weight_decay", "value": 5e-4}, {"name": "warmup", "value": 5}],
                 "hypothesis": {"claim": "Skip MLP lowers error", "source": "arXiv:1512.03385v1", "predicted_effect": "-0.3"},
-                "predicted_delta": -0.3}
+                "predicted_delta": -0.3, "idea_role": "treatment"}
     llm = MockLLM(jsons=[proposal])
     orch = Orchestrator(llm, PROFILE, ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "reg")
     orch.adopt(h)

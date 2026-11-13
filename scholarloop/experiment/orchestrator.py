@@ -116,6 +116,7 @@ class Orchestrator:
         self._refine_count = 0
         self._directed = False
         self.adopted: dict | None = None     # a human-chosen idea (ResearchSession handoff), if any
+        self._idea: dict | None = None       # the adopted idea while it is still under test
         self._base_guidance = ""             # standing guidance a "proceed" falls back to (the adopted plan)
         self.stop_reason: str | None = None  # why the last governed `run()` ended, for run logs
         # universal predict-then-verify across agents (B); with a path it survives a resumed campaign
@@ -130,6 +131,7 @@ class Orchestrator:
         self.adopted = handoff
         self.topic = handoff.get("topic", self.topic)
         self.guidance = self._base_guidance = handoff.get("guidance", "")
+        self._idea = handoff.get("idea")     # tested as treatment vs control until a pivot after its treatment
         self._lit = (handoff.get("lit_context", ""), list(handoff.get("lit_priors", [])))
         self._directed = True
 
@@ -186,7 +188,7 @@ class Orchestrator:
         return self._gate_score(matched)
 
     def _propose(self, entries: list[LedgerEntry], *, lit_context: str = "", skills: str = "",
-                 lit_priors: list[str] | None = None):
+                 lit_priors: list[str] | None = None, pending_roles: list[str] | None = None):
         """Propose → admissibility gate → debate gate. Returns (proposal, reasoning) or None."""
         import time
         from scholarloop.experiment.test_boundary import require_unopened_test
@@ -210,7 +212,8 @@ class Orchestrator:
             base = self.candidates.load(frontier.candidate_id) if frontier and frontier.candidate_id else None
             proposal = self.reasoner.propose(entries, lit_context=lit_context, skills=skills,
                                              guidance=self.guidance, lit_priors=lit_priors,
-                                             base_candidate=base,
+                                             base_candidate=base, idea=self._idea,
+                                             pending_roles=pending_roles,
                                              calibration=self.calibration.render())   # close the verifier loop
         if not proposal.admissible:
             print(f"orchestrator: skipping inadmissible proposal {proposal.config} "
@@ -219,6 +222,8 @@ class Orchestrator:
         if proposal.snapshot is None:
             proposal.snapshot = make_snapshot(self.profile, proposal.config, proposal.edits)
         reasoning = proposal.reasoning_blob()
+        if pending_roles is not None and getattr(proposal, "idea_role", None):
+            pending_roles.append(proposal.idea_role)       # proposed this round, not yet in the ledger
         if self.debate_panel is not None and not warm:     # diverse-perspective gate before GPU
                                                            # (a random draw makes no claim to vet)
             verdict = self.debate_panel.review(proposal)
@@ -353,8 +358,10 @@ class Orchestrator:
         # Phase 1 — propose up to k admissible, mutually-distinct ideas.
         batch: list[tuple] = []
         seen: set[str] = set()
+        roles: list[str] = []
         for _ in range(k):
-            prepared = self._propose(entries, lit_context=lit_context, skills=skills, lit_priors=lit_priors)
+            prepared = self._propose(entries, lit_context=lit_context, skills=skills,
+                                     lit_priors=lit_priors, pending_roles=roles)
             if prepared is None:
                 continue
             proposal, reasoning = prepared
@@ -466,6 +473,12 @@ class Orchestrator:
         is unchanged, so we at least instruct the Reasoner to leave the exhausted region.
         """
         self._refine_count = 0
+        from scholarloop.experiment.reasoner import idea_roles
+        if self._idea is not None and "treatment" not in idea_roles(entries):
+            self._refine_count = 0           # the adopted idea has not been tested yet: a pivot
+            self.guidance = self._base_guidance   # cannot abandon it before its treatment runs
+            return
+        self._idea = None
         self._base_guidance = ""             # the adopted plan is exhausted; stop steering by it
         if self.lit_scout is not None:
             self._lit = None                 # re-ground from fresh literature on the new direction

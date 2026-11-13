@@ -73,3 +73,65 @@ def test_run_experiment_refuses_edit_outside_entrypoint_defense_in_depth(tmp_pat
             run_experiment(PROFILE, "smoke", "exp_bad", Hypothesis("c", "arXiv:1"),
                            edits=[{"path": bad_path, "content": "x"}],
                            ledger_path=tmp_path / "l.jsonl", registry_dir=tmp_path / "r")
+
+
+# ---- an adopted idea must be tested, not tuned around ---------------------------------------
+IDEA = {"title": "Label smoothing", "description": "smooth the targets", "experiment_plan": "edit the loss",
+        "hypothesis": {"claim": "smoothing lowers error", "predicted_effect": "-0.5"}}
+
+
+def _smoke(role, i):
+    from scholarloop.core.ledger import Hypothesis, LedgerEntry
+    return LedgerEntry(id=f"exp_{i:04d}", domain=PROFILE.name, metric_name=PROFILE.metric.name,
+                       hypothesis=Hypothesis(claim="c", source="arXiv:1"), config={"lr": 0.1 * i},
+                       fidelity=["smoke"], metric={"smoke": 4.0, "seeds": [4.0]}, verdict="kept",
+                       reasoning={"idea_role": role})
+
+
+def test_adopted_idea_requires_a_declared_role():
+    from scholarloop.core.agent import AgentError
+    llm = MockLLM(jsons=[_proposal(config={"lr": 0.2})] * 3)
+    with pytest.raises(AgentError, match="idea_role"):
+        Reasoner(llm, PROFILE).propose([], idea=IDEA)
+    assert Reasoner(MockLLM(jsons=[_proposal(config={"lr": 0.2})]), PROFILE).propose([]).idea_role is None
+
+
+def test_second_control_before_any_treatment_is_rejected_then_treatment_accepted():
+    edit = [{"path": "engines/vision/train.py", "content": EDITED_TRAIN}]
+    control = {**_proposal(config={"lr": 0.2}), "idea_role": "control"}
+    treatment = {**_proposal(edits=edit), "idea_role": "treatment"}
+    llm = MockLLM(jsons=[control, treatment])
+    p = Reasoner(llm, PROFILE).propose([_smoke("control", 1)], idea=IDEA)
+    assert p.idea_role == "treatment" and p.edits == edit
+    assert "already has a control and no treatment" in llm.calls[1]["prompt"]     # the retry feedback
+    assert p.reasoning_blob()["idea_role"] == "treatment"
+    # the first control is allowed, and so is a control once a treatment exists
+    assert Reasoner(MockLLM(jsons=[control]), PROFILE).propose([], idea=IDEA).idea_role == "control"
+    later = [_smoke("control", 1), _smoke("treatment", 2)]
+    assert Reasoner(MockLLM(jsons=[control]), PROFILE).propose(later, idea=IDEA).idea_role == "control"
+
+
+def test_roles_proposed_in_the_same_round_count_before_they_reach_the_ledger():
+    control = {**_proposal(config={"lr": 0.2}), "idea_role": "control"}
+    treatment = {**_proposal(config={"lr": 0.3}), "idea_role": "treatment"}
+    llm = MockLLM(jsons=[control, treatment])
+    p = Reasoner(llm, PROFILE).propose([], idea=IDEA, pending_roles=["control"])
+    assert p.idea_role == "treatment"
+
+
+def test_prompt_tells_the_reasoner_to_implement_the_idea_through_edits():
+    llm = MockLLM(jsons=[{**_proposal(config={"lr": 0.2}), "idea_role": "control"}])
+    Reasoner(llm, PROFILE).propose([], idea=IDEA)
+    prompt = llm.calls[0]["prompt"]
+    assert "Label smoothing" in prompt and "Phase: TEST THE IDEA" in prompt
+    assert "ONLY to rewrite the train script" not in prompt
+
+
+def test_pivot_cannot_abandon_an_adopted_idea_before_its_treatment(tmp_path):
+    from scholarloop.experiment.orchestrator import Orchestrator
+    orch = Orchestrator(MockLLM(), PROFILE, ledger_path=tmp_path / "l.jsonl", registry_dir=tmp_path / "r")
+    orch.adopt({"topic": "t", "guidance": "test label smoothing", "idea": IDEA})
+    orch._pivot([_smoke("control", 1)], "exhausted")
+    assert orch._idea == IDEA and orch.guidance == "test label smoothing"
+    orch._pivot([_smoke("control", 1), _smoke("treatment", 2)], "exhausted")
+    assert orch._idea is None

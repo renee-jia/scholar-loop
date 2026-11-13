@@ -14,7 +14,10 @@ callers like the Reasoner get a validated object, not prose to parse.
 from __future__ import annotations
 
 import json
+import os
+import threading
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 # The one place the default model is named: every CLI and example reads it from here (or from
 # $SCHOLARLOOP_MODEL via `model_from_env`). Prices for the cost gate live in governor.MODEL_PRICES.
@@ -35,6 +38,46 @@ def model_from_env() -> str:
 class RefusalError(ValueError):
     """The model (and any fallback) declined the request. A ValueError, so the agent harness
     treats it like any other unusable reply: retried with feedback, then surfaced as AgentError."""
+
+
+class SpendCapExceeded(RuntimeError):
+    """The shared dollar cap ($SCHOLARLOOP_SPEND_CAP) is reached; no request was sent."""
+
+
+_spend_mutex = threading.Lock()
+
+
+def _spend(model: str, usage: dict | None = None) -> None:
+    """A hard, cross-process dollar cap on real API requests, off unless $SCHOLARLOOP_SPEND_CAP
+    (USD) is set. Estimated spend accumulates in $SCHOLARLOOP_SPEND_FILE (default
+    ./scholarloop_spend.json), so ideation, the campaign, review, writing and evaluation
+    commands pointed at one file share one budget. Checked before every request and charged
+    after it: the cap can be overshot by at most the request in flight. Spend is an estimate
+    from token counts and `governor.MODEL_PRICES`; a model without a price is refused, since an
+    unpriced request cannot be capped. With `usage` it records a finished request; without, it
+    checks the cap."""
+    cap = os.environ.get("SCHOLARLOOP_SPEND_CAP")
+    if not cap:
+        return
+    from scholarloop.experiment.governor import MODEL_PRICES
+    price = MODEL_PRICES.get(model)
+    if price is None:
+        raise SpendCapExceeded(f"SCHOLARLOOP_SPEND_CAP is set but model {model!r} has no price")
+    path = Path(os.environ.get("SCHOLARLOOP_SPEND_FILE") or "scholarloop_spend.json")
+    with _spend_mutex:
+        state = json.loads(path.read_text()) if path.exists() else {"usd": 0.0, "requests": 0}
+        if usage is None:
+            if state["usd"] >= float(cap):
+                raise SpendCapExceeded(f"spend cap reached: ${state['usd']:.2f} of ${float(cap):.2f} "
+                                       f"({path}); saved work is kept, raise the cap to continue")
+            return
+        state["usd"] += usage["input"] / 1e6 * price[0] + usage["output"] / 1e6 * price[1]
+        state["requests"] += 1
+        state["cap_usd"] = float(cap)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, indent=1))
+        os.replace(tmp, path)
 
 
 class LLMClient(ABC):
@@ -117,11 +160,14 @@ class AnthropicLLM(LLMClient):
     def _create(self, **kwargs):
         if self.effort is not None:
             kwargs["output_config"] = {**kwargs.get("output_config", {}), "effort": self.effort}
+        _spend(self.model)                              # refuse before sending once the cap is reached
         if self.fallbacks:
             resp = self._client.beta.messages.create(betas=[_FALLBACK_BETA], fallbacks="default", **kwargs)
         else:
             resp = self._client.messages.create(**kwargs)
         u = getattr(resp, "usage", None)
+        _spend(self.model, {"input": getattr(u, "input_tokens", 0) or 0,
+                            "output": getattr(u, "output_tokens", 0) or 0})
         if u is not None:
             self.usage["input_tokens"] += getattr(u, "input_tokens", 0) or 0
             self.usage["output_tokens"] += getattr(u, "output_tokens", 0) or 0

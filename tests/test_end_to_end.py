@@ -104,7 +104,7 @@ class SchemaRoutedLLM(MockLLM):
             cfg = next(self.configs)
             return {"rationale": "t", "config": [{"name": k, "value": v} for k, v in cfg.items()],
                     "hypothesis": {"claim": "warmup helps", "source": SRC, "predicted_effect": "-1"},
-                    "predicted_delta": -1.0}
+                    "predicted_delta": -1.0, "idea_role": "treatment"}
         if "verdict" in p and "concern" in p:
             return {"verdict": "run", "concern": "none"}
         if "worth_recording" in p:
