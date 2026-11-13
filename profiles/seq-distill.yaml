@@ -21,7 +21,9 @@ datasets:
 
 baselines:
   # Must-beat val invalid rate (%) = the same student trained on hard labels (one valid output
-  # sampled per step) with no teacher: 8.8 mean over the 5 folds, std 8.3. For orientation, the
+  # sampled per step) with no teacher: 8.8 mean over the 5 folds, std 8.3. The student's size
+  # (d_model 32, 2 layers) and the step budget (3000) are fixed in prepare.py: a larger student
+  # drives every procedure below 1% and hides the differences this engine exists to show. The
   # default recipe (pure off-policy, teacher-sampled sequences) gets 14.0 (std 2.9), pure
   # on-policy (on_policy_frac=1) gets 9.0 (std 7.6), and the teacher itself is at 0.0. Seed
   # variance is large, so single-seed differences mean little.
@@ -33,9 +35,6 @@ cv_folds: 5
 
 knobs:                        # tunable hyperparameters (name → default) the agent sets in `config`
   lr: 0.003
-  d_model: 32
-  n_layers: 2
-  steps: 3000
   on_policy_frac: 0.0         # share of batches whose sequences the student generates itself
   temperature: 1.0            # distillation temperature on both teacher targets and student logits
 

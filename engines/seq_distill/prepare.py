@@ -4,7 +4,8 @@ Never edit this file. It is the trust anchor:
   1. `load_train()` hands the agent ONLY the training prompts; val and test prompts stay here.
   2. `load_teacher()` returns the frozen teacher. train.py may query it on any token sequence,
      including sequences the student itself generated, but cannot change it.
-  3. `build_model()` is frozen, so the student the scorer reconstructs is defined by trusted code.
+  3. `build_model()` is frozen and the student's size is fixed here (STUDENT), so no run can
+     change capacity: this engine compares training procedures, not model sizes.
   4. `score(artifact)` loads a state_dict with `weights_only=True`, decodes greedily on a frozen
      split and emits the trusted number from pristine ROOT.
 
@@ -36,6 +37,9 @@ SEQ_LEN = 2 * LENGTH + 1
 N_MODES = 3
 _FOLD_SIZE, _TEST = 500, 2000
 _TEACHER = {"d_model": 96, "n_layers": 2}
+STUDENT = {"d_model": 32, "n_layers": 2}     # fixed: small enough that training procedures differ
+# The step budget every condition is expected to use ($SCHOLARLOOP_DISTILL_STEPS shortens it in tests).
+TRAIN_STEPS = int(os.environ.get("SCHOLARLOOP_DISTILL_STEPS", "3000"))
 _TEACHER_STEPS, _TEACHER_BATCH, _TEACHER_LR = 8000, 128, 1e-3
 _cache: dict = {}
 
@@ -90,9 +94,14 @@ def prompt(x):
     return torch.cat([x, torch.full((len(x), 1), SEP, dtype=x.dtype)], 1)
 
 
-def build_model(hparams: dict):
-    """Frozen architecture: a pre-norm causal transformer with `n_layers` layers of width
-    `d_model` (2 heads). `model(ids)` returns next-token logits of shape [N, len, VOCAB]."""
+def build_model(hparams: dict | None = None):
+    """The frozen student: a pre-norm causal transformer of the fixed size STUDENT (2 heads).
+    `hparams` is accepted for the engine interface and ignored. `model(ids)` returns next-token
+    logits of shape [N, len, VOCAB]."""
+    return _transformer(STUDENT)
+
+
+def _transformer(size: dict):
     import torch
     import torch.nn as nn
 
@@ -113,7 +122,7 @@ def build_model(hparams: dict):
             return self.out(self.norm(h))
 
     torch.manual_seed(0)    # construction is deterministic; train.py reseeds before initialising
-    return CausalTransformer(int(hparams["d_model"]), int(hparams["n_layers"]))
+    return CausalTransformer(int(size["d_model"]), int(size["n_layers"]))
 
 
 def generate(model, x, *, sample: bool = False, temperature: float = 1.0, generator=None):
@@ -140,7 +149,7 @@ def _train_teacher(path: Path) -> None:
     torch.manual_seed(0)
     g = torch.Generator().manual_seed(0)
     inputs = torch.from_numpy(_inputs()["teacher"])          # disjoint from the pool and the test
-    model = build_model(_TEACHER)
+    model = _transformer(_TEACHER)
     opt = torch.optim.AdamW(model.parameters(), _TEACHER_LR)
     for _ in range(_TEACHER_STEPS):
         x = inputs[torch.randint(0, len(inputs), (_TEACHER_BATCH,), generator=g)]
@@ -166,7 +175,7 @@ def load_teacher():
         path = _teacher_path()
         if not path.exists():
             _train_teacher(path)
-        model = build_model(_TEACHER)
+        model = _transformer(_TEACHER)
         model.load_state_dict(torch.load(path, weights_only=True))
         model.eval()
         for p in model.parameters():
@@ -188,10 +197,11 @@ def evaluate(model, split: str = "val", fold: int = 0) -> float:
     return round(float((~valid).float().mean() * 100.0), 4)
 
 
-def emit_result(value: float, seeds: list[float] | None = None, config: dict | None = None) -> None:
+def emit_result(value: float, seeds: list[float] | None = None, config: dict | None = None,
+                diagnostics: dict | None = None) -> None:
     print("SCHOLARLOOP_RESULT " + json.dumps(
         {"metric_name": METRIC_NAME, "value": float(value),
-         "seeds": seeds or [value], "config": config or {}}))
+         "seeds": seeds or [value], "config": config or {}, "diagnostics": diagnostics or {}}))
 
 
 def score(artifact_path: str, split: str = "val", fold: int = 0) -> None:
@@ -203,7 +213,12 @@ def score(artifact_path: str, split: str = "val", fold: int = 0) -> None:
     cfg = bundle["config"]
     model = build_model(cfg)
     model.load_state_dict(bundle["state_dict"])
-    emit_result(evaluate(model, split, fold), config=cfg)
+    # Numbers train.py chose to report about its own run (e.g. the step a switch fired). They are
+    # passed through as self-reported diagnostics and play no part in the metric.
+    reported = bundle.get("diagnostics") or {}
+    diagnostics = {str(k): float(v) for k, v in reported.items()
+                   if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and abs(v) != float("inf")}
+    emit_result(evaluate(model, split, fold), config=cfg, diagnostics=diagnostics)
 
 
 def parse_score_args(argv: list[str]):

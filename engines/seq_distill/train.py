@@ -13,6 +13,12 @@ from: with that probability a batch is sampled from the STUDENT (on-policy: the 
 the prefixes the student actually produces), otherwise from the TEACHER (off-policy). 0.0 is
 pure off-policy, 1.0 pure on-policy.
 
+The student's size is fixed in prepare.py and the step budget is `prepare.TRAIN_STEPS`; keep
+both the same in every condition so that conditions differ only in the training procedure.
+To record facts about a run (for example the step at which a schedule switched), put numbers
+in the `diagnostics` dict returned by `train_model`: they are stored with the result, one value
+per seed, as self-reported diagnostics.
+
 Everything about the training procedure is yours to change here: who generates the sequences
 and how (sampling temperature, greedy, mixing schedules, replay), the divergence, which
 positions or sequences are weighted, the optimizer and schedule. Useful frozen helpers:
@@ -33,9 +39,6 @@ from engines.seq_distill import prepare
 
 HPARAMS = {
     "lr": 0.003,
-    "d_model": 32,
-    "n_layers": 2,
-    "steps": 3000,
     "on_policy_frac": 0.0,
     "temperature": 1.0,
 }
@@ -57,7 +60,7 @@ def train_model(seed: int, h: dict):
     g = torch.Generator().manual_seed(seed)
     prompts = torch.from_numpy(prepare.load_train())     # training prompts only
     teacher = prepare.load_teacher()                     # frozen
-    student = prepare.build_model(h)                     # frozen architecture, shaped by hparams
+    student = prepare.build_model()                      # frozen architecture and size
     torch.manual_seed(seed)
     for module in student.modules():                     # seed-dependent initialisation
         reset = getattr(module, "reset_parameters", None) or getattr(module, "_reset_parameters", None)
@@ -65,9 +68,11 @@ def train_model(seed: int, h: dict):
             reset()
     opt = torch.optim.AdamW(student.parameters(), lr=float(h["lr"]))
     tau = float(h["temperature"])
-    for _ in range(int(h["steps"])):
+    on_policy_batches = 0
+    for _ in range(prepare.TRAIN_STEPS):
         x = prompts[torch.randint(0, len(prompts), (BATCH,), generator=g)]
         on_policy = torch.rand(1, generator=g).item() < float(h["on_policy_frac"])
+        on_policy_batches += on_policy
         student.eval()
         ids = prepare.generate(student if on_policy else teacher, x, sample=True, generator=g)
         student.train()
@@ -78,14 +83,14 @@ def train_model(seed: int, h: dict):
         opt.zero_grad()
         loss.backward()
         opt.step()
-    return student
+    return student, {"on_policy_batches": on_policy_batches}
 
 
 def main() -> None:
     seed = int(os.environ.get("SCHOLARLOOP_SEED", "0"))
     h = effective_hparams()
-    model = train_model(seed, h)
-    torch.save({"config": h, "state_dict": dict(model.state_dict())},
+    model, diagnostics = train_model(seed, h)
+    torch.save({"config": h, "state_dict": dict(model.state_dict()), "diagnostics": diagnostics},
                os.environ["SCHOLARLOOP_ARTIFACT"])
 
 

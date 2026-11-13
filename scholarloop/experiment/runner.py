@@ -405,6 +405,11 @@ def run_experiment(
         reused = sum(1 for r in results if r.get("reused"))
         if reused:                              # models an earlier tier trained, re-scored here
             metric_blob["reused_seeds"] = reused
+        names = sorted({k for r in results for k in (r.get("diagnostics") or {})})
+        if names:   # numbers the training script reported about itself (e.g. the step a gate fired);
+                    # passed through by the scorer, never used for a verdict, one value per seed
+            metric_blob["self_reported"] = {
+                k: [(r.get("diagnostics") or {}).get(k) for r in results] for k in names}
         if failures:                            # partial run: some seeds crashed but enough survived
             metric_blob["seeds_failed"] = len(failures)
             metric_blob["failures"] = failures
