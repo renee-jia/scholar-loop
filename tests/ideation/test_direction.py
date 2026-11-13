@@ -105,6 +105,7 @@ def test_ideas_outside_the_chosen_directions_are_rejected(tmp_path):
     (lambda m: [m[0], m[1], _dir("C", "outside", (), sources=("arXiv:9999.00001",))], "unknown paper ids"),
     (lambda m: [m[0], m[1], _dir("C", "challenges", (7,))], "do not exist"),
     (lambda m: [m[0], m[1], _dir("depth  THRESHOLD", "outside", ())], "distinct names"),
+    (lambda m: m[:2], "lay out 3 to 5 directions"),
 ])
 def test_a_map_that_ignores_or_only_flatters_the_steer_is_rejected(tmp_path, mutate, message):
     s = _session(tmp_path, [QUERIES, REVIEW, {"directions": mutate(MAP["directions"])}, MAP])

@@ -84,7 +84,8 @@ def steer_block(steer: dict) -> str:
     return "\n".join(lines)
 
 
-DIRECTIONS_SCHEMA = obj({"directions": {"type": "array", "minItems": 3, "maxItems": 5, "items": obj({
+# The 3-5 bound is enforced in postcheck: the structured-output API accepts minItems of 0 or 1 only.
+DIRECTIONS_SCHEMA = obj({"directions": {"type": "array", "items": obj({
     "name": TEXT,
     "thesis": TEXT,                 # the bet, in one or two sentences
     "stance": {"type": "string", "enum": list(STANCES)},
@@ -136,6 +137,8 @@ class DirectionMapper(Agent):
         ids = {p.arxiv_id for p in ctx["review"].papers}
         n_hunches = len(ctx["steer"].get("hunches", []))
         errors, covered = [], set()
+        if not 3 <= len(output["directions"]) <= 5:
+            errors.append(f"lay out 3 to 5 directions (got {len(output['directions'])})")
         names = [" ".join(d["name"].lower().split()) for d in output["directions"]]
         if len(set(names)) != len(names):
             errors.append("directions must have distinct names")
