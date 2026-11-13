@@ -1,0 +1,53 @@
+# NLP engine profile (sequence distillation: on-policy vs off-policy). Validate:
+#   python -m scholarloop.core.profile validate profiles/seq-distill.yaml
+# The first run trains the frozen teacher (about a minute on CPU) and caches it under
+# ~/.cache/scholarloop (override with $SCHOLARLOOP_DATA_DIR). No download is needed.
+name: seq-distill
+paradigm: supervised          # the student is supervised by a frozen teacher (distillation)
+train_entrypoint: engines/seq_distill/train.py
+fixed_module: engines/seq_distill/prepare.py
+
+metric:
+  name: val_invalid_rate      # % of greedy decodes that are not a valid output; lower is better
+  direction: minimize
+
+budget:
+  smoke_sec: 240              # one run is ~35-50s on CPU
+  verify_sec: 600
+  full_sec: 1200
+
+datasets:
+  - multimodal-transduction-L6-A8   # 3 equally valid outputs per input; a frozen 2-layer teacher
+
+baselines:
+  # Must-beat val invalid rate (%) = the same student trained on hard labels (one valid output
+  # sampled per step) with no teacher: 8.8 mean over the 5 folds, std 8.3. For orientation, the
+  # default recipe (pure off-policy, teacher-sampled sequences) gets 14.0 (std 2.9), pure
+  # on-policy (on_policy_frac=1) gets 9.0 (std 7.6), and the teacher itself is at 0.0. Seed
+  # variance is large, so single-seed differences mean little.
+  - hard-labels@8.8
+
+holdout: true
+# One val fold is 500 prompts; training uses the other 2,000. Seed s validates on fold s % 5.
+cv_folds: 5
+
+knobs:                        # tunable hyperparameters (name → default) the agent sets in `config`
+  lr: 0.003
+  d_model: 32
+  n_layers: 2
+  steps: 3000
+  on_policy_frac: 0.0         # share of batches whose sequences the student generates itself
+  temperature: 1.0            # distillation temperature on both teacher targets and student logits
+
+allowed_edits:
+  - augmentation              # who generates the training sequences (teacher, student, a mix) and how
+  - loss                      # the divergence, and how positions or sequences are weighted
+  - regularization
+  - optimizer
+  - schedule
+
+forbidden_edits:
+  - "**/prepare.py"
+  - prepare.py
+
+debate_roles: [Innovator, Pragmatist, Contrarian]
