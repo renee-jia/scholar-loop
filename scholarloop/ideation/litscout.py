@@ -5,8 +5,8 @@ extraction is an agent":
   - retrieval clients (`ArxivClient`, `OpenAlexClient`, `SemanticScholarClient`) — plain HTTP
     clients, no LLM. Each exposes `.search(topic, max_results) -> list[Paper]` and an injectable
     fetcher, so tests run against canned payloads with no network. The Lit Scout queries several
-    sources, merges and de-duplicates them, and ranks by citation count so the highest-impact
-    techniques surface first (impact grounding).
+    sources, merges and de-duplicates them. `retrieve()` (literature reviews) ranks by relevance
+    to the queries; the single-topic `LitScout` ranks by citation count.
   - `LitScout(Agent)` — turns the retrieved papers into structured, testable `findings`
     (technique + source + predicted_effect) via the agent harness.
 
@@ -27,6 +27,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
 
 from scholarloop.core.agent import Agent
+from scholarloop.core.text import containment
 
 _ATOM = "{http://www.w3.org/2005/Atom}"
 _UA = "scholarloop/0.1 (https://github.com/renee-jia/scholar-loop)"
@@ -72,13 +73,12 @@ class ArxivClient:
 
     def _http_fetch(self, query: str, max_results: int) -> str:  # pragma: no cover - network
         url = "https://export.arxiv.org/api/query?" + urllib.parse.urlencode({
-            "search_query": query, "max_results": max_results,
-            "sortBy": "submittedDate", "sortOrder": "descending",
+            "search_query": query, "max_results": max_results, "sortBy": "relevance",
         })
         return _http_get(url, self.timeout)
 
     def search(self, topic: str, max_results: int = 5) -> list[Paper]:
-        xml = self._fetch(f"all:{topic}", max_results)
+        xml = self._fetch(arxiv_query(topic), max_results)
         root = ET.fromstring(xml)
         papers: list[Paper] = []
         for e in root.findall(_ATOM + "entry"):
@@ -92,6 +92,13 @@ class ArxivClient:
                 year=int(published[:4]) if published[:4].isdigit() else None,
             ))
         return papers
+
+
+def arxiv_query(topic: str) -> str:
+    """Every word of the topic must match. A bare `all:a b c` applies the field to `a` only and
+    ORs the rest, which returns whatever was submitted last on any of the words."""
+    words = re.findall(r"[A-Za-z0-9]+", topic)
+    return " AND ".join(f"all:{w}" for w in words) or "all:" + topic
 
 
 def _strip_arxiv_version(s: str) -> str:
@@ -140,9 +147,9 @@ class OpenAlexClient:
 
     def _http_fetch(self, query: str, max_results: int) -> str:  # pragma: no cover - network
         url = "https://api.openalex.org/works?" + urllib.parse.urlencode({
-            "search": query, "per-page": max_results,
-            "sort": "cited_by_count:desc", "mailto": self.mailto,
-        })
+            "search": query, "per-page": max_results, "mailto": self.mailto,
+        })   # no sort: OpenAlex's default is relevance; sorting by citations returns famous papers
+             # that merely mention a query word
         return _http_get(url, self.timeout)
 
     def search(self, topic: str, max_results: int = 5) -> list[Paper]:
@@ -242,13 +249,25 @@ def merge_papers(groups: list[list[Paper]], max_results: int) -> list[Paper]:
     return ranked[:max_results]
 
 
+RELEVANCE_FLOOR = 0.5     # share of a query's content words a paper's title + abstract must contain
+
+
+def relevance(paper: Paper, queries: list[str]) -> float:
+    """Lexical relevance of a paper to the queries: the best share of one query's content words
+    found in its title and abstract."""
+    doc = f"{paper.title} {paper.summary}"
+    return max((containment(q, doc) for q in queries), default=0.0)
+
+
 def retrieve(sources: list, queries: list[str], *, per_query: int = 8, max_total: int = 20,
-             recent_share: float = 0.3) -> list[Paper]:
-    """Multi-query retrieval for a literature review: run every query against every source,
-    merge + de-duplicate, then fill `max_total` slots with the highest-cited papers while reserving
-    `recent_share` of them for papers that carry no citation count (typically fresh arXiv preprints),
-    so a review sees both the established work and the newest. Per-source failures are skipped.
-    Deterministic given the fetchers."""
+             floor: float | None = None) -> list[Paper]:
+    """Multi-query retrieval for a literature review, ranked by relevance rather than fame.
+
+    Every query runs against every source, each of which returns its results best match first.
+    A paper's score is the reciprocal-rank fusion of its positions across those lists, weighted
+    by its lexical relevance to the queries; papers below `floor` (default RELEVANCE_FLOOR) are dropped rather
+    than used as filler, so the result may be shorter than `max_total`. Citation counts only
+    break ties. Per-source failures are skipped. Deterministic given the fetchers."""
     groups: list[list[Paper]] = []
     for q in queries:
         for src in sources:
@@ -257,15 +276,17 @@ def retrieve(sources: list, queries: list[str], *, per_query: int = 8, max_total
             except Exception as e:  # pragma: no cover - network
                 print(f"lit_review: {getattr(src, 'name', 'source')} failed on {q!r} "
                       f"({type(e).__name__}), skipping it", file=sys.stderr)
-    merged = merge_papers(groups, max_results=10 ** 9)          # everything, ranked
-    cited = [p for p in merged if p.citations is not None]
-    uncited = [p for p in merged if p.citations is None]
-    n_recent = min(len(uncited), int(round(max_total * recent_share))) if cited else min(len(uncited), max_total)
-    out = cited[:max_total - n_recent] + uncited[:n_recent]
-    if len(out) < max_total:                                   # backfill from whichever pool has more
-        rest = [p for p in merged if p not in out]
-        out += rest[:max_total - len(out)]
-    return out
+    floor = RELEVANCE_FLOOR if floor is None else floor
+    fused: dict[str, float] = {}
+    for group in groups:
+        for rank, p in enumerate(group):
+            fused[dedup_key(p)] = fused.get(dedup_key(p), 0.0) + 1.0 / (10 + rank)
+    scored = []
+    for order, p in enumerate(merge_papers(groups, max_results=10 ** 9)):   # de-duplicated, fields merged
+        rel = relevance(p, queries)
+        if rel >= floor:
+            scored.append((-fused[dedup_key(p)] * (0.25 + rel), -(p.citations or 0), order, p))
+    return [p for *_, p in sorted(scored, key=lambda t: t[:3])][:max_total]
 
 
 def render_papers(papers: list[Paper], *, max_chars: int = 700) -> str:

@@ -44,7 +44,7 @@ def test_sources_parse_year():
     assert OpenAlexClient(fetcher=lambda q, n: OPENALEX).search("x")[0].year == 2016
 
 
-def test_retrieve_merges_queries_dedups_and_reserves_recent_slots():
+def test_retrieve_merges_queries_dedups_and_ranks_by_relevance_not_citations():
     calls = []
 
     def oa(q, n):
@@ -52,16 +52,28 @@ def test_retrieve_merges_queries_dedups_and_reserves_recent_slots():
         return OPENALEX
 
     papers = retrieve([OpenAlexClient(fetcher=oa), ArxivClient(fetcher=lambda q, n: ATOM)],
-                      ["mlp regularization", "cosine schedule"], max_total=4, recent_share=0.25)
-    assert calls == ["mlp regularization", "cosine schedule"]          # every query hits every source
+                      ["cosine annealing restarts", "dropout units"], max_total=4)
+    assert calls == ["cosine annealing restarts", "dropout units"]     # every query hits every source
     ids = [p.arxiv_id for p in papers]
     assert len(ids) == len(set(ids)) == 4
-    assert "arXiv:2401.00001v1" in ids                                 # an uncited preprint kept its slot
-    assert ids[0] == "arXiv:1512.03385"                                # highest-cited first
+    # SGDR (9,000 citations) and Dropout match the queries; ResNet (180,000) does not and drops below them
+    assert ids.index("arXiv:1512.03385") > max(ids.index("arXiv:1608.03983"), ids.index("doi:10.1/drop"))
     sgdr = next(p for p in papers if "1608.03983" in p.arxiv_id)
     assert sgdr.citations == 9000 and sgdr.year is not None           # merged across sources
-    few = retrieve([OpenAlexClient(fetcher=oa)], ["q"], max_total=2)
-    assert [p.arxiv_id for p in few] == ["arXiv:1512.03385", "doi:10.1/drop"]   # no uncited pool: pure impact order
+
+
+def test_retrieve_drops_off_topic_papers_instead_of_using_them_as_filler():
+    sources = [OpenAlexClient(fetcher=lambda q, n: OPENALEX)]
+    on_topic = retrieve(sources, ["cosine annealing warm restarts"], max_total=3, floor=0.5)
+    assert [p.arxiv_id for p in on_topic] == ["arXiv:1608.03983"]      # shorter than max_total, by design
+    assert retrieve(sources, ["quantum cryptography"], max_total=3, floor=0.5) == []
+
+
+def test_arxiv_query_requires_every_word():
+    from scholarloop.ideation.litscout import arxiv_query
+    seen = []
+    ArxivClient(fetcher=lambda q, n: seen.append(q) or ATOM).search("on-policy distillation")
+    assert seen == ["all:on AND all:policy AND all:distillation"] == [arxiv_query("on-policy distillation")]
 
 
 def test_query_planner_dedups_and_drops_previous():

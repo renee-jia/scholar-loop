@@ -47,7 +47,8 @@ def test_review_then_ideas_then_select_writes_artifacts_and_handoff(tmp_path):
     s = _session(tmp_path, [QUERIES, REVIEW, {"ideas": [_idea("Skip MLP"), _idea("Warm restarts", feas=2)]}])
     rev = s.review()
     assert s.stage == "reviewed" and rev.queries == QUERIES["queries"]
-    assert [p.arxiv_id for p in rev.papers] == ["arXiv:1512.03385v1", "arXiv:1608.03983v1"]   # deduped across queries
+    # deduped across queries; SGDR's abstract matches "cosine schedule", so it ranks first
+    assert [p.arxiv_id for p in rev.papers] == ["arXiv:1608.03983v1", "arXiv:1512.03385v1"]
     assert (s.out / "lit_review.md").read_text().startswith("# Literature review — mlp recipes")
 
     ideas = s.ideate(2)
@@ -88,7 +89,7 @@ def test_review_feedback_adds_papers_and_resets_downstream(tmp_path):
     rev = s.review(feedback="also cover data augmentation like mixup")
     assert s.stage == "reviewed" and s.ideas == []               # ideas are stale after a re-review
     ids = [p.arxiv_id for p in rev.papers]
-    assert ids == ["arXiv:1512.03385v1", "arXiv:1608.03983v1", "arXiv:1710.09412v1"]   # corpus grew, no dups
+    assert ids == ["arXiv:1608.03983v1", "arXiv:1512.03385v1", "arXiv:1710.09412v1"]   # corpus grew, no dups
     assert rev.queries == ["mlp regularization", "cosine schedule", "mixup augmentation", "label smoothing"]
     planner_prompt = s.planner.llm.calls[3]["prompt"]
     assert "mixup" in planner_prompt and "do not repeat" in planner_prompt
