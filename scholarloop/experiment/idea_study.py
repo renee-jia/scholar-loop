@@ -160,9 +160,7 @@ class IdeaStudy(ExperimentAgenda):
                         "feedback": feedback, "frozen": frozen_context(self.review.profile, spec)}
             if self._handoff()[1] != source_hash or self.review.inputs() != before:
                 raise ReviewBlocked("Inputs changed while planning the study")
-            state = self._store_plan(envelope)
-            self._write_arms(state["protocol_id"], spec)
-            return state
+            return self._store_plan(envelope)      # _save renders the page, arms included
 
     def _write_arms(self, protocol_id, spec):
         path = self.out / f"{protocol_id}.md"
