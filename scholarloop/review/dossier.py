@@ -229,6 +229,17 @@ def build_dossier(inputs: dict) -> dict:
                     measurements[f"{ref}::{key}"] = {"run_id": ref, "key": key,
                         "value": c["mean_difference"], "seeds": c["deltas"], "std": None,
                         **_seed_summary(c["deltas"])}
+            # Every arm is paired with the reference on the same seeds, so two arms are paired
+            # with each other too. Reviewers ask for these contrasts; a claim can only state a
+            # number that a record holds, so they are recorded here.
+            done = [c for c in analysis["comparisons"] if c["status"] == "complete"]
+            for i, first in enumerate(done):
+                for second in done[i + 1:]:
+                    deltas = [round(x - y, 6) for x, y in zip(first["deltas"], second["deltas"])]
+                    key = f"{spec['metric']}.difference.{first['condition']}.minus.{second['condition']}"
+                    measurements[f"{ref}::{key}"] = {"run_id": ref, "key": key,
+                        "value": round(mean(deltas), 6), "seeds": deltas, "std": None,
+                        **_seed_summary(deltas)}
     for r in runs:
         pid = r.get("protocol", {}).get("id")
         if pid and f"protocol:{pid}" not in protocols:
