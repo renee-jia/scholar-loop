@@ -90,7 +90,9 @@ def check_claim_assessments(output, dossier):
                 issue["target"] == check["claim_id"] or
                 (issue["target"] == "dossier" and check["claim_id"] in issue["evidence"])
                 for issue in output["issues"]):
-            errors.append(f"{check['claim_id']}: an unresolved evidence concern requires a tracked issue")
+            errors.append(f"{check['claim_id']}: its claim check has status `concern` but no issue has "
+                          f"target {check['claim_id']!r}; add that issue, or change the status if "
+                          "the evidence does answer the question")
     return errors
 
 
