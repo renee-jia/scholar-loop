@@ -4,12 +4,14 @@ import json
 
 from scholarloop.core.agent import Agent
 from scholarloop.review.contracts import ARGUMENT_SCHEMA, REVIEW_SCHEMA, TEXT, STRINGS, obj
-from scholarloop.review.dossier import evidence_ids, paper_readiness, prompt_view, validate_argument
+from scholarloop.review.dossier import (evidence_ids, explain_unknown, paper_readiness, prompt_view,
+                                         validate_argument)
 
 
 class ArgumentBuilder(Agent):
     name = "argument_builder"
     schema = ARGUMENT_SCHEMA
+    max_tokens = 48000      # claims, setup and related work for a many-arm study, plus thinking
     system = (
         "Build a scientific argument for review, not paper prose. Use all relevant runs including "
         "negative results and failures. Distinguish measured observation from causal explanation. "
@@ -79,8 +81,11 @@ def check_claim_assessments(output, dossier):
         errors.append("Provide exactly one evidence question and answer for every current claim")
     known = evidence_ids(dossier) | set(dossier["measurements"])
     for check in checks:
-        if not check["evidence"] or set(check["evidence"]) - known:
-            errors.append("Claim checks must cite concrete dossier evidence, not claim IDs or invented sources")
+        if not check["evidence"]:
+            errors.append(f"{check['claim_id']}: the claim check cites no evidence")
+        elif set(check["evidence"]) - known:
+            errors.append(f"{check['claim_id']}: the claim check cites " +
+                          explain_unknown(check["evidence"], known, dossier))
         if check["status"] == "concern" and not any(
                 issue["target"] == check["claim_id"] or
                 (issue["target"] == "dossier" and check["claim_id"] in issue["evidence"])
@@ -91,6 +96,7 @@ def check_claim_assessments(output, dossier):
 
 class ScientificCritic(Agent):
     schema = REVIEW_SCHEMA
+    max_tokens = 32000      # one check per claim, and a long argument has many
     # One system prompt for all four roles: the dossier that follows it is cached, and a cache
     # hit needs everything before the dossier to be identical. The lens is in the prompt.
     system = (
@@ -135,18 +141,23 @@ class ScientificCritic(Agent):
         support = {x["id"] for key in ("setup", "related_work") for x in d["argument"].get(key, [])}
         targets = {"dossier"} | {c["id"] for c in d["argument"]["claims"]} | support
         errors = check_claim_assessments(output, d)
-        for issue in output["issues"]:
-            if issue["target"] not in targets or set(issue["evidence"]) - known:
-                errors.append("Issue must target a current claim/dossier and cite known evidence")
+        for n, issue in enumerate(output["issues"], 1):
+            if issue["target"] not in targets:
+                errors.append(f"issue {n}: target {issue['target']!r} is not `dossier` or a current "
+                              "claim, setup or related-work statement id")
+            if set(issue["evidence"]) - known:
+                errors.append(f"issue {n}: " + explain_unknown(issue["evidence"], known, d))
             if not issue["evidence"]:
-                errors.append("Issue needs evidence (use profile/train/scorer for protocol or code gaps)")
+                errors.append(f"issue {n} needs evidence (use profile/train/scorer for protocol or code gaps)")
         previous = {i["id"] for i in ctx.get("previous_issues", [])}
         dispositions = output["dispositions"]
         if {x["issue_id"] for x in dispositions} != previous or len(dispositions) != len(previous):
             errors.append("Provide exactly one disposition for every assigned previous issue")
         for item in dispositions:
-            if not item["evidence"] or set(item["evidence"]) - known:
-                errors.append("Dispositions require current evidence references")
+            if not item["evidence"]:
+                errors.append(f"disposition of {item['issue_id']} cites no evidence")
+            elif set(item["evidence"]) - known:
+                errors.append(f"disposition of {item['issue_id']}: " + explain_unknown(item["evidence"], known, d))
         unresolved = bool(output["issues"]) or any(x["status"] == "open" for x in dispositions)
         if (output["verdict"] == "pass") == unresolved:
             errors.append("Pass requires no issues or open dispositions; revise requires an unresolved issue")

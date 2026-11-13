@@ -293,7 +293,7 @@ def estimate_review_cost(dossier: dict, model: str, *, build_argument: bool = Tr
 
 def main(argv=None):
     import argparse
-    from scholarloop.core.llm import AnthropicLLM, model_from_env
+    from scholarloop.core.llm import AnthropicLLM, OutputTruncated, SpendCapExceeded, model_from_env
     from scholarloop.core.profile import load_profile
     from scholarloop.core.call_budget import CallLimitedLLM, CallBudgetExceeded
     from scholarloop.core.agent import AgentError
@@ -359,7 +359,7 @@ def main(argv=None):
             s._check_review(state)
         print(f"{state['status']}\nreview hash: {state.get('review_hash', 'not reviewed')}")
         return 0
-    except (ReviewBlocked, CallBudgetExceeded, AgentError) as exc:
+    except (ReviewBlocked, CallBudgetExceeded, AgentError, OutputTruncated, SpendCapExceeded) as exc:
         print(str(exc))
         return 2
 

@@ -331,6 +331,21 @@ def evidence_ids(dossier):
             {"profile", "train", "scorer"})
 
 
+def explain_unknown(ids, known, dossier) -> str:
+    """Say what is wrong with each id that is not citable evidence, and what to write instead.
+    'unknown evidence' alone sent models round the same mistake three times."""
+    notes = []
+    for eid in sorted(set(ids) - set(known)):
+        m = dossier["measurements"].get(eid)
+        if m:
+            notes.append(f"{eid!r} is a measurement reference, not evidence: cite its run {m['run_id']!r}")
+            continue
+        close = difflib.get_close_matches(eid, sorted(known), n=1, cutoff=0.6)
+        notes.append(f"{eid!r} is not an id in the dossier" + (f"; did you mean {close[0]!r}?" if close else
+                     "; use a run id, a paper id, a protocol or candidate id, profile, train or scorer"))
+    return "; ".join(notes)
+
+
 def _where_recorded(tokens, claim, dossier) -> str:
     """Tell the author of a rejected claim what to do about each number: bind the measurement
     that records it, or remove it."""
@@ -359,7 +374,7 @@ def validate_argument(argument: dict, dossier: dict) -> list[str]:
         if set(c["depends_on"]) - set(ids):
             errors.append(f"{c['id']}: unknown claim dependency")
         if set(c["evidence"]) - known:
-            errors.append(f"{c['id']}: unknown evidence")
+            errors.append(f"{c['id']}: unknown evidence: " + explain_unknown(c["evidence"], known, dossier))
         reg = VerifiedRegistry(":claim:")
         for ref in c["measurements"]:
             m = dossier["measurements"].get(ref)
@@ -375,6 +390,14 @@ def validate_argument(argument: dict, dossier: dict) -> list[str]:
                 # aggregate may state the seeds it was computed from.
                 for i, seed_value in enumerate(m["seeds"]):
                     reg.capture(f"{ref}.seed{i}", seed_value)
+        # What a cited run's training script reported about itself (switch steps, batch counts)
+        # is recorded in the ledger. A claim may quote it; whether it says so is for reviewers.
+        for run in dossier["runs"]:
+            if run["id"] in c["evidence"]:
+                for name, values in (run.get("metric", {}).get("self_reported") or {}).items():
+                    for i, v in enumerate(values if isinstance(values, list) else [values]):
+                        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+                            reg.capture(f"{run['id']}.self_reported.{name}.{i}", v)
         # No global small-integer/config/year exceptions for scientific claims.
         bad = reg.audit_text(c["text"])
         if bad:

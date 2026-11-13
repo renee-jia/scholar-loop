@@ -545,3 +545,25 @@ def test_review_cost_estimate_scales_with_the_dossier_and_the_model(tmp_path):
     assert estimate_review_cost(dossier, "claude-opus-5-5", build_argument=False) < small
     assert estimate_review_cost(dossier, "claude-sonnet-5-5") < small
     assert estimate_review_cost(dossier, "no-such-model") is None
+
+
+def test_a_rejected_id_says_what_is_wrong_and_what_to_write(tmp_path):
+    from scholarloop.review.dossier import evidence_ids, explain_unknown
+    dossier = build_dossier(session(setup(tmp_path)).inputs())
+    known = evidence_ids(dossier)
+    note = explain_unknown(["exp_0001::val_top1_err.full", "exp_001", "zzz"], known, dossier)
+    assert "'exp_0001::val_top1_err.full' is a measurement reference, not evidence: cite its run 'exp_0001'" in note
+    assert "'exp_001' is not an id in the dossier; did you mean 'exp_0001'?" in note
+    assert "'zzz' is not an id in the dossier; use a run id" in note
+    claim = {**ARGUMENT["claims"][0], "evidence": ["exp_0001", "exp_001"]}
+    (error,) = validate_argument({**ARGUMENT, "claims": [claim]}, dossier)
+    assert error.startswith("claim_error: unknown evidence: 'exp_001' is not an id")
+
+
+def test_a_claim_may_quote_what_a_cited_run_reported_about_itself(tmp_path):
+    dossier = build_dossier(session(setup(tmp_path)).inputs())
+    dossier["runs"][0]["metric"]["self_reported"] = {"switch_step": [700.0, 900.0]}
+    claim = {**ARGUMENT["claims"][0], "text": "The error is 7.25 percent; the run reported switching at step 700."}
+    assert validate_argument({**ARGUMENT, "claims": [claim]}, dossier) == []
+    other = {**claim, "text": "The error is 7.25 percent; the run reported switching at step 800."}
+    assert "numbers lack explicitly bound measurements: ['800']" in validate_argument({**ARGUMENT, "claims": [other]}, dossier)[0]
