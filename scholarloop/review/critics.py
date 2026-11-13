@@ -71,8 +71,11 @@ LENSES = {
 }
 
 
-def check_claim_assessments(output, dossier):
-    """Coverage and evidence existence checks; these do not establish entailment."""
+def check_claim_assessments(output, dossier, previous_issues=()):
+    """Coverage and evidence existence checks; these do not establish entailment. A concern is
+    tracked by a new issue or by a previous issue on the same claim that stays open."""
+    kept = {x["issue_id"] for x in output.get("dispositions", []) if x["status"] == "open"}
+    carried = {i["target"] for i in previous_issues if i["id"] in kept}
     checks = output.get("claim_checks", [])
     claims = {c["id"] for c in dossier["argument"]["claims"]}
     ids = [c["claim_id"] for c in checks]
@@ -86,12 +89,13 @@ def check_claim_assessments(output, dossier):
         elif set(check["evidence"]) - known:
             errors.append(f"{check['claim_id']}: the claim check cites " +
                           explain_unknown(check["evidence"], known, dossier))
-        if check["status"] == "concern" and not any(
+        if check["status"] == "concern" and check["claim_id"] not in carried and not any(
                 issue["target"] == check["claim_id"] or
                 (issue["target"] == "dossier" and check["claim_id"] in issue["evidence"])
                 for issue in output["issues"]):
             errors.append(f"{check['claim_id']}: its claim check has status `concern` but no issue has "
-                          f"target {check['claim_id']!r}; add that issue, or change the status if "
+                          f"target {check['claim_id']!r} and no previous issue on it is kept open; "
+                          "add that issue, keep the previous one open, or change the status if "
                           "the evidence does answer the question")
     return errors
 
@@ -144,7 +148,7 @@ class ScientificCritic(Agent):
         known = evidence_ids(d) | set(d["measurements"]) | {c["id"] for c in d["argument"]["claims"]}
         support = {x["id"] for key in ("setup", "related_work") for x in d["argument"].get(key, [])}
         targets = {"dossier"} | {c["id"] for c in d["argument"]["claims"]} | support
-        errors = check_claim_assessments(output, d)
+        errors = check_claim_assessments(output, d, ctx.get("previous_issues", []))
         for n, issue in enumerate(output["issues"], 1):
             if issue["target"] not in targets:
                 errors.append(f"issue {n}: target {issue['target']!r} is not `dossier` or a current "

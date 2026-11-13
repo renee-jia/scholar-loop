@@ -604,3 +604,18 @@ def test_a_claim_may_state_the_size_of_a_negative_difference_in_words(tmp_path):
     assert validate_argument({**ARGUMENT, "claims": [claim]}, dossier) == []
     wrong = {**claim, "text": "The arm was lower by 5.96 on average."}
     assert validate_argument({**ARGUMENT, "claims": [wrong]}, dossier)
+
+
+def test_a_concern_is_tracked_by_a_previous_issue_that_stays_open(tmp_path):
+    from scholarloop.review.critics import check_claim_assessments
+    dossier = {**build_dossier(session(setup(tmp_path)).inputs()), "argument": ARGUMENT}
+    claim = ARGUMENT["claims"][0]["id"]
+    checks = [{**c, "status": "concern"} if c["claim_id"] == claim else c for c in PASS["claim_checks"]]
+    output = {**PASS, "claim_checks": checks, "issues": [],
+              "dispositions": [{"issue_id": "r1:experimental:1", "status": "open", "reason": "Still unresolved.",
+                                "evidence": ["exp_0001"]}]}
+    previous = [{"id": "r1:experimental:1", "target": claim}]
+    assert check_claim_assessments(output, dossier, previous) == []
+    assert check_claim_assessments(output, dossier)                     # nothing tracks the concern
+    closed = {**output, "dispositions": [{**output["dispositions"][0], "status": "verified"}]}
+    assert check_claim_assessments(closed, dossier, previous)
