@@ -661,3 +661,11 @@ def test_a_reviewer_cannot_keep_an_issue_open_and_raise_it_again(tmp_path):
     errors = ScientificCritic(MockLLM(jsons=[]), "experimental").postcheck(output, ctx)
     assert any("you kept r1:experimental:1 open" in e for e in errors)
     assert not ScientificCritic(MockLLM(jsons=[]), "experimental").postcheck({**output, "issues": []}, ctx)
+
+
+def test_a_measured_quantity_spelled_out_in_words_is_rejected(tmp_path):
+    dossier = build_dossier(session(setup(tmp_path)).inputs())
+    claim = {**ARGUMENT["claims"][0], "text": "The validation error is seven point two five percent."}
+    errors = validate_argument({**ARGUMENT, "claims": [claim]}, dossier)
+    assert any("spelled out in words" in e for e in errors)
+    assert validate_argument(ARGUMENT, dossier) == []

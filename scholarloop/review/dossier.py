@@ -344,6 +344,11 @@ def evidence_ids(dossier):
             {"profile", "train", "scorer"})
 
 
+_DIGIT_WORD = "(?:zero|one|two|three|four|five|six|seven|eight|nine)"
+# "minus zero point four": a decimal written in words slips past the check that binds numerals.
+_SPELLED_DECIMAL = re.compile(rf"\b{_DIGIT_WORD}\s+point\s+{_DIGIT_WORD}(?:\s+{_DIGIT_WORD})*\b", re.I)
+
+
 def _tidy(x: float) -> float:
     """A difference of two recorded values without the binary floating-point tail: a statement
     built from the dossier is printed in the paper, and -1.1200000000000003 is not a result."""
@@ -383,7 +388,7 @@ def _where_recorded(tokens, claim, dossier) -> str:
                   and any(isinstance(v, (int, float)) and abs(v - float(tok)) < 1e-9
                           for v in (m["value"], m["std"], *m["seeds"]))]
         hints.append(f"{tok} is recorded by {owners[:3]}: add it to `measurements` and cite its run"
-                     if owners else f"{tok} is in no measurement: remove it or use words")
+                     if owners else f"{tok} is in no measurement: remove it or describe it qualitatively")
     return " (" + "; ".join(hints) + ")"
 
 
@@ -436,6 +441,10 @@ def validate_argument(argument: dict, dossier: dict) -> list[str]:
                         if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
                             reg.capture(f"{run['id']}.self_reported.{name}.{i}", v)
         # No global small-integer/config/year exceptions for scientific claims.
+        spelled = _SPELLED_DECIMAL.findall(c["text"])
+        if spelled:
+            errors.append(f"{c['id']}: a measured quantity is spelled out in words ({spelled[0]!r}); write "
+                          "the recorded numeral and bind its measurement, or leave the quantity out")
         bad = reg.audit_text(c["text"])
         if bad:
             errors.append(f"{c['id']}: numbers lack explicitly bound measurements: {bad}"
