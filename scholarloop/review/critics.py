@@ -102,7 +102,7 @@ def check_claim_assessments(output, dossier, previous_issues=()):
 
 class ScientificCritic(Agent):
     schema = REVIEW_SCHEMA
-    max_tokens = 32000      # one check per claim, and a long argument has many
+    max_tokens = 48000      # one check per claim and one disposition per open issue
     # One system prompt for all four roles: the dossier that follows it is cached, and a cache
     # hit needs everything before the dossier to be identical. The lens is in the prompt.
     system = (
