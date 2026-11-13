@@ -68,3 +68,44 @@ def reserve_test_access(ledger_path, run_id, candidate_id, protocol):
                 os.fsync(fd)
             finally:
                 os.close(fd)
+
+
+def validate_confirmation_run(profile, registry_dir, ledger_path, protocol, candidate,
+                              fidelity, seeds, holdout, exp_id, artifact_cache=None):
+    """A continuation names a frozen condition, not an arbitrary reusable token."""
+    import re
+    from pathlib import Path
+    from scholarloop.core.candidates import make_snapshot
+    from scholarloop.experiment.spec import frozen_context, validate_spec
+    from scholarloop.review.contracts import digest, read_json, ReviewBlocked
+    pid = protocol.get("id")
+    if not isinstance(pid, str) or not re.fullmatch(r"[0-9a-f]{64}", pid):
+        raise ValueError("Confirmation requires a valid frozen protocol id")
+    try:
+        envelope = read_json(Path(registry_dir) / "protocols" / f"{pid}.json")
+        if digest(envelope) != pid:
+            raise ValueError("Frozen confirmation protocol was modified")
+        spec = envelope["spec"]
+        errors = validate_spec(spec, profile, envelope.get("issues", []),
+                               iteration=envelope.get("research_iteration"))
+        if errors or spec["purpose"] != "confirmation":
+            raise ValueError(f"Invalid confirmation protocol: {errors}")
+        if frozen_context(profile, spec) != envelope["frozen"]:
+            raise ValueError("Frozen confirmation inputs changed")
+        conditions = [c for c in spec["conditions"] if c["name"] == protocol.get("condition")]
+        if len(conditions) != 1:
+            raise ValueError("Unknown frozen confirmation condition")
+        condition = conditions[0]
+        expected = make_snapshot(profile, {k["name"]: k["value"] for k in condition["config"]}, condition["edits"])
+        if (candidate["id"] != expected["id"] or fidelity != spec["fidelity"]
+                or seeds != spec["seeds"] or holdout != spec["holdout"]):
+            raise ValueError("Execution differs from frozen confirmation condition")
+        if exp_id != f"protocol_{pid[:24]}_{condition['name']}":
+            raise ValueError("Confirmation run id must identify its frozen condition")
+        if artifact_cache is not None:
+            raise ValueError("Confirmation protocols cannot reuse exploration artifacts")
+        if any(e.protocol.get("id") == pid and e.protocol.get("condition") == condition["name"]
+               for e in Ledger(ledger_path).read_all()):
+            raise ValueError("Confirmation condition already executed")
+    except (KeyError, TypeError, ReviewBlocked, OSError) as exc:
+        raise ValueError(f"Cannot validate frozen confirmation protocol: {exc}") from exc

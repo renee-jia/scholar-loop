@@ -42,13 +42,25 @@ SPEC_SCHEMA = obj({
 })
 
 
+# Optional for ordinary review/pilot protocols; required for research-iteration plans.
+SPEC_SCHEMA["properties"]["discrimination"] = obj({
+    "reference": TEXT, "treatment": TEXT,
+    "tested_alternative": TEXT,
+    "why_discriminating": TEXT,
+    "controlled_factors": {**STRINGS, "minItems": 1},
+    "remaining_confounds": {**STRINGS, "minItems": 1},
+    "inconclusive_outcome": TEXT,
+    "departure_from_recommendation": TEXT,
+})
+
+
 def condition_budget(spec, profile):
     """Subprocess timeout reservation; Python/process startup overhead is additional."""
     train = profile.budget.seconds_for(spec["fidelity"])
     return len(spec["seeds"]) * (train + max(120, train) * (2 if spec["holdout"] else 1))
 
 
-def validate_spec(spec, profile, issues, *, schema=SPEC_SCHEMA):
+def validate_spec(spec, profile, issues, *, schema=SPEC_SCHEMA, iteration=None):
     errors = [e.message for e in Draft7Validator(schema).iter_errors(spec)]
     if errors:
         return errors
@@ -77,6 +89,25 @@ def validate_spec(spec, profile, issues, *, schema=SPEC_SCHEMA):
         resolved = (profile.root / p).resolve()
         if p.is_absolute() or ".." in p.parts or profile.root.resolve() not in resolved.parents or not resolved.is_file():
             errors.append(f"Data file must exist relative to the profile root: {name}")
+    mapping = spec.get("discrimination")
+    if iteration is not None and mapping is None:
+        errors.append("Research iteration protocols require a discrimination mapping")
+    if mapping:
+        conditions = {c["name"]: c for c in spec["conditions"]}
+        reference, treatment = mapping["reference"], mapping["treatment"]
+        if reference != spec["reference"] or treatment not in conditions or treatment == reference:
+            errors.append("Discrimination must map the analysis reference to a distinct existing treatment")
+        if iteration is not None:
+            step = iteration["assessment"]["next_step"]
+            if mapping["tested_alternative"] != step["tested_alternative"]:
+                errors.append("Discrimination must preserve the reviewed competing explanation")
+            if step["kind"] in {"ablation", "falsification", "boundary_test"} and reference in conditions and treatment in conditions:
+                def intervention(condition):
+                    config = dict(profile.knobs)
+                    config.update({k["name"]: k["value"] for k in condition["config"]})
+                    return {"config": config, "edits": condition["edits"]}
+                if intervention(conditions[reference]) == intervention(conditions[treatment]):
+                    errors.append("Discriminating conditions need different executable interventions")
     reserve = len(spec["conditions"]) * condition_budget(spec, profile)
     if reserve > spec["budget_seconds"]:
         errors.append(f"Budget must cover all planned subprocess timeouts ({reserve} seconds)")
@@ -118,6 +149,14 @@ class ExperimentPlanner(Agent):
     schema = SPEC_SCHEMA
     system = (
         "Turn open scientific-review experiment requests into one frozen, executable protocol. "
+        "When research_iteration is supplied, retain its competing explanation, contrasting "
+        "predictions and prospective outcome decisions in the protocol interpretation; describe "
+        "which uncertainty the conditions address and any departure from the recommendation. "
+        "Supply discrimination mapping the actual reference and treatment names to the reviewed "
+        "tested_alternative. Explain why this contrast distinguishes the explanations, controlled "
+        "factors, remaining confounds, an inconclusive outcome, and any departure from the suggestion. "
+        "Do not claim that different condition names alone create an intervention. "
+        "The recommendation is provisional: current critic requests take precedence. "
         "Address a coherent subset of issues. Specify matched control and treatment conditions, "
         "fixed seed/fold pairing, a falsifying outcome, scope limits and resource budget. Use the "
         "current profile's numeric knobs or full train-file replacements; never edit a scorer. "
@@ -138,4 +177,4 @@ class ExperimentPlanner(Agent):
         return json.dumps(ctx, ensure_ascii=False)
 
     def postcheck(self, output, ctx):
-        return validate_spec(output, self.profile, ctx["issues"])
+        return validate_spec(output, self.profile, ctx["issues"], iteration=ctx.get("research_iteration"))

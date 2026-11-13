@@ -24,7 +24,7 @@ import sys
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from scholarloop.core.agent import Agent
 
@@ -227,9 +227,12 @@ def merge_papers(groups: list[list[Paper]], max_results: int) -> list[Paper]:
             k = dedup_key(p)
             cur = best.get(k)
             if cur is None:
-                best[k] = p
+                best[k] = replace(p)
                 continue
             keep, drop = (p, cur) if _richer(p, cur) else (cur, p)
+            keep = replace(keep)
+            if not keep.summary.strip() and drop.summary.strip():
+                keep.summary = drop.summary
             if drop.code_url and not keep.code_url:     # never lose a code link regardless of which row wins
                 keep.code_url = drop.code_url
             if drop.year is not None and keep.year is None:

@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from scholarloop.ideation import ideator, litreview
@@ -265,7 +265,10 @@ class ResearchSession:
         """Run the tournament, store each idea's standing, and return the ideas best-first (flagged
         novelty last), so idea 1 in ideas.md is the tournament's pick. Every round's match log is
         appended to tournament.json for audit (meta-review support ids point into it)."""
-        res = self.tournament.run(self.topic, ideas)
+        res = self.tournament.run(self.topic, ideas, evidence={
+            "brief": self.state.research_brief,
+            "dissent": self.state.meta_review[-5:],
+            "papers": [asdict(p) for p in self.review_obj.papers] if self.review_obj else []})
         for i, idea in enumerate(ideas):
             idea.tournament = res.summary(i)
         order = sorted(range(len(ideas)), key=lambda i: (-ideas[i].rank_key(), i))

@@ -341,6 +341,10 @@ def run_experiment(
         raise CandidateError("Requested knobs differ from the frozen candidate")
     if any(candidate["sources"].get(e["path"]) != e["content"] for e in edits):
         raise CandidateError("Requested edits differ from the frozen candidate")
+    if purpose == "confirmation" and protocol:
+        from scholarloop.experiment.test_boundary import validate_confirmation_run
+        validate_confirmation_run(profile, registry_dir, ledger_path, protocol, candidate,
+                                  fidelity, seeds, holdout, exp_id, artifact_cache)
     CandidateStore(registry_dir).save(candidate)
     if holdout:
         from scholarloop.experiment.test_boundary import reserve_test_access

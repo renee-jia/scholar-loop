@@ -42,13 +42,16 @@ class ExperimentAgenda:
                 raise ReviewBlocked("No current scientific experiment requests")
             if spec is None:
                 spec = ExperimentPlanner(self.review.llm, self.review.profile, trace=self.review.trace).run({
-                    "dossier": source["dossier"], "issues": issues, "author_feedback": feedback})
-            errors = validate_spec(spec, self.review.profile, issues)
+                    "dossier": source["dossier"], "issues": issues, "author_feedback": feedback,
+                    "research_iteration": source.get("research_iteration")})
+            errors = validate_spec(spec, self.review.profile, issues, iteration=source.get("research_iteration"))
             if errors:
                 raise ReviewBlocked("Invalid experiment protocol: " + "; ".join(errors))
             envelope = {"schema_version": 1, "source_review_hash": source["review_hash"],
                         "issues": issues, "spec": spec, "feedback": feedback,
                         "frozen": frozen_context(self.review.profile, spec)}
+            if "research_iteration" in source:
+                envelope["research_iteration"] = source["research_iteration"]
             # Check again after planning: a slow model must not freeze a stale review.
             if digest(self.review.inputs()) != source["dossier"]["input_hash"]:
                 raise ReviewBlocked("Evidence changed while planning")
@@ -91,6 +94,20 @@ class ExperimentAgenda:
                   f"`{(self.protocols / (pid + '.json')).resolve()}`", "",
                   envelope["frozen"]["data_caveat"], "", "## Limitations", ""]
         lines += [f"- {x}" for x in spec["limitations"]]
+        if spec.get("discrimination"):
+            lines += ["", "## Planned discriminating contrast", ""]
+            lines += [f"- {key}: {value}" for key, value in spec["discrimination"].items()]
+        iteration = envelope.get("research_iteration")
+        if iteration:
+            step = iteration["assessment"]["next_step"]
+            lines += ["", "## Prospective research decisions", "",
+                      "Unverified recommendation retained from scientific review; not an observed outcome.", "",
+                      f"Research round: {iteration['round']}; evidence snapshot: `{iteration['input_hash']}`", ""]
+            for key in ("target_issue_ids", "tested_alternative", "prediction_if_primary",
+                        "prediction_if_alternative", "decision_if_primary", "decision_if_alternative",
+                        "decision_if_inconclusive", "remaining_uncertainty"):
+                if key in step:
+                    lines += [f"- {key}: {step[key]}"]
         lines += ["", "## Recorded conditions", ""]
         lines += [f"- {r['condition']}: `{r['entry']['id']}`, {r['entry']['verdict']}, "
                   f"{r['entry']['metric']}" for r in state["results"]]

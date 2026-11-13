@@ -58,7 +58,7 @@ class ScientificReviewSession:
     def _archive(self, state):
         atomic_json(self.out / "review_history" / f"{digest(state)}.json", state)
 
-    def review(self, *, feedback="", argument=None):
+    def review(self, *, feedback="", argument=None, iteration=None):
         """One complete review round; failed critics invalidate any earlier release.
 
         P0 records experiment requests but never silently runs them. Add evidence or
@@ -77,6 +77,13 @@ class ScientificReviewSession:
                 inputs = self.inputs()
                 dossier = build_dossier(inputs)
                 state["dossier"] = dossier
+                if iteration is not None:
+                    from scholarloop.experiment.research_cycle import ASSESSMENT_SCHEMA, ResearchCycle
+                    errors = [e.message for e in Draft7Validator(ASSESSMENT_SCHEMA).iter_errors(iteration.get("assessment"))]
+                    if errors or iteration.get("input_hash") != dossier["input_hash"]:
+                        raise ReviewBlocked("Research iteration is invalid or stale; assess the current evidence again")
+                    feedback = feedback + "\n" + ResearchCycle.review_feedback(iteration)
+                    state["feedback"], state["research_iteration"] = feedback, iteration
                 if dossier["checks"]:
                     state["status"] = "INSUFFICIENT_EVIDENCE"
                     self._save(state)
@@ -140,7 +147,10 @@ class ScientificReviewSession:
 
     @staticmethod
     def _review_hash(state):
-        return digest({k: state[k] for k in ("round", "dossier", "reports", "issues", "feedback")})
+        payload = {k: state[k] for k in ("round", "dossier", "reports", "issues", "feedback")}
+        if "research_iteration" in state:
+            payload["research_iteration"] = state["research_iteration"]
+        return digest(payload)
 
     def _check_review(self, state):
         if state.get("schema_version") != VERSION:
@@ -264,6 +274,7 @@ def main(argv=None):
         ap.add_argument("--" + name, required=True)
     ap.add_argument("--research")
     ap.add_argument("--feedback", default="")
+    ap.add_argument("--iteration", help="research_iterations.json; review its latest evidence-bound recommendation")
     ap.add_argument("--argument", help="optional JSON argument to review (not an approval)")
     ap.add_argument("--author")
     ap.add_argument("--review-hash")
@@ -274,6 +285,8 @@ def main(argv=None):
                     help="override a critic's model; repeat for implementation/experimental/falsification/argument")
     args = ap.parse_args(argv)
     try:
+        if args.iteration and args.action != "review":
+            raise ReviewBlocked("--iteration supplies a recommendation for review, never an approval")
         models = parse_critic_models(args.critic_model)
         if models and args.action != "review":
             raise ReviewBlocked("--critic-model configures a new review; it cannot change saved reviewer identities")
@@ -286,7 +299,13 @@ def main(argv=None):
                                     load_profile(args.profile), args.out, ledger_path=args.ledger,
                                     registry_dir=args.registry, research_dir=args.research, critic_llms=critics)
         if args.action == "review":
-            state = s.review(feedback=args.feedback,
+            iteration = None
+            if args.iteration:
+                history = read_json(Path(args.iteration))
+                if history.get("version") != 1 or not history.get("rounds"):
+                    raise ReviewBlocked("No valid research iteration is available")
+                iteration = history["rounds"][-1]
+            state = s.review(feedback=args.feedback, iteration=iteration,
                              argument=read_json(Path(args.argument)) if args.argument else None)
             print(f"{state['status']} → {s.out / 'scientific_review.md'}")
             return 0 if state["status"] == "READY_FOR_AUTHOR" else 2
