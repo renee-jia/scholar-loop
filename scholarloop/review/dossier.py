@@ -390,6 +390,11 @@ def validate_argument(argument: dict, dossier: dict) -> list[str]:
                 # aggregate may state the seeds it was computed from.
                 for i, seed_value in enumerate(m["seeds"]):
                     reg.capture(f"{ref}.seed{i}", seed_value)
+                # "lower by 4.96" states a recorded difference of -4.96: the size is the recorded
+                # number and the direction is in the words, which reviewers read.
+                for i, v in enumerate([m["value"], *m["seeds"]]):
+                    if v < 0:
+                        reg.capture(f"{ref}.magnitude{i}", -v)
         # What a cited run's training script reported about itself (switch steps, batch counts)
         # is recorded in the ledger. A claim may quote it; whether it says so is for reviewers.
         for run in dossier["runs"]:

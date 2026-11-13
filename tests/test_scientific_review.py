@@ -593,3 +593,14 @@ def test_a_failed_round_is_not_continued_when_the_argument_or_feedback_changed(t
     fresh = MockLLM(jsons=[PASS] * 4)
     state = session(paths, fresh).review(argument=ARGUMENT, feedback="A new instruction.")
     assert len(fresh.calls) == 4 and state["round"] == 2 and "resumed_roles" not in state
+
+
+def test_a_claim_may_state_the_size_of_a_negative_difference_in_words(tmp_path):
+    dossier = build_dossier(session(setup(tmp_path)).inputs())
+    dossier["measurements"]["exp_0001::delta"] = {"run_id": "exp_0001", "key": "delta", "value": -4.96,
+                                                  "seeds": [-6.2, 1.5], "std": None}
+    claim = {**ARGUMENT["claims"][0], "measurements": ["exp_0001::delta"],
+             "text": "The arm was lower by 4.96 on average and by 6.2 on one seed."}
+    assert validate_argument({**ARGUMENT, "claims": [claim]}, dossier) == []
+    wrong = {**claim, "text": "The arm was lower by 5.96 on average."}
+    assert validate_argument({**ARGUMENT, "claims": [wrong]}, dossier)
