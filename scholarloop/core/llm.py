@@ -47,7 +47,27 @@ class SpendCapExceeded(RuntimeError):
 _spend_mutex = threading.Lock()
 
 
-def _spend(model: str, usage: dict | None = None) -> None:
+CHARS_PER_TOKEN = 2.4       # measured on review prompts (JSON and code); prose runs nearer 4
+
+
+def estimate_tokens(text) -> int:
+    """A deliberately high estimate of input tokens, for refusing a request before it is sent."""
+    if not isinstance(text, str):
+        text = json.dumps(text, ensure_ascii=False, default=str)
+    return int(len(text) / CHARS_PER_TOKEN)
+
+
+def remaining_budget() -> float | None:
+    """Dollars left under $SCHOLARLOOP_SPEND_CAP, or None when no cap is set."""
+    cap = os.environ.get("SCHOLARLOOP_SPEND_CAP")
+    if not cap:
+        return None
+    path = Path(os.environ.get("SCHOLARLOOP_SPEND_FILE") or "scholarloop_spend.json")
+    spent = json.loads(path.read_text())["usd"] if path.exists() else 0.0
+    return float(cap) - spent
+
+
+def _spend(model: str, usage: dict | None = None, upcoming: float = 0.0) -> None:
     """A hard, cross-process dollar cap on real API requests, off unless $SCHOLARLOOP_SPEND_CAP
     (USD) is set. Estimated spend accumulates in $SCHOLARLOOP_SPEND_FILE (default
     ./scholarloop_spend.json), so ideation, the campaign, review, writing and evaluation
@@ -55,7 +75,8 @@ def _spend(model: str, usage: dict | None = None) -> None:
     after it: the cap can be overshot by at most the request in flight. Spend is an estimate
     from token counts and `governor.MODEL_PRICES`; a model without a price is refused, since an
     unpriced request cannot be capped. With `usage` it records a finished request; without, it
-    checks the cap."""
+    checks the cap, and refuses a request whose estimated input cost (`upcoming`, USD) alone
+    would pass it."""
     cap = os.environ.get("SCHOLARLOOP_SPEND_CAP")
     if not cap:
         return
@@ -70,6 +91,11 @@ def _spend(model: str, usage: dict | None = None) -> None:
             if state["usd"] >= float(cap):
                 raise SpendCapExceeded(f"spend cap reached: ${state['usd']:.2f} of ${float(cap):.2f} "
                                        f"({path}); saved work is kept, raise the cap to continue")
+            if state["usd"] + upcoming > float(cap):
+                raise SpendCapExceeded(
+                    f"this request would cost about ${upcoming:.2f} in input alone and "
+                    f"${float(cap) - state['usd']:.2f} is left of ${float(cap):.2f} ({path}); "
+                    "nothing was sent, raise the cap to continue")
             return
         state["usd"] += cost_of(usage, model)
         state["requests"] += 1
@@ -201,7 +227,10 @@ class AnthropicLLM(LLMClient):
     def _create(self, **kwargs):
         if self.effort is not None:
             kwargs["output_config"] = {**kwargs.get("output_config", {}), "effort": self.effort}
-        _spend(self.model)                              # refuse before sending once the cap is reached
+        from scholarloop.experiment.governor import MODEL_PRICES
+        sent = estimate_tokens([kwargs.get("system", ""), kwargs.get("messages", [])])
+        # refuse before sending once the cap is reached, or when this request alone would pass it
+        _spend(self.model, upcoming=sent / 1e6 * MODEL_PRICES.get(self.model, (0.0, 0.0))[0])
         api = self._client.beta.messages if self.fallbacks else self._client.messages
         extra = {"betas": [_FALLBACK_BETA], "fallbacks": "default"} if self.fallbacks else {}
         if kwargs.get("max_tokens", 0) > _STREAM_ABOVE:    # long outputs must stream or the SDK refuses them

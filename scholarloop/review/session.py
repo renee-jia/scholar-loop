@@ -268,6 +268,29 @@ class ScientificReviewSession:
         atomic_json(self.out / "pending_decisions.json", decisions)
 
 
+OUTPUT_TOKENS_PER_CALL = 7200       # mean over the live reviews so far, thinking included
+RETRY_ALLOWANCE = 1.3
+
+
+def estimate_review_cost(dossier: dict, model: str, *, build_argument: bool = True) -> float | None:
+    """Rough USD for one review round on `model`, from the size of what will be sent: the
+    dossier is written to the prompt cache once per output schema and read by the other calls.
+    None when the model has no price. Printed before the round starts so a round that cannot
+    finish under the spend cap is not begun."""
+    from scholarloop.core.llm import estimate_tokens
+    from scholarloop.experiment.governor import CACHE_READ, CACHE_READ_DEFAULT, CACHE_WRITE, MODEL_PRICES
+    from scholarloop.review.critics import _dossier_block
+    price = MODEL_PRICES.get(model or "")
+    if price is None:
+        return None
+    tokens = estimate_tokens(_dossier_block(dossier))
+    calls = len(ROLES) + (1 if build_argument else 0)
+    writes = 2 if build_argument else 1
+    reads = (calls - writes) * CACHE_READ.get(model, CACHE_READ_DEFAULT)
+    usd = tokens * (writes * CACHE_WRITE + reads) / 1e6 * price[0] + calls * OUTPUT_TOKENS_PER_CALL / 1e6 * price[1]
+    return usd * RETRY_ALLOWANCE
+
+
 def main(argv=None):
     import argparse
     from scholarloop.core.llm import AnthropicLLM, model_from_env
@@ -312,6 +335,15 @@ def main(argv=None):
                 if history.get("version") != 1 or not history.get("rounds"):
                     raise ReviewBlocked("No valid research iteration is available")
                 iteration = history["rounds"][-1]
+            from scholarloop.core.llm import remaining_budget
+            estimate = estimate_review_cost(build_dossier(s.inputs()), args.model, build_argument=not args.argument)
+            left = remaining_budget()
+            if estimate is not None:
+                print(f"Estimated cost of this review round: about ${estimate:.2f}"
+                      + (f" (${left:.2f} left under the spend cap)" if left is not None else ""))
+                if left is not None and estimate > left:
+                    raise ReviewBlocked(f"Not started: the round needs about ${estimate:.2f} and ${left:.2f} "
+                                        "is left under SCHOLARLOOP_SPEND_CAP. Raise the cap to run it.")
             state = s.review(feedback=args.feedback, iteration=iteration,
                              argument=read_json(Path(args.argument)) if args.argument else None)
             print(f"{state['status']} → {s.out / 'scientific_review.md'}")

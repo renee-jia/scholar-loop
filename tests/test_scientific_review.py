@@ -533,3 +533,15 @@ def test_a_release_whose_argument_cannot_support_a_paper_does_not_start_writing(
     s._save(state)
     with pytest.raises(ReviewBlocked, match="the approved argument cannot support a paper"):
         s.require_release()
+
+
+def test_review_cost_estimate_scales_with_the_dossier_and_the_model(tmp_path):
+    from scholarloop.review.session import estimate_review_cost
+    dossier = build_dossier(session(setup(tmp_path)).inputs())
+    dossier["argument"] = ARGUMENT
+    small = estimate_review_cost(dossier, "claude-opus-5-5")
+    big = estimate_review_cost({**dossier, "provenance_note": "x" * 500_000}, "claude-opus-5-5")
+    assert 0 < small < big
+    assert estimate_review_cost(dossier, "claude-opus-5-5", build_argument=False) < small
+    assert estimate_review_cost(dossier, "claude-sonnet-5-5") < small
+    assert estimate_review_cost(dossier, "no-such-model") is None

@@ -252,3 +252,20 @@ def test_cache_writes_and_reads_are_priced_and_counted(monkeypatch, tmp_path):
     assert cost_of(llm.usage, llm.model) == pytest.approx(expected)
     assert cost_of({"input_tokens": 0, "cache_read_input_tokens": 1_000_000}, "claude-haiku-5-5") == \
         pytest.approx(0.1 * 0.1)                                               # default read rate
+
+
+def test_a_request_too_large_for_what_is_left_is_refused_before_it_is_sent(monkeypatch, tmp_path):
+    import json
+    from scholarloop.core.llm import SpendCapExceeded, remaining_budget
+    path = tmp_path / "spend.json"
+    path.write_text(json.dumps({"usd": 0.9, "requests": 3}))
+    monkeypatch.setenv("SCHOLARLOOP_SPEND_CAP", "1.0")
+    monkeypatch.setenv("SCHOLARLOOP_SPEND_FILE", str(path))
+    assert remaining_budget() == pytest.approx(0.1)
+    fake = _metered()
+    llm = AnthropicLLM(client=fake, fallbacks=False)
+    with pytest.raises(SpendCapExceeded, match=r"would cost about \$0\.\d+ in input alone and \$0\.10 is left"):
+        llm.complete("x" * 240_000)                  # about 100k tokens, $0.40 of input on the default model
+    assert fake.messages.last_kwargs is None and json.loads(path.read_text())["requests"] == 3
+    llm.complete("short")                            # a request that fits still goes out
+    assert fake.messages.last_kwargs is not None
