@@ -20,6 +20,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 import hashlib
+import inspect
 import json
 import os
 import threading
@@ -71,6 +72,14 @@ class AgentTrace:
         self.calls.append(call)
 
 
+def _accepts_context(llm) -> bool:
+    try:
+        params = inspect.signature(llm.complete_json).parameters
+    except (TypeError, ValueError):
+        return False
+    return "context" in params or any(p.kind is p.VAR_KEYWORD for p in params.values())
+
+
 class Agent(ABC):
     name: str = "agent"
     system: str = ""
@@ -89,6 +98,12 @@ class Agent(ABC):
     def build_prompt(self, ctx: dict) -> str:
         """Render the prompt for this agent from its context."""
 
+    def build_context(self, ctx: dict) -> str | None:
+        """Optional large block shared by several calls (other agents, retries). It is sent
+        ahead of the prompt and cached by clients that support it. To share it, agents must
+        also share `system` and `schema`: put what differs between them in the prompt."""
+        return None
+
     def postcheck(self, output: dict, ctx: dict) -> list[str]:
         """Optional deterministic validation beyond the schema (override as needed).
 
@@ -101,6 +116,9 @@ class Agent(ABC):
     def run(self, ctx: dict) -> dict:
         """Produce a schema-valid, post-checked output. Retries with feedback; traces the call."""
         prompt = self.build_prompt(ctx)
+        context = self.build_context(ctx)
+        if context and not _accepts_context(self.llm):
+            prompt, context = context + "\n\n" + prompt, None     # a client without a shared block
         validator = Draft7Validator(self.schema) if self.schema else None
         output: dict = {}
         errors: list[str] = []
@@ -112,7 +130,7 @@ class Agent(ABC):
             identity = {"version": 1, "call_id": call_id, "agent": self.name, "attempt": attempt + 1}
             if self.trace is not None:
                 self.trace.event({**identity, "event": "started", "timestamp": time.time(),
-                    "prompt_hash": fingerprint(prompt), "system_hash": fingerprint(self.system),
+                    "prompt_hash": fingerprint([context, prompt] if context else prompt), "system_hash": fingerprint(self.system),
                     "schema_hash": fingerprint(self.schema), "context_hash": fingerprint(ctx),
                     "model": getattr(self.llm, "model", None),
                     "client": type(self.llm).__module__ + "." + type(self.llm).__qualname__,
@@ -121,6 +139,8 @@ class Agent(ABC):
             try:
                 try:
                     limit = {"max_tokens": self.max_tokens} if self.max_tokens else {}
+                    if context:
+                        limit["context"] = context
                     output = self.llm.complete_json(prompt, self.schema, system=self.system, **limit)
                 except ValueError as exc:
                     errors = [f"response was not valid JSON ({exc})"]

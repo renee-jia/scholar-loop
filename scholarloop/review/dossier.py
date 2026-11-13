@@ -6,6 +6,7 @@ code is explicitly distinguished from historical execution provenance.
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import math
@@ -237,6 +238,90 @@ def build_dossier(inputs: dict) -> dict:
             "checks": checks,
             "provenance_note": "Current engine source is not proof of historical execution. "
             "Legacy records may lack code/data/environment snapshots. Review the scope accordingly."}
+
+
+class _Sources:
+    """Each distinct file text once. A later version of a path is written as a unified diff
+    against the closest earlier one when that is clearly shorter than the text itself."""
+
+    def __init__(self):
+        self.table, self._seen = {}, {}
+
+    def ref(self, path: str, text: str) -> str:
+        versions = self._seen.setdefault(path, [])
+        for name, known in versions:
+            if known == text:
+                return name
+        name = f"{path}@v{len(versions) + 1}"
+        entry = text
+        diffs = [(base, "".join(difflib.unified_diff(known.splitlines(True), text.splitlines(True),
+                                                     fromfile=base, tofile=name, n=2)))
+                 for base, known in versions]
+        if diffs:
+            base, diff = min(diffs, key=lambda item: len(item[1]))
+            if len(diff) < 0.6 * len(text):
+                entry = {"unified_diff_against": base, "diff": diff}
+        versions.append((name, text))
+        self.table[name] = entry
+        return name
+
+
+def prompt_view(dossier: dict) -> dict:
+    """The dossier as a reviewer reads it: the same evidence with every repeated block stated
+    once. Candidate snapshots, protocol envelopes and the current engine repeat whole source
+    files; a protocol repeats the idea it came from; the literature review and the novelty
+    check repeat paper records. Nothing is summarised or dropped except file hashes, and every
+    id keeps its meaning. Validation and hashing always use the full dossier, never this view."""
+    view = json.loads(json.dumps(dossier))
+    profile, sources = view["profile"], _Sources()
+    paths = {"train": profile.get("train_entrypoint"), "scorer": profile.get("fixed_module")}
+
+    def refs(files):
+        return {path: sources.ref(path, text) for path, text in files.items()}
+
+    # Runs first, in ledger order, so `@v1` of a path is what the earliest run executed.
+    ordered = [r.get("candidate_id") for r in view["runs"] if r.get("candidate_id")]
+    for cid in [*dict.fromkeys(ordered), *view.get("candidates", {})]:
+        candidate = view.get("candidates", {}).get(cid)
+        if candidate and isinstance(candidate.get("sources"), dict) and "source_versions" not in candidate:
+            candidate["source_versions"] = refs(candidate.pop("sources"))
+    idea = view.get("research", {}).get("handoff.json", {}).get("idea")
+    for protocol in view.get("protocols", {}).values():
+        envelope = protocol["specification"]
+        frozen = envelope.get("frozen")
+        if isinstance(frozen, dict) and isinstance(frozen.get("sources"), dict):
+            frozen["source_versions"] = refs(frozen.pop("sources"))
+            if frozen.get("profile") == dossier["profile"]:
+                frozen["profile"] = "identical to `profile`"
+        if idea is not None and envelope.get("idea") == idea:
+            envelope["idea"] = "identical to research['handoff.json'].idea"
+        for condition in envelope.get("spec", {}).get("conditions", []):
+            for edit in condition.get("edits", []):
+                if isinstance(edit.get("content"), str) and edit.get("path"):
+                    edit["content_version"] = sources.ref(edit["path"], edit.pop("content"))
+    view["current_code"] = {name: sources.ref(paths[name] or name, text)
+                            for name, text in view["current_code"].items()}
+    view["source_files"] = sources.table
+    known = set(view["papers"])
+
+    def paper_ids(holder):
+        if isinstance(holder, dict) and isinstance(holder.get("papers"), list):
+            holder["papers"] = [p["arxiv_id"] if p.get("arxiv_id") in known and
+                                p == dossier["papers"][p["arxiv_id"]] else p for p in holder["papers"]]
+
+    research = view.get("research", {})
+    paper_ids(research.get("lit_review.json"))
+    if isinstance(idea, dict):
+        paper_ids(idea.get("novelty_review"))
+    view["input_manifest"] = sorted(view["input_manifest"])
+    view["citable_ids"] = {"evidence": sorted(evidence_ids(dossier)),
+                           "measurements": sorted(dossier["measurements"])}
+    view["reading_note"] = (
+        "File texts are in `source_files`, each distinct version once; a version given as a diff "
+        "applies to the named earlier version. `source_versions`, `content_version` and "
+        "`current_code` point into that table. A paper listed by id alone is in `papers`. "
+        "`citable_ids` lists every id an evidence or measurement reference may use.")
+    return view
 
 
 def evidence_ids(dossier):

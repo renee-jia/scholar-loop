@@ -59,7 +59,7 @@ def _spend(model: str, usage: dict | None = None) -> None:
     cap = os.environ.get("SCHOLARLOOP_SPEND_CAP")
     if not cap:
         return
-    from scholarloop.experiment.governor import MODEL_PRICES
+    from scholarloop.experiment.governor import MODEL_PRICES, cost_of
     price = MODEL_PRICES.get(model)
     if price is None:
         raise SpendCapExceeded(f"SCHOLARLOOP_SPEND_CAP is set but model {model!r} has no price")
@@ -71,7 +71,7 @@ def _spend(model: str, usage: dict | None = None) -> None:
                 raise SpendCapExceeded(f"spend cap reached: ${state['usd']:.2f} of ${float(cap):.2f} "
                                        f"({path}); saved work is kept, raise the cap to continue")
             return
-        state["usd"] += usage["input"] / 1e6 * price[0] + usage["output"] / 1e6 * price[1]
+        state["usd"] += cost_of(usage, model)
         state["requests"] += 1
         state["cap_usd"] = float(cap)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -90,8 +90,12 @@ class LLMClient(ABC):
 
     @abstractmethod
     def complete_json(self, prompt: str, schema: dict, *, system: str | None = None,
-                      max_tokens: int = 16000) -> dict:
-        """Return a dict conforming to `schema` (JSON-schema-constrained output)."""
+                      max_tokens: int = 16000, context: str | None = None) -> dict:
+        """Return a dict conforming to `schema` (JSON-schema-constrained output).
+
+        `context` is a large block that several requests share (a dossier, a corpus). It is
+        placed before `prompt`, and a client that can cache a prompt prefix caches it, so only
+        the first of those requests pays full price for it."""
 
 
 class MockLLM(LLMClient):
@@ -120,8 +124,11 @@ class MockLLM(LLMClient):
         return self._texts.pop(0)
 
     def complete_json(self, prompt: str, schema: dict, *, system: str | None = None,
-                      max_tokens: int = 16000) -> dict:
-        self.calls.append({"kind": "json", "prompt": prompt, "system": system, "schema": schema})
+                      max_tokens: int = 16000, context: str | None = None) -> dict:
+        call = {"kind": "json", "prompt": prompt, "system": system, "schema": schema}
+        if context is not None:
+            call["context"] = context
+        self.calls.append(call)
         if self._router is not None:
             return self._router(prompt)
         if not self._jsons:
@@ -177,7 +184,9 @@ class AnthropicLLM(LLMClient):
         self.model = model
         self.effort = effort
         self.fallbacks = fallbacks and model in _FALLBACK_MODELS
-        self.usage = {"input_tokens": 0, "output_tokens": 0, "calls": 0}   # cumulative, for cost tracking
+        # cumulative, for cost tracking; the cache fields stay zero unless a request passes `context`
+        self.usage = {"input_tokens": 0, "output_tokens": 0, "calls": 0,
+                      "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
         if client is not None:
             self._client = client
         else:
@@ -201,11 +210,11 @@ class AnthropicLLM(LLMClient):
         else:
             resp = api.create(**extra, **kwargs)
         u = getattr(resp, "usage", None)
-        _spend(self.model, {"input": getattr(u, "input_tokens", 0) or 0,
-                            "output": getattr(u, "output_tokens", 0) or 0})
-        if u is not None:
-            self.usage["input_tokens"] += getattr(u, "input_tokens", 0) or 0
-            self.usage["output_tokens"] += getattr(u, "output_tokens", 0) or 0
+        used = {k: int(getattr(u, k, 0) or 0) for k in
+                ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")}
+        _spend(self.model, used)
+        for k, v in used.items():
+            self.usage[k] += v
         self.usage["calls"] += 1
         if getattr(resp, "stop_reason", None) == "max_tokens":
             # Not a ValueError: a retry would be cut off at the same place and billed again.
@@ -229,9 +238,16 @@ class AnthropicLLM(LLMClient):
         return self._text_of(self._create(**kwargs))
 
     def complete_json(self, prompt: str, schema: dict, *, system: str | None = None,
-                      max_tokens: int = 16000) -> dict:
+                      max_tokens: int = 16000, context: str | None = None) -> dict:
+        content = prompt
+        if context:
+            # The breakpoint sits at the end of the shared block: requests that differ only in
+            # `prompt` (other roles, retries with feedback) read it from the cache. The system
+            # prompt and the output schema precede it, so they must be the same to get a hit.
+            content = [{"type": "text", "text": context, "cache_control": {"type": "ephemeral"}},
+                       {"type": "text", "text": prompt}]
         kwargs = {"model": self.model, "max_tokens": max_tokens,
-                  "messages": [{"role": "user", "content": prompt}],
+                  "messages": [{"role": "user", "content": content}],
                   "output_config": {"format": {"type": "json_schema", "schema": api_schema(schema)}}}
         if system is not None:
             kwargs["system"] = system

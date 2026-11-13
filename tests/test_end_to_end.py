@@ -59,14 +59,15 @@ class SchemaRoutedLLM(MockLLM):
         self.usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0}
         self.configs = itertools.cycle(CONFIGS)
 
-    def complete_json(self, prompt, schema, *, system=None, max_tokens=16000):
+    def complete_json(self, prompt, schema, *, system=None, max_tokens=16000, context=None):
         self.calls.append({"prompt": prompt, "system": system})
+        dossier = json.loads(context.split("\n", 1)[1]) if context else None   # review agents share it
         self.usage["calls"] += 1
         self.usage["input_tokens"] += len(prompt) // 4
         self.usage["output_tokens"] += 50
         p = set(schema.get("properties", {}))
         if "method_summary" in p:
-            d = json.loads(prompt)["dossier"]
+            d = dossier
             ref, m = next(iter(d["measurements"].items()))
             self.argument = {"question": "What is the measured error?", "method_summary": "We evaluate the recipe.",
                              "claims": [{"id": "claim_result", "text": f"The error is {m['value']} percent.",
@@ -75,7 +76,7 @@ class SchemaRoutedLLM(MockLLM):
                              "limitations": ["The mechanism remains untested."]}
             return self.argument
         if "dispositions" in p:
-            claims = json.loads(prompt)["dossier"]["argument"]["claims"]
+            claims = dossier["argument"]["claims"]
             return {"verdict": "pass", "summary": "Scoped observation.", "issues": [], "dispositions": [],
                     "claim_checks": [{"claim_id": c["id"], "question": "Is this observation supported within scope?",
                                       "answer": "It reports the owning run's measurement without causal claims.",

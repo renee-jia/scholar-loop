@@ -34,13 +34,23 @@ MODEL_PRICES = {
 }
 
 
+# Prompt-cache pricing relative to the input price: a 5-minute cache write, and a cache read.
+CACHE_WRITE = 1.25
+CACHE_READ = {"claude-opus-5-5": 0.05, "claude-sonnet-5-5": 0.05, "claude-fable-5-1": 0.025}
+CACHE_READ_DEFAULT = 0.1
+
+
 def cost_of(usage: dict, model: str | None) -> float | None:
-    """Estimated USD for a usage blob ({input_tokens, output_tokens}) on `model`, or None if the
-    model has no known price (so the caller treats spend as unmetered)."""
+    """Estimated USD for a usage blob ({input_tokens, output_tokens} and, when a prompt prefix
+    was cached, cache_creation_input_tokens / cache_read_input_tokens) on `model`, or None if
+    the model has no known price (so the caller treats spend as unmetered)."""
     price = MODEL_PRICES.get(model or "")
     if price is None:
         return None
-    return usage.get("input_tokens", 0) / 1e6 * price[0] + usage.get("output_tokens", 0) / 1e6 * price[1]
+    tokens = (usage.get("input_tokens", 0)
+              + usage.get("cache_creation_input_tokens", 0) * CACHE_WRITE
+              + usage.get("cache_read_input_tokens", 0) * CACHE_READ.get(model, CACHE_READ_DEFAULT))
+    return tokens / 1e6 * price[0] + usage.get("output_tokens", 0) / 1e6 * price[1]
 
 
 def _better(a: float, b: float, direction: str) -> bool:

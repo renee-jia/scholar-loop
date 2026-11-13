@@ -49,3 +49,39 @@ def test_exhausting_retries_raises_agent_error():
         _Echo(MockLLM(jsons=[{}, {}]), max_retries=1).run({"q": "give x"})
     assert ei.value.agent == "echo"
     assert ei.value.errors  # carries the last validation problems
+
+
+# ---- shared context block ---------------------------------------------------------------------
+class _WithContext(Agent):
+    name = "with_context"
+    schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}
+
+    def build_context(self, ctx):
+        return "SHARED"
+
+    def build_prompt(self, ctx):
+        return "tail"
+
+    def postcheck(self, output, ctx):
+        return [] if output["ok"] else ["say ok"]
+
+
+def test_context_is_passed_separately_and_retries_leave_it_untouched():
+    llm = MockLLM(jsons=[{"ok": False}, {"ok": True}])
+    _WithContext(llm).run({})
+    assert [c["context"] for c in llm.calls] == ["SHARED", "SHARED"]
+    assert llm.calls[0]["prompt"] == "tail" and "say ok" in llm.calls[1]["prompt"]
+
+
+def test_a_client_without_a_context_parameter_gets_one_prompt():
+    class Plain:
+        def __init__(self):
+            self.prompts = []
+
+        def complete_json(self, prompt, schema, system=None):
+            self.prompts.append(prompt)
+            return {"ok": True}
+
+    llm = Plain()
+    _WithContext(llm).run({})
+    assert llm.prompts == ["SHARED\n\ntail"]

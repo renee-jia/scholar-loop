@@ -362,3 +362,43 @@ def test_consistently_wrong_aggregate_is_recomputed_before_critic_calls(tmp_path
     assert state["status"] == "INSUFFICIENT_EVIDENCE"
     assert any("aggregate disagrees" in reason for reason in state["dossier"]["checks"])
     assert not s.llm.calls
+
+
+# ---- what a reviewer is sent ------------------------------------------------------------------
+def test_reviewers_share_one_dossier_block_and_one_system_prompt(tmp_path):
+    paths = setup(tmp_path)
+    llm = MockLLM(jsons=[ARGUMENT, *([PASS] * 4)])
+    session(paths, llm).review()
+    critics = llm.calls[1:]
+    assert len({c["context"] for c in critics}) == 1 and len({c["system"] for c in critics}) == 1
+    lenses = [json.loads(c["prompt"])["review_lens"]["role"] for c in critics]
+    assert lenses == ["implementation", "experimental", "falsification", "argument"]
+    assert "dossier" not in json.loads(critics[0]["prompt"])           # the tail stays small
+    assert llm.calls[0]["context"] != critics[0]["context"]            # the builder has no argument yet
+
+
+def test_prompt_view_states_repeated_text_once_and_leaves_the_dossier_alone(tmp_path):
+    from scholarloop.review.dossier import build_dossier, evidence_ids, prompt_view
+    dossier = build_dossier(session(setup(tmp_path)).inputs())
+    train = dossier["current_code"]["train"]
+    path = dossier["profile"]["train_entrypoint"]
+    edited = train + "\n# one changed line\n"
+    dossier["candidates"] = {"a": {"id": "a", "sources": {path: train}},
+                             "b": {"id": "b", "sources": {path: edited}},
+                             "c": {"id": "c", "sources": {path: train}}}
+    paper = {"arxiv_id": "arXiv:1", "title": "t", "summary": "s"}
+    dossier["papers"] = {"arXiv:1": paper}
+    dossier["research"] = {"lit_review.json": {"papers": [paper, {"arxiv_id": "arXiv:2", "title": "other"}]}}
+    before = json.dumps(dossier, sort_keys=True)
+    view = prompt_view(dossier)
+    assert json.dumps(dossier, sort_keys=True) == before
+    versions = [view["candidates"][k]["source_versions"][path] for k in "abc"]
+    assert versions[0] == versions[2] != versions[1]
+    assert view["source_files"][versions[0]] == train
+    assert view["source_files"][versions[1]]["unified_diff_against"] == versions[0]
+    assert "+# one changed line" in view["source_files"][versions[1]]["diff"]
+    assert json.dumps(view).count(json.dumps(train)[1:-1]) == 1
+    assert view["research"]["lit_review.json"]["papers"] == ["arXiv:1", {"arxiv_id": "arXiv:2", "title": "other"}]
+    assert view["current_code"]["train"] == versions[0]
+    assert set(view["citable_ids"]["evidence"]) == evidence_ids(dossier)
+    assert view["measurements"] == dossier["measurements"] and view["runs"] == dossier["runs"]

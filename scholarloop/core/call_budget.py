@@ -54,6 +54,7 @@ class CallLimitedLLM(LLMClient):
         self._reserve()
         return self.client.complete(prompt, system=system, max_tokens=max_tokens)
 
-    def complete_json(self, prompt, schema, *, system=None, max_tokens=16000):
+    def complete_json(self, prompt, schema, *, system=None, max_tokens=16000, context=None):
         self._reserve()
-        return self.client.complete_json(prompt, schema, system=system, max_tokens=max_tokens)
+        extra = {} if context is None else {"context": context}
+        return self.client.complete_json(prompt, schema, system=system, max_tokens=max_tokens, **extra)

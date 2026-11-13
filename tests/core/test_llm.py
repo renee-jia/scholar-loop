@@ -213,3 +213,42 @@ def test_long_outputs_stream_and_a_truncated_response_is_not_retried():
     with pytest.raises(OutputTruncated):
         llm.complete_json("p", {"type": "object"})
     assert seen == [("stream", 64000), ("create", 16000)]
+
+
+# ---- shared context block and prompt-cache accounting ----------------------------------------
+def test_context_is_sent_as_a_cached_block_ahead_of_the_prompt():
+    fake = _FakeClient()
+    AnthropicLLM(client=fake, fallbacks=False).complete_json("the question", {"type": "object"},
+                                                             context="a large dossier")
+    content = fake.messages.last_kwargs["messages"][0]["content"]
+    assert content == [{"type": "text", "text": "a large dossier", "cache_control": {"type": "ephemeral"}},
+                       {"type": "text", "text": "the question"}]
+    AnthropicLLM(client=fake, fallbacks=False).complete_json("q", {"type": "object"})
+    assert fake.messages.last_kwargs["messages"][0]["content"] == "q"          # unchanged without one
+
+
+class _CachedUsage:
+    input_tokens, output_tokens = 1_000, 0
+    cache_creation_input_tokens, cache_read_input_tokens = 100_000, 1_000_000
+
+
+def test_cache_writes_and_reads_are_priced_and_counted(monkeypatch, tmp_path):
+    import json
+    from scholarloop.experiment.governor import cost_of
+    path = tmp_path / "spend.json"
+    monkeypatch.setenv("SCHOLARLOOP_SPEND_CAP", "5.0")
+    monkeypatch.setenv("SCHOLARLOOP_SPEND_FILE", str(path))
+    fake = _metered()
+    monkeypatch.setattr(_Usage, "input_tokens", 1_000)
+    monkeypatch.setattr(_Usage, "output_tokens", 0)
+    monkeypatch.setattr(_Usage, "cache_creation_input_tokens", 100_000, raising=False)
+    monkeypatch.setattr(_Usage, "cache_read_input_tokens", 1_000_000, raising=False)
+    llm = AnthropicLLM(client=fake, fallbacks=False)
+    llm.complete_json("q", {"type": "object"}, context="c")
+    # $4/M input: 1k plain + 100k written at 1.25x + 1M read at 0.05x
+    expected = (1_000 + 125_000 + 50_000) / 1e6 * 4.0
+    assert json.loads(path.read_text())["usd"] == pytest.approx(expected)
+    assert llm.usage["cache_read_input_tokens"] == 1_000_000
+    assert cost_of(llm.usage, llm.model) == pytest.approx(expected)
+    assert cost_of({"input_tokens": 0, "cache_read_input_tokens": 1_000_000}, "claude-haiku-5-5") == \
+        pytest.approx(0.1 * 0.1)                                               # default read rate
