@@ -15,7 +15,8 @@ from jsonschema import Draft7Validator
 from scholarloop.core.agent import AgentTrace
 from scholarloop.core.locking import exclusive_lock
 from scholarloop.review.contracts import ROLES, VERSION, REVIEW_SCHEMA, ReviewBlocked, atomic_json, digest, read_json
-from scholarloop.review.critics import ArgumentBuilder, ScientificCritic, check_claim_assessments
+from scholarloop.review.critics import (ArgumentBuilder, ScientificCritic, blocks_release,
+                                        check_claim_assessments)
 from scholarloop.review.dossier import build_dossier, paper_readiness, snapshot, validate_argument
 
 
@@ -120,7 +121,7 @@ class ScientificReviewSession:
                     client = self.critic_llms.get(role, self.llm)
                     report = ScientificCritic(client, role, trace=self.trace).run({
                         "dossier": dossier, "previous_issues": [i for i in pending if i["role"] == role],
-                        "author_feedback": feedback})
+                        "author_feedback": feedback, "round": state["round"]})
                     raw_client = getattr(client, "client", client)
                     identity = {"client": f"{type(raw_client).__module__}.{type(raw_client).__name__}",
                                 "model": getattr(client, "model", None),
@@ -129,7 +130,8 @@ class ScientificReviewSession:
                     state["reports"] = list(reports)
                     for index, issue in enumerate(report["issues"], 1):
                         state["issues"].append({**issue, "id": f"r{state['round']}:{role}:{index}",
-                                                "role": role, "status": "open", "dossier_hash": digest(dossier)})
+                                                "role": role, "status": _new_status(issue, state["round"]),
+                                                "dossier_hash": digest(dossier)})
                     self._save(state)  # partial reviews are inspectable but never releasable
                 if digest(self.inputs()) != dossier["input_hash"]:
                     raise ReviewBlocked("Evidence changed during scientific review; review the new snapshot")
@@ -156,7 +158,8 @@ class ScientificReviewSession:
                         iid = f"r{state['round']}:{report['role']}:{index}"
                         if iid not in known:
                             state["issues"].append({**issue, "id": iid, "role": report["role"],
-                                                    "status": "open", "dossier_hash": digest(state["dossier"])})
+                                                    "status": _new_status(issue, state["round"]),
+                                                    "dossier_hash": digest(state["dossier"])})
                             known.add(iid)
                 state["status"], state["failure"] = "REVIEW_FAILED", str(exc)
                 self._save(state)
@@ -177,7 +180,8 @@ class ScientificReviewSession:
             raise ReviewBlocked("Scientific argument or deterministic evidence checks are incomplete")
         if {r["role"] for r in state["reports"]} != set(ROLES) or len(state["reports"]) != len(ROLES):
             raise ReviewBlocked("All four scientific critics must complete review")
-        if any(r["verdict"] != "pass" or r["issues"] for r in state["reports"]):
+        if any(r["verdict"] != "pass" or any(blocks_release(i, state["round"]) for i in r["issues"])
+               for r in state["reports"]):
             raise ReviewBlocked("Scientific critics have unresolved concerns")
         for report in state["reports"]:
             raw = {k: report[k] for k in REVIEW_SCHEMA["properties"] if k in report}
@@ -260,6 +264,10 @@ class ScientificReviewSession:
                 lines += [f"  - `{check['claim_id']}` ({check['status']}): {check['question']}",
                           f"    {check['answer']} Evidence: {', '.join(check['evidence'])}"]
         lines += ["", "## Issues", ""]
+        notes = sum(i["status"] == "noted" for i in state["issues"])
+        if notes:
+            lines += [f"_{notes} minor issue(s) raised after the first round are marked `noted`: they do "
+                      "not block approval, and the author should read them before approving._", ""]
         for i in state["issues"]:
             lines += [f"- **{i['id']}** ({i['severity']}, {i['status']}): {i['observation']}",
                       f"  Action: {i['required_action']}", f"  Verify: {i['resolution_criterion']}"]
@@ -280,6 +288,10 @@ class ScientificReviewSession:
                        "report": "scientific_review.md", "choices": ["approve", "revise", "pause"]}]
                      if state["status"] == "READY_FOR_AUTHOR" else [])
         atomic_json(self.out / "pending_decisions.json", decisions)
+
+
+def _new_status(issue, round_number) -> str:
+    return "open" if blocks_release(issue, round_number) else "noted"
 
 
 OUTPUT_TOKENS_PER_CALL = 7200       # mean over the live reviews so far, thinking included

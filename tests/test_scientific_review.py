@@ -630,3 +630,23 @@ def test_a_claim_may_state_the_median_and_spread_of_its_seeds(tmp_path):
     assert validate_argument({**ARGUMENT, "claims": [claim]}, dossier) == []
     measured = {k: v for k, v in dossier["measurements"].items() if k != "exp_0001::delta"}
     assert measured and all(("median" in m) == (len(m["seeds"]) >= 2) for m in measured.values())
+
+
+@pytest.mark.parametrize("severity,status", [("minor", "READY_FOR_AUTHOR"), ("major", "NEEDS_REFRAMING")])
+def test_after_the_first_round_a_new_minor_issue_is_a_note_that_does_not_block(tmp_path, severity, status):
+    minor = {**ISSUE, "severity": "minor", "action": "reframe"}
+    first = {**REVISE, "issues": [minor]}
+    s = session(setup(tmp_path), MockLLM(jsons=[PASS, first, PASS, PASS]))
+    assert s.review(argument=ARGUMENT)["status"] == "NEEDS_REFRAMING"      # round one: it blocks
+    closed = {"issue_id": "r1:experimental:1", "status": "verified", "reason": "The claim was narrowed.",
+              "evidence": ["exp_0001"]}
+    later = {**first, "verdict": "pass" if severity == "minor" else "revise",
+             "issues": [{**minor, "severity": severity}], "dispositions": [closed]}
+    s.llm = MockLLM(jsons=[PASS, later, PASS, PASS])
+    state = s.review(argument=ARGUMENT)
+    assert state["status"] == status
+    assert state["issues"][-1]["status"] == ("noted" if severity == "minor" else "open")
+    if severity == "minor":
+        assert "do not block approval" in (s.out / "scientific_review.md").read_text()
+        s.approve(author="Researcher", review_hash=state["review_hash"])
+        s.require_release()

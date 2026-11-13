@@ -71,6 +71,15 @@ LENSES = {
 }
 
 
+def blocks_release(issue, round_number) -> bool:
+    """Whether a newly raised issue must be closed before the author is asked to approve.
+
+    In the first round every issue blocks. Afterwards a new minor issue is a note: it is kept in
+    the report the author approves, but it does not hold the review open. Without this a review
+    need never end, because a reviewer can always find one more thing to tighten."""
+    return round_number <= 1 or issue["severity"] != "minor"
+
+
 def check_claim_assessments(output, dossier, previous_issues=()):
     """Coverage and evidence existence checks; these do not establish entailment. A concern is
     tracked by a new issue or by a previous issue on the same claim that stays open."""
@@ -115,7 +124,10 @@ class ScientificCritic(Agent):
         "the affected claim is explicitly withdrawn/narrowed, explaining why. A response "
         "saying 'fixed' is not evidence. A previous issue that is still unresolved stays open "
         "through its disposition: do not raise it again as a new issue. New issues are only for "
-        "problems that no previous issue covers. A claim may only state numbers that the dossier "
+        "problems that no previous issue covers. After the first round, a new issue of severity "
+        "minor is recorded as a note for the author and does not block release: use blocker or "
+        "major only when a claim is wrong, unsupported or misleading as written, and minor for "
+        "anything that would merely make a correct claim more complete. A claim may only state numbers that the dossier "
         "records: a measurement's value, per-seed values, median, seed_sd and std, and a cited "
         "run's self-reported values. Never require a claim to state a number that is not recorded "
         "(a ratio, an interval, a difference between two arms that no measurement holds): require "
@@ -173,9 +185,11 @@ class ScientificCritic(Agent):
                 errors.append(f"disposition of {item['issue_id']} cites no evidence")
             elif set(item["evidence"]) - known:
                 errors.append(f"disposition of {item['issue_id']}: " + explain_unknown(item["evidence"], known, d))
-        unresolved = bool(output["issues"]) or any(x["status"] == "open" for x in dispositions)
+        blocking = [i for i in output["issues"] if blocks_release(i, ctx.get("round", 1))]
+        unresolved = bool(blocking) or any(x["status"] == "open" for x in dispositions)
         if (output["verdict"] == "pass") == unresolved:
-            errors.append("Pass requires no issues or open dispositions; revise requires an unresolved issue")
+            errors.append("Pass requires no blocking issue and no open disposition; revise requires one "
+                          "(after the first round a new minor issue is a note and does not block)")
         return errors
 
 
