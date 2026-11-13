@@ -463,8 +463,10 @@ class Panelist(Agent):
 
 
 def blocking_issues(review: dict) -> list[dict]:
-    """A review's blocking issues. An issue without a severity blocks, as every issue once did."""
-    return [i for i in review.get("issues", []) if i.get("severity", "blocking") == "blocking"]
+    """A review's blocking issues. An issue without a severity takes it from the vote: it blocks
+    under a revise vote, as every issue once did, and is a suggestion under an accept vote."""
+    default = "blocking" if review.get("verdict") == "revise" else "suggestion"
+    return [i for i in review.get("issues", []) if i.get("severity", default) == "blocking"]
 
 
 class KeyPointer(Agent):
@@ -654,7 +656,8 @@ def _render_transcript(transcript: list[dict]) -> list[str]:
         out.append(f"### Round {t['round']} — {status}")
         for r in t["reviews"]:
             out.append(f"- **{r['role']}**: {r['verdict']}")
-            out += [f"  - ({i.get('severity', 'blocking')}) [{i['target']}] {i['issue']} → *{i['suggestion']}*"
+            default = "blocking" if r["verdict"] == "revise" else "suggestion"
+            out += [f"  - ({i.get('severity', default)}) [{i['target']}] {i['issue']} → *{i['suggestion']}*"
                     for i in r.get("issues", [])]
         out.append("")
     return out

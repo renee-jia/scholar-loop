@@ -295,4 +295,7 @@ def test_a_vote_must_agree_with_the_severity_of_its_issues():
     assert panelist.postcheck({"verdict": "revise", "issues": [_issue("suggestion")]}, {})
     assert panelist.postcheck({"verdict": "accept", "issues": [_issue("blocking")]}, {})
     assert panelist.postcheck({"verdict": "accept", "issues": [_issue("suggestion")]}, {}) == []
-    assert blocking_issues({"issues": [_issue()]}) == [_issue()]          # no severity means blocking
+    # an issue without a severity follows the vote it came with
+    assert blocking_issues({"verdict": "revise", "issues": [_issue()]}) == [_issue()]
+    assert blocking_issues({"verdict": "accept", "issues": [_issue()]}) == []
+    assert panelist.postcheck({"verdict": "accept", "issues": [_issue()]}, {}) == []
