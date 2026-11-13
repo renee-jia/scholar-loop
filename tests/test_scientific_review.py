@@ -84,11 +84,10 @@ def writing_outputs():
                    {"heading": "Abstract", "purpose": "observation", "evidence": ["claim_error"]},
                    {"heading": "Results", "purpose": "measurement", "evidence": ["claim_error"]},
                    {"heading": "Limitations", "purpose": "scope", "evidence": ["limit_1"]}]}
-    kp = {"sections": [{"heading": h, "points": [{"claim": t, "evidence": [cid], "role": role}]}
-                        for h, t, cid, role in [
-                            ("Abstract", text, "claim_error", "result"),
-                            ("Results", text, "claim_error", "result"),
-                            ("Limitations", ARGUMENT["limitations"][0], "limit_1", "limitation")]]}
+    kp = {"sections": [{"heading": h, "points": [{"statement": cid, "role": role}]}   # ids; text is filled in
+                        for h, cid, role in [("Abstract", "claim_error", "result"),
+                                             ("Results", "claim_error", "result"),
+                                             ("Limitations", "limit_1", "limitation")]]}
     bodies = [{"body": "The validation error is 7.25 percent [claim_error]."}] * 2 + [
         {"body": "This observation does not establish a causal mechanism [limit_1]."}]
     return outline, kp, bodies
@@ -413,3 +412,88 @@ def test_a_claim_may_state_the_seed_values_of_a_measurement_it_binds(tmp_path):
     unbound = {**claim, "measurements": [], "text": "One seed reached 7.5 and another 9.9."}
     (error,) = validate_argument({**ARGUMENT, "claims": [unbound]}, dossier)
     assert f"7.5 is recorded by ['{ref}']" in error and "9.9 is in no measurement" in error
+
+
+# ---- statements a paper needs besides conclusions ---------------------------------------------
+def _supported(tmp_path, setup_text="The reference run used a learning rate of 0.1.", evidence=("exp_0001",)):
+    dossier = build_dossier(session(setup(tmp_path)).inputs())
+    dossier["papers"] = {"arXiv:1": {"arxiv_id": "arXiv:1", "title": "Warm restarts", "summary": "Uses 200 epochs."}}
+    argument = {**ARGUMENT,
+                "setup": [{"id": "setup_lr", "text": setup_text, "evidence": list(evidence)}],
+                "related_work": [{"id": "related_sgdr", "text": "Warm restarts were studied over 200 epochs.",
+                                  "papers": ["arXiv:1"]}]}
+    return argument, dossier
+
+
+def test_setup_and_related_statements_are_approved_statements_a_draft_can_cite(tmp_path):
+    from scholarloop.review.dossier import approved_statements
+    argument, dossier = _supported(tmp_path)
+    assert validate_argument(argument, dossier) == []
+    dossier["argument"] = argument
+    statements = approved_statements(dossier)
+    assert statements["setup_lr"]["evidence"] == ["exp_0001"]
+    assert statements["related_sgdr"]["evidence"] == ["arXiv:1"]
+    assert audit_prose("Training used a learning rate of 0.1 [setup_lr]. "
+                       "Earlier work ran 200 epochs [related_sgdr].", dossier) == []
+    assert audit_prose("Training used a learning rate of 0.3 [setup_lr].", dossier)
+
+
+def test_a_setting_must_be_written_in_the_record_it_cites(tmp_path):
+    argument, dossier = _supported(tmp_path)
+
+    def errors(kind, field, value):
+        changed = copy.deepcopy(argument)
+        changed[kind][0][field] = value
+        return validate_argument(changed, dossier)
+
+    (error,) = errors("setup", "text", "The reference run used a learning rate of 0.25.")
+    assert "setup_lr: numbers ['0.25'] are not written in ['exp_0001']" in error
+    assert "setup_lr: unknown evidence ['exp_9999']" in errors("setup", "evidence", ["exp_9999"])
+    assert "related_sgdr: unknown papers ['arXiv:404']" in errors("related_work", "papers", ["arXiv:404"])
+    twice = copy.deepcopy(argument)
+    twice["setup"].append(dict(twice["setup"][0]))
+    assert "setup_lr: statement ids must be unique" in validate_argument(twice, dossier)
+
+
+def test_key_points_are_chosen_by_id_and_filled_in_from_the_release(tmp_path):
+    paths = setup(tmp_path)
+    released(paths)
+    p, led, reg, out = paths
+    outline, kp, _ = writing_outputs()
+    unknown = {"sections": [{**s, "points": [{"statement": "claim_invented", "role": "result"}]}
+                            for s in kp["sections"]]}
+    llm = MockLLM(jsons=[outline, *([PANEL_PASS] * 3), unknown, kp, *([PANEL_PASS] * 3)])
+    w = WritingSession(llm, p, out, ledger_path=led, registry_dir=reg)
+    w.outline()
+    points = w.key_points()["sections"][0]["points"]
+    assert points == [{"claim": ARGUMENT["claims"][0]["text"], "evidence": ["claim_error"], "role": "result"}]
+    assert "'claim_invented' is not an approved statement id" in llm.calls[5]["prompt"]   # the retry said why
+
+
+def test_an_outline_section_with_no_approved_statement_is_rejected_at_the_outline(tmp_path):
+    paths = setup(tmp_path)
+    released(paths)
+    p, led, reg, out = paths
+    outline, _, _ = writing_outputs()
+    hollow = {**outline, "sections": [*outline["sections"],
+                                      {"heading": "Related Work", "purpose": "context", "evidence": []}]}
+    llm = MockLLM(jsons=[hollow, outline, *([PANEL_PASS] * 3)])
+    WritingSession(llm, p, out, ledger_path=led, registry_dir=reg).outline()
+    assert "sections ['Related Work'] list no approved statement" in llm.calls[1]["prompt"]
+
+
+def test_a_failure_after_a_panel_round_keeps_that_round(tmp_path):
+    paths = setup(tmp_path)
+    released(paths)
+    p, led, reg, out = paths
+    outline, _, _ = writing_outputs()
+    # round one is complete and asks for a revision; the revision then fails
+    llm = MockLLM(jsons=[outline, PANEL_REVISE, PANEL_PASS, PANEL_PASS, *([{"title": "broken"}] * 3)])
+    w = WritingSession(llm, p, out, ledger_path=led, registry_dir=reg, max_rounds=1)
+    with pytest.raises(AgentError):
+        w.outline()
+    saved = json.loads((out / "writing.json").read_text())
+    assert saved["stage"] == "outlined" and len(saved["outline_discussion"]) == 1
+    assert saved["outline_discussion"][0]["accepted"] is False
+    with pytest.raises(ReviewBlocked, match="Panel concerns"):          # and it still cannot advance
+        WritingSession(MockLLM(), p, out, ledger_path=led, registry_dir=reg).key_points()

@@ -60,11 +60,29 @@ CLAIM_SCHEMA = obj({
     "depends_on": {"type": "array", "items": TEXT, "uniqueItems": True},
     "scope": TEXT,
 })
+# A paper needs more than conclusions. `setup` holds the facts a reader needs to rerun the study
+# (settings, sizes, seeds), each tied to the record that states it. `related_work` says how the
+# study stands to a reviewed paper. Both are reviewed and approved like claims, so writing can
+# use them; both are optional so earlier arguments stay valid.
+SETUP_SCHEMA = obj({
+    "id": {"type": "string", "pattern": "^setup_[a-zA-Z0-9_]+$"},
+    "text": TEXT,
+    "evidence": {"type": "array", "items": TEXT, "minItems": 1, "uniqueItems": True},
+})
+RELATED_SCHEMA = obj({
+    "id": {"type": "string", "pattern": "^related_[a-zA-Z0-9_]+$"},
+    "text": TEXT,
+    "papers": {"type": "array", "items": TEXT, "minItems": 1, "uniqueItems": True},
+})
+STATEMENT_ID_PATTERN = (r"claim_[A-Za-z0-9_]+|setup_[A-Za-z0-9_]+|related_[A-Za-z0-9_]+"
+                        r"|scope_question|scope_method|limit_\d+")
 ARGUMENT_SCHEMA = obj({
     "question": TEXT, "method_summary": TEXT,
     "claims": {"type": "array", "items": CLAIM_SCHEMA, "minItems": 1},
     "limitations": {"type": "array", "items": TEXT, "minItems": 1},
-})
+    "setup": {"type": "array", "items": SETUP_SCHEMA},
+    "related_work": {"type": "array", "items": RELATED_SCHEMA},
+}, required=["question", "method_summary", "claims", "limitations"])
 ISSUE_SCHEMA = obj({
     "target": TEXT,
     "severity": {"type": "string", "enum": ["blocker", "major", "minor"]},

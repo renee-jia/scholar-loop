@@ -20,7 +20,8 @@ from jsonschema import Draft7Validator
 from scholarloop.core.ledger import LedgerEntry
 from scholarloop.core.candidates import CandidateStore, CandidateError, validate_snapshot, content_id
 from scholarloop.core.registry import VerifiedRegistry, _number_tokens
-from scholarloop.review.contracts import ARGUMENT_SCHEMA, ReviewBlocked, VERSION, digest, atomic_json
+from scholarloop.review.contracts import (ARGUMENT_SCHEMA, STATEMENT_ID_PATTERN, ReviewBlocked, VERSION,
+                                           digest, atomic_json)
 
 
 def snapshot(profile, ledger_path, registry_dir, research_dir=None) -> dict:
@@ -379,6 +380,7 @@ def validate_argument(argument: dict, dossier: dict) -> list[str]:
         if bad:
             errors.append(f"{c['id']}: numbers lack explicitly bound measurements: {bad}"
                           + _where_recorded(bad, c, dossier))
+    errors += _validate_support(argument, dossier, ids)
     visiting, done = set(), set()
 
     def visit(cid):
@@ -397,9 +399,56 @@ def validate_argument(argument: dict, dossier: dict) -> list[str]:
     return errors
 
 
+_NUMERAL = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+
+
+def _recorded_numbers(dossier: dict, eid: str) -> set[float]:
+    """Every numeral written in one piece of evidence: the profile, a source file, a protocol,
+    a candidate snapshot, a run record or a paper record."""
+    if eid == "profile":
+        source = dossier["profile"]
+    elif eid in ("train", "scorer"):
+        source = dossier["current_code"][eid]
+    else:
+        source = (dossier.get("protocols", {}).get(eid) or dossier.get("candidates", {}).get(eid)
+                  or dossier["papers"].get(eid)
+                  or next((r for r in dossier["runs"] if r["id"] == eid), None))
+    text = source if isinstance(source, str) else json.dumps(source, ensure_ascii=False, default=str)
+    return {float(tok) for tok in _NUMERAL.findall(text.replace("\\n", " "))}
+
+
+def _validate_support(argument: dict, dossier: dict, claim_ids: list[str]) -> list[str]:
+    """Setup and related-work statements. A setup statement cites the records that state it, and
+    every numeral in it must be written in one of them: a setting is copied, never computed.
+    A related-work statement cites reviewed papers and may only use numerals from their records.
+    Whether the sentence is a fair reading of its source is the reviewers' question."""
+    errors, seen = [], set(claim_ids)
+    known = evidence_ids(dossier)
+    for kind, key, sources in (("setup", "evidence", known), ("related_work", "papers", set(dossier["papers"]))):
+        for item in argument.get(kind, []):
+            if item["id"] in seen:
+                errors.append(f"{item['id']}: statement ids must be unique")
+            seen.add(item["id"])
+            unknown = sorted(set(item[key]) - sources)
+            if unknown:
+                errors.append(f"{item['id']}: unknown {key} {unknown}")
+                continue
+            recorded = set().union(*(_recorded_numbers(dossier, eid) for eid in item[key]))
+            bad = [tok for tok in _number_tokens(item["text"]) if float(tok) not in recorded]
+            if bad:
+                errors.append(f"{item['id']}: numbers {bad} are not written in {item[key]}; "
+                              "cite the record that states them or use words")
+    return errors
+
+
 def approved_statements(dossier: dict) -> dict:
     a = dossier["argument"]
     result = {c["id"]: c for c in a["claims"]}
+    for item in a.get("setup", []):
+        result[item["id"]] = {**item, "measurements": []}
+    for item in a.get("related_work", []):
+        result[item["id"]] = {"id": item["id"], "text": item["text"], "evidence": item["papers"],
+                              "measurements": []}
     for cid, text in [("scope_question", a["question"]), ("scope_method", a["method_summary"])]:
         result[cid] = {"id": cid, "text": text, "evidence": ["profile"], "measurements": []}
     for i, text in enumerate(a["limitations"], 1):
@@ -424,7 +473,7 @@ def write_evidence_map(directory, dossier, release):
     (directory / "evidence_map.md").write_text("\n".join(lines) + "\n")
 
 
-STATEMENT_ID = re.compile(r"\[(claim_[A-Za-z0-9_]+|scope_question|scope_method|limit_\d+)\]")
+STATEMENT_ID = re.compile(r"\[(" + STATEMENT_ID_PATTERN + r")\]")
 
 
 def audit_prose(text: str, dossier: dict) -> list[str]:
@@ -440,7 +489,8 @@ def audit_prose(text: str, dossier: dict) -> list[str]:
             continue
         ids = STATEMENT_ID.findall(sentence)
         if not ids or set(ids) - set(statements):
-            errors.append("Every sentence must cite an approved [claim_*], [scope_*] or [limit_*]")
+            errors.append("Every sentence must cite an approved [claim_*], [setup_*], [related_*], "
+                          "[scope_*] or [limit_*]")
             continue
         allowed = [t for cid in ids for t in _number_tokens(statements[cid]["text"])]
         reg = VerifiedRegistry(":sentence:")

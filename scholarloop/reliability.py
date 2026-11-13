@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Callable
 
 from scholarloop.core.registry import _number_tokens
+from scholarloop.review.contracts import STATEMENT_ID_PATTERN
 
 # ---------------------------------------------------------------------------------------------
 # Error categories — one classifier, shared by injection and trace analysis
@@ -206,8 +207,8 @@ _DECIMAL = re.compile(r"(?<![\w:./])\d+\.\d{2,}(?![\w/]|\.\d)")
 _PAPER_ID = re.compile(r"(arXiv:\d{4}\.\d{4,5}|doi:[\w./\-()]+\d|openalex:\w+|s2:\w+)")
 _RUN_ID = re.compile(r"exp_\d{4,}")
 _SEED_COUNT = re.compile(r"\b([2-9])(?=[ -]seeds?\b)")
-_STATEMENT = re.compile(r"(?<=\[)(?:claim_[A-Za-z0-9_]+|scope_question|scope_method|limit_\d+)(?=\])")
-_STATEMENT_CITE = re.compile(r"\s*\[(?:claim_[A-Za-z0-9_]+|scope_question|scope_method|limit_\d+)\]")
+_STATEMENT = re.compile(r"(?<=\[)(?:" + STATEMENT_ID_PATTERN + r")(?=\])")
+_STATEMENT_CITE = re.compile(r"\s*\[(?:" + STATEMENT_ID_PATTERN + r")\]")
 _FLIPS = [("below", "above"), ("lower", "higher"), ("rose", "fell"), ("larger", "smaller"),
           ("increase", "decrease"), ("worse", "better")]
 

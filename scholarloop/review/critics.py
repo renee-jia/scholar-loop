@@ -22,7 +22,17 @@ class ArgumentBuilder(Agent):
         "A claim may contain only numerals that are the value, the standard deviation or a "
         "per-seed value of a measurement listed in that claim's own `measurements`: no rounding "
         "to a different figure, no sums, differences, ranges, thresholds, seed indices or counts "
-        "written as digits. Use words for those."
+        "written as digits. Use words for those. "
+        "The argument is the only material a paper may later be written from, so make it "
+        "sufficient for one. Report every arm that ran in an observation claim with its recorded "
+        "value, including arms whose interpretation you withdraw: withdrawing a reading does not "
+        "withdraw the measurement. In `setup`, state each fact a reader needs to rerun the study "
+        "(model and data sizes, step budget, optimiser settings, thresholds, seeds and folds, "
+        "evaluation set size, what each arm changes), one fact per statement, citing the record "
+        "that states it (profile, train, scorer, a protocol or candidate id); a numeral in a setup "
+        "statement must be written in a cited record. In `related_work`, say for each reviewed "
+        "paper the study builds on or differs from what that paper did and how this study relates "
+        "to it, citing the paper id; claim nothing about a paper beyond its record in the dossier."
     )
 
     def build_context(self, ctx):
@@ -99,7 +109,11 @@ class ScientificCritic(Agent):
         "for evidence, skip an inconvenient claim, or hide a concern behind an overall pass. "
         "Every `evidence` entry must be an id listed under citable_ids in the dossier, copied "
         "exactly: a run id, a paper id, a protocol or candidate id, profile, train, scorer, or "
-        "a measurement reference. File version names and claim ids are not evidence ids."
+        "a measurement reference. File version names and claim ids are not evidence ids. "
+        "The argument's `setup` and `related_work` statements will be used in the paper as "
+        "written. Check each against the record or paper it cites, and check that the setup is "
+        "complete enough to rerun the study; raise an issue targeting the statement id when one "
+        "misstates its source, and targeting the dossier when something needed is missing."
     )
 
     def __init__(self, llm, role, *, trace=None):
@@ -116,7 +130,8 @@ class ScientificCritic(Agent):
     def postcheck(self, output, ctx):
         d = ctx["dossier"]
         known = evidence_ids(d) | set(d["measurements"]) | {c["id"] for c in d["argument"]["claims"]}
-        targets = {"dossier"} | {c["id"] for c in d["argument"]["claims"]}
+        support = {x["id"] for key in ("setup", "related_work") for x in d["argument"].get(key, [])}
+        targets = {"dossier"} | {c["id"] for c in d["argument"]["claims"]} | support
         errors = check_claim_assessments(output, d)
         for issue in output["issues"]:
             if issue["target"] not in targets or set(issue["evidence"]) - known:

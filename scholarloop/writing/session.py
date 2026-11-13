@@ -376,6 +376,10 @@ class Outliner(Agent):
                 errs.append("Use the approved question and an exact approved claim as the nugget")
             if any(c not in texts for c in output["contributions"]):
                 errs.append("Contributions must be exact approved claims")
+            empty = [sec["heading"] for sec in output.get("sections", []) if not sec.get("evidence")]
+            if empty:
+                errs.append(f"sections {empty} list no approved statement: every sentence of the paper "
+                            "must come from one, so drop the section or give it statements")
         if not output.get("question", "").strip() or not output.get("nugget", "").strip():
             errs.append("question and nugget must be non-empty one-sentence statements")
         secs = output.get("sections", [])
@@ -469,9 +473,38 @@ def blocking_issues(review: dict) -> list[dict]:
     return [i for i in review.get("issues", []) if i.get("severity", default) == "blocking"]
 
 
+KEYPOINT_IDS_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "properties": {"sections": {"type": "array", "items": {
+        "type": "object", "additionalProperties": False,
+        "properties": {"heading": {"type": "string"}, "points": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "properties": {"statement": {"type": "string"},
+                           "role": {"type": "string", "enum": POINT_ROLES}},
+            "required": ["statement", "role"]}}},
+        "required": ["heading", "points"]}}},
+    "required": ["sections"],
+}
+
+
 class KeyPointer(Agent):
+    """In a reviewed run a key point is an approved statement, so the agent only chooses which
+    statements go where, by id, and the text is filled in from the release. Asking a model to
+    retype approved text was slow and failed on the first character that differed."""
     name = "key_pointer"
-    schema = KEYPOINTS_SCHEMA
+
+    @property
+    def schema(self):
+        return KEYPOINT_IDS_SCHEMA if self.bank.approved_dossier is not None else KEYPOINTS_SCHEMA
+
+    def run(self, ctx: dict) -> dict:
+        output = super().run(ctx)
+        if self.bank.approved_dossier is None:
+            return output
+        statements = approved_statements(self.bank.approved_dossier)
+        return {"sections": [{"heading": s["heading"], "points": [
+            {"claim": statements[p["statement"]]["text"], "evidence": [p["statement"]], "role": p["role"]}
+            for p in s["points"]]} for s in output["sections"]]}
 
     def __init__(self, llm, bank: EvidenceBank, *, trace=None):
         super().__init__(llm, trace=trace)
@@ -488,16 +521,21 @@ class KeyPointer(Agent):
         got = [s["heading"] for s in output.get("sections", [])]
         if [h.lower() for h in got] != [h.lower() for h in want]:
             errs.append(f"sections must match the outline exactly, in order: {want}")
+        approved = self.bank.approved_dossier is not None
         for s in output.get("sections", []):
             if not s.get("points"):
                 errs.append(f"section {s['heading']!r} needs at least one key point")
-            for i, p in enumerate(s.get("points", []), 1):
-                if self.bank.approved_dossier is not None:
-                    statements = approved_statements(self.bank.approved_dossier)
-                    if len(p["evidence"]) != 1 or p["evidence"][0] not in statements or \
-                            p["claim"] != statements[p["evidence"][0]]["text"]:
+            if approved:
+                statements = approved_statements(self.bank.approved_dossier)
+                for p in s.get("points", []):
+                    if "statement" in p:                 # what the agent returns: an id
+                        if p["statement"] not in statements:
+                            errs.append(f"{s['heading']}: {p['statement']!r} is not an approved statement id")
+                    elif len(p["evidence"]) != 1 or p["evidence"][0] not in statements or \
+                            p["claim"] != statements[p["evidence"][0]]["text"]:    # the stored, filled-in form
                         errs.append("Every key point must copy one approved statement and cite exactly its id")
-                    continue
+                continue
+            for i, p in enumerate(s.get("points", []), 1):
                 unknown = self.bank.unknown(p.get("evidence", []))
                 if unknown:
                     errs.append(f"{s['heading']} point {i}: unknown evidence ids {unknown}")
@@ -511,7 +549,8 @@ class KeyPointer(Agent):
                     errs.append(f"{s['heading']} point {i}: numbers not in the evidence: {bad}")
         if self.bank.approved_dossier is not None:
             required = {f"limit_{i}" for i in range(1, len(self.bank.approved_dossier["argument"]["limitations"]) + 1)}
-            cited = {e for s in output.get("sections", []) for p in s["points"] for e in p["evidence"]}
+            cited = {e for s in output.get("sections", []) for p in s["points"]
+                     for e in ([p["statement"]] if "statement" in p else p["evidence"])}
             if required - cited:
                 errs.append(f"Include every mandatory limitation: {sorted(required - cited)}")
         return errs
@@ -524,8 +563,13 @@ class KeyPointer(Agent):
             parts += ["", "The discussion panel raised these issues — address every one:", _fmt_issues(ctx["issues"])]
         if ctx.get("feedback"):
             parts += ["", "The human author asked for these changes — follow them:", ctx["feedback"]]
-        parts += ["", f"Write the key points for every section (roles: {POINT_ROLES}). Every number "
-                  "must appear in the evidence exactly."]
+        if self.bank.approved_dossier is not None:
+            parts += ["", f"For every section list, in order, the ids of the approved statements it will "
+                      f"make, each with its role ({POINT_ROLES}). Give ids only; the text is fixed. "
+                      "Every limit_* statement must appear somewhere."]
+        else:
+            parts += ["", f"Write the key points for every section (roles: {POINT_ROLES}). Every number "
+                      "must appear in the evidence exactly."]
         return "\n".join(parts)
 
 
@@ -575,7 +619,8 @@ class SectionDrafter(Agent):
                   "its message."]
         if self.bank.approved_dossier is not None:
             parts += ["For this reviewed run, EVERY sentence including the abstract must cite an "
-                      "approved statement id, e.g. [claim_001], [scope_method], [limit_1], BEFORE "
+                      "approved statement id, e.g. [claim_001], [setup_steps], [related_gkd], "
+                      "[scope_method], [limit_1], BEFORE "
                       "the sentence's final punctuation. Preserve each statement's scope, units "
                       "and attribution. Use only the numbers written in that cited statement."]
         return "\n".join(parts)
@@ -606,7 +651,7 @@ class PaperReviewer(Agent):
 # Discussion loop — deterministic control over proposer ⇄ panel
 # ---------------------------------------------------------------------------------------------
 def discuss(propose, panel: list[Panelist], stage: str, render, evidence: str,
-            *, max_rounds: int = 2) -> tuple[dict, list[dict]]:
+            *, max_rounds: int = 2, checkpoint=None) -> tuple[dict, list[dict]]:
     """propose(issues|None) -> artifact; each panelist critiques render(artifact); the proposer
     revises against the union of blocking issues until no panelist has one or `max_rounds`
     revisions have been made. From the second round on a panelist is shown the blocking issues
@@ -623,6 +668,8 @@ def discuss(propose, panel: list[Panelist], stage: str, render, evidence: str,
         issues = [i for r in reviews for i in raised[r["role"]]]
         transcript.append({"round": rnd + 1, "artifact": artifact, "reviews": reviews,
                            "accepted": not issues})
+        if checkpoint is not None:
+            checkpoint(artifact, list(transcript))      # a later failure keeps the rounds already paid for
         if not issues or rnd == max_rounds:
             break
         artifact = propose(issues)
@@ -836,8 +883,16 @@ class WritingSession:
             prev = self.outliner.run({"review": lit, "previous": prev, "issues": issues, "feedback": fb})
             return prev
 
+        def checkpoint(artifact, transcript):
+            self.state.outline, self.state.outline_discussion = artifact, transcript
+            self.state.key_points, self.state.keypoints_discussion = None, []
+            self.state.sections, self.state.review = [], None
+            self.state.stage = "outlined"       # an unaccepted last round still blocks key points
+            self._save()
+
         outline, transcript = discuss(propose, self.panel, "outline", render_outline_block,
-                                      self.bank.to_prompt_block(), max_rounds=self.max_rounds)
+                                      self.bank.to_prompt_block(), max_rounds=self.max_rounds,
+                                      checkpoint=checkpoint)
         self._require_release()
         self.state.outline, self.state.outline_discussion = outline, transcript
         self.state.key_points, self.state.keypoints_discussion = None, []
@@ -863,8 +918,15 @@ class WritingSession:
             prev = self.key_pointer.run({"outline": outline, "previous": prev, "issues": issues, "feedback": fb})
             return prev
 
+        def checkpoint(artifact, transcript):
+            self.state.key_points, self.state.keypoints_discussion = artifact, transcript
+            self.state.sections, self.state.review = [], None
+            self.state.stage = "keypointed"     # an unaccepted last round still blocks the draft
+            self._save()
+
         kp, transcript = discuss(propose, self.panel, "key points", render_keypoints_block,
-                                 self.bank.to_prompt_block(), max_rounds=self.max_rounds)
+                                 self.bank.to_prompt_block(), max_rounds=self.max_rounds,
+                                 checkpoint=checkpoint)
         self._require_release()
         self.state.key_points, self.state.keypoints_discussion = kp, transcript
         self.state.sections, self.state.review = [], None
