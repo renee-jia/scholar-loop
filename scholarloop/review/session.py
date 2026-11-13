@@ -16,7 +16,7 @@ from scholarloop.core.agent import AgentTrace
 from scholarloop.core.locking import exclusive_lock
 from scholarloop.review.contracts import ROLES, VERSION, REVIEW_SCHEMA, ReviewBlocked, atomic_json, digest, read_json
 from scholarloop.review.critics import ArgumentBuilder, ScientificCritic, check_claim_assessments
-from scholarloop.review.dossier import build_dossier, snapshot, validate_argument
+from scholarloop.review.dossier import build_dossier, paper_readiness, snapshot, validate_argument
 
 
 class ScientificReviewSession:
@@ -95,6 +95,9 @@ class ScientificReviewSession:
                 errors = validate_argument(argument, dossier)
                 if errors:
                     raise ReviewBlocked("Invalid claim graph: " + "; ".join(errors))
+                gaps = paper_readiness(argument, dossier)
+                if gaps:        # found before any reviewer is paid, not two stages into writing
+                    raise ReviewBlocked("The argument cannot support a paper: " + "; ".join(gaps))
                 dossier["argument"] = argument
                 pending = [i for i in state["issues"] if i["status"] == "open"]
                 reports = []
@@ -204,6 +207,10 @@ class ScientificReviewSession:
         if state["status"] != "READY_TO_WRITE" or not state.get("release"):
             raise ReviewBlocked(f"Writing blocked: {state['status']}. Complete scientific review and author approval.")
         self._check_review(state)
+        gaps = paper_readiness(state["dossier"]["argument"], state["dossier"])
+        if gaps:
+            raise ReviewBlocked("Writing blocked: the approved argument cannot support a paper ("
+                                + "; ".join(gaps) + "). Review a fuller argument.")
         r = state["release"]
         if r["id"] != digest({k: v for k, v in r.items() if k != "id"}) or \
                 r["review_hash"] != state["review_hash"] or r["dossier_hash"] != digest(state["dossier"]) or \

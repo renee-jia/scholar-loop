@@ -73,7 +73,11 @@ class SchemaRoutedLLM(MockLLM):
                              "claims": [{"id": "claim_result", "text": f"The error is {m['value']} percent.",
                                          "kind": "observation", "evidence": [m["run_id"]],
                                          "measurements": [ref], "depends_on": [], "scope": "The measured setting."}],
-                             "limitations": ["The mechanism remains untested."]}
+                             "limitations": ["The mechanism remains untested."],
+                             "setup": [{"id": "setup_scorer", "text": "Runs are scored by the frozen scorer.",
+                                        "evidence": ["scorer"]}],
+                             "related_work": [{"id": f"related_{i}", "text": "This paper studies schedules.",
+                                               "papers": [pid]} for i, pid in enumerate(d["papers"])]}
             return self.argument
         if "dispositions" in p:
             claims = dossier["argument"]["claims"]

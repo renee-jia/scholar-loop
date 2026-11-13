@@ -42,6 +42,19 @@ def agenda(tmp_path):
     return ExperimentAgenda(s)
 
 
+def _reporting_every_arm(dossier):
+    """The shared argument plus one observation claim per protocol arm, and a passing review of
+    it: every arm of an analysed protocol must be reported, whatever is concluded from it."""
+    arms = {m["run_id"]: (ref, m["value"]) for ref, m in dossier["measurements"].items()
+            if m["run_id"].startswith("protocol_")}
+    claims = [{"id": f"claim_arm_{i}", "text": f"This arm recorded {value} percent.", "kind": "observation",
+               "evidence": [run], "measurements": [ref], "depends_on": [], "scope": "This arm only."}
+              for i, (run, (ref, value)) in enumerate(arms.items())]
+    checks = [{**PASS["claim_checks"][0], "claim_id": c["id"], "evidence": c["evidence"]} for c in claims]
+    return ({**ARGUMENT, "claims": [*ARGUMENT["claims"], *claims]},
+            {**PASS, "claim_checks": [*PASS["claim_checks"], *checks]})
+
+
 def test_real_stub_protocol_runs_negative_conditions_and_rereviews(tmp_path):
     a = agenda(tmp_path)
     state = a.plan(spec=copy.deepcopy(SPEC))
@@ -70,11 +83,14 @@ def test_real_stub_protocol_runs_negative_conditions_and_rereviews(tmp_path):
     dossier = build_dossier(a.review.inputs())
     assert not dossier["checks"]
     assert dossier["measurements"][f"protocol:{pid}::val_top1_err.difference.ablation"]["value"] == diff
-    disposition = {**PASS, "dispositions": [{"issue_id": "r1:experimental:1", "status": "verified",
+    with pytest.raises(ReviewBlocked, match="ran but no claim reports their recorded value"):
+        a.review.review(argument=ARGUMENT)                 # refused before any reviewer is called
+    argument, passing = _reporting_every_arm(dossier)
+    disposition = {**passing, "dispositions": [{"issue_id": "r1:experimental:1", "status": "verified",
                     "reason": "The matched comparison is now recorded, within the narrow stated scope.",
                     "evidence": [f"protocol:{pid}"]}]}
-    a.review.llm = MockLLM(jsons=[PASS, disposition, PASS, PASS])
-    state = a.review.review(argument=ARGUMENT)
+    a.review.llm = MockLLM(jsons=[passing, disposition, passing, passing])
+    state = a.review.review(argument=argument)
     assert state["status"] == "READY_FOR_AUTHOR"
     with pytest.raises(ReviewBlocked):
         a.review.require_release()  # experiments/critics never act as the author
@@ -185,10 +201,11 @@ def test_declared_data_change_invalidates_later_writing_release(tmp_path):
     spec["data_files"] = ["dataset.txt"]
     pid = a.plan(spec=spec)["protocol_id"]
     a.execute(pid, author="Researcher")
-    disposition = {**PASS, "dispositions": [{"issue_id": "r1:experimental:1", "status": "verified",
+    argument, passing = _reporting_every_arm(build_dossier(a.review.inputs()))
+    disposition = {**passing, "dispositions": [{"issue_id": "r1:experimental:1", "status": "verified",
                     "reason": "The control was executed under the frozen protocol.", "evidence": [f"protocol:{pid}"]}]}
-    a.review.llm = MockLLM(jsons=[PASS, disposition, PASS, PASS])
-    state = a.review.review(argument=ARGUMENT)
+    a.review.llm = MockLLM(jsons=[passing, disposition, passing, passing])
+    state = a.review.review(argument=argument)
     a.review.approve(author="Researcher", review_hash=state["review_hash"])
     a.review.require_release()
     data.write_text("different data")

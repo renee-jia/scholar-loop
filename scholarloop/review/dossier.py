@@ -441,6 +441,33 @@ def _validate_support(argument: dict, dossier: dict, claim_ids: list[str]) -> li
     return errors
 
 
+def paper_readiness(argument: dict, dossier: dict) -> list[str]:
+    """What a paper could not be written without. Writing may use approved statements only, so
+    an argument of conclusions alone passes review and then stalls two stages into writing. This
+    is checked when the argument is built, before any reviewer is called, and again before
+    writing starts. It asks whether the material exists, not whether it is right."""
+    gaps = []
+    if not argument.get("setup"):
+        gaps.append("no setup statements: state the settings a reader needs to rerun the study, "
+                    "each citing the record that states it")
+    if dossier["papers"] and not argument.get("related_work"):
+        gaps.append("no related_work statements although papers were reviewed: say how the study "
+                    "stands to the papers it builds on or differs from")
+    bound = {dossier["measurements"][ref]["run_id"] for c in argument["claims"]
+             for ref in c["measurements"] if ref in dossier["measurements"]}
+    for ref, protocol in dossier.get("protocols", {}).items():
+        if not protocol.get("analysis"):
+            continue
+        pid = ref.removeprefix("protocol:")
+        missing = sorted(r["protocol"]["condition"] for r in dossier["runs"]
+                         if r.get("protocol", {}).get("id") == pid and r["id"] not in bound
+                         and any(m["run_id"] == r["id"] for m in dossier["measurements"].values()))
+        if missing:
+            gaps.append(f"arms {missing} of {ref} ran but no claim reports their recorded value: "
+                        "report every arm in an observation claim, even one whose reading is withdrawn")
+    return gaps
+
+
 def approved_statements(dossier: dict) -> dict:
     a = dossier["argument"]
     result = {c["id"]: c for c in a["claims"]}

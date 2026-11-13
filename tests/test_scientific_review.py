@@ -32,6 +32,7 @@ ARGUMENT = {
                 "measurements": ["exp_0001::val_top1_err.full"], "depends_on": [],
                 "scope": "This recipe and validation split only."}],
     "limitations": ["This observation does not establish a causal mechanism."],
+    "setup": [{"id": "setup_scorer", "text": "Runs are scored by the frozen scorer.", "evidence": ["scorer"]}],
 }
 ISSUE = {"target": "claim_error", "severity": "blocker", "observation": "The matched control is missing.",
          "evidence": ["exp_0001"], "required_action": "Run the compute-matched control.",
@@ -497,3 +498,38 @@ def test_a_failure_after_a_panel_round_keeps_that_round(tmp_path):
     assert saved["outline_discussion"][0]["accepted"] is False
     with pytest.raises(ReviewBlocked, match="Panel concerns"):          # and it still cannot advance
         WritingSession(MockLLM(), p, out, ledger_path=led, registry_dir=reg).key_points()
+
+
+# ---- can this argument support a paper? asked before reviewers and before writing -----------
+def test_an_argument_of_conclusions_alone_is_refused_before_any_reviewer_is_called(tmp_path):
+    from scholarloop.review.critics import ArgumentBuilder
+    from scholarloop.review.dossier import paper_readiness
+    paths = setup(tmp_path)
+    bare = {k: v for k, v in ARGUMENT.items() if k != "setup"}
+    llm = MockLLM(jsons=[PASS] * 4)
+    with pytest.raises(ReviewBlocked, match="cannot support a paper: no setup statements"):
+        session(paths, llm).review(argument=bare)
+    assert llm.calls == []
+    dossier = build_dossier(session(paths).inputs())
+    assert paper_readiness(ARGUMENT, dossier) == []
+    dossier["papers"] = {"arXiv:1": {"arxiv_id": "arXiv:1", "title": "t", "summary": "s"}}
+    (gap,) = paper_readiness(ARGUMENT, dossier)                    # papers were reviewed: relate to them
+    assert gap.startswith("no related_work statements")
+    builder = ArgumentBuilder(MockLLM(jsons=[bare, ARGUMENT]))     # the builder is sent back for them
+    dossier["papers"] = {}
+    assert builder.run({"dossier": dossier}) == ARGUMENT
+    assert "no setup statements" in builder.llm.calls[1]["prompt"]
+
+
+def test_a_release_whose_argument_cannot_support_a_paper_does_not_start_writing(tmp_path):
+    from scholarloop.review.contracts import digest
+    paths = setup(tmp_path)
+    s = released(paths)
+    state = s.load()
+    del state["dossier"]["argument"]["setup"]          # a release approved before setup statements existed
+    state["review_hash"] = s._review_hash(state)
+    state["release"]["review_hash"] = state["review_hash"]
+    state["release"]["dossier_hash"] = digest(state["dossier"])
+    s._save(state)
+    with pytest.raises(ReviewBlocked, match="the approved argument cannot support a paper"):
+        s.require_release()

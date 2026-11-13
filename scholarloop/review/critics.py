@@ -4,7 +4,7 @@ import json
 
 from scholarloop.core.agent import Agent
 from scholarloop.review.contracts import ARGUMENT_SCHEMA, REVIEW_SCHEMA, TEXT, STRINGS, obj
-from scholarloop.review.dossier import evidence_ids, prompt_view, validate_argument
+from scholarloop.review.dossier import evidence_ids, paper_readiness, prompt_view, validate_argument
 
 
 class ArgumentBuilder(Agent):
@@ -42,7 +42,9 @@ class ArgumentBuilder(Agent):
         return json.dumps({k: v for k, v in ctx.items() if k != "dossier"}, ensure_ascii=False)
 
     def postcheck(self, output, ctx):
-        return validate_argument(output, ctx["dossier"])
+        errors = validate_argument(output, ctx["dossier"])
+        return errors or ["The argument cannot support a paper: " + gap
+                          for gap in paper_readiness(output, ctx["dossier"])]
 
 
 def _dossier_block(dossier):
