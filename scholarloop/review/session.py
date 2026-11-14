@@ -100,9 +100,15 @@ class ScientificReviewSession:
                     argument, done = before["argument"], list(old.get("reports", []))
                     state["round"], state["resumed_roles"] = old["round"], [r["role"] for r in done]
                 if argument is None:
+                    # Same evidence and same feedback: the revision exists to close the open
+                    # issues, so statements no open issue is about are kept word for word.
+                    settled = bool(before.get("argument") and old.get("feedback", "") == feedback
+                                   and before.get("input_hash") == dossier["input_hash"]
+                                   and any(i["status"] == "open" for i in state["issues"]))
                     argument = ArgumentBuilder(self.llm, trace=self.trace).run({
-                        "dossier": dossier, "previous_argument": (old.get("dossier") or {}).get("argument"),
-                        "previous_issues": state["issues"], "author_feedback": feedback})
+                        "dossier": dossier, "previous_argument": before.get("argument"),
+                        "previous_issues": state["issues"], "author_feedback": feedback,
+                        "keep_settled": settled})
                 errors = validate_argument(argument, dossier)
                 if errors:
                     raise ReviewBlocked("Invalid claim graph: " + "; ".join(errors))

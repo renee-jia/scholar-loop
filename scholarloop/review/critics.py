@@ -1,6 +1,7 @@
 """Independent first-pass reviews of one immutable dossier; no peer votes in prompts."""
 
 import json
+import re
 
 from scholarloop.core.agent import Agent
 from scholarloop.review.contracts import ARGUMENT_SCHEMA, REVIEW_SCHEMA, TEXT, STRINGS, obj
@@ -55,7 +56,11 @@ class ArgumentBuilder(Agent):
         # the few that still have to be fixed, so they are separated by what is owed on each.
         issues = ctx.get("previous_issues", [])
         brief = lambda i: {k: i[k] for k in ("id", "target", "required_action")}
-        rest = {k: v for k, v in ctx.items() if k not in ("dossier", "previous_issues")}
+        rest = {k: v for k, v in ctx.items() if k not in ("dossier", "previous_issues", "keep_settled")}
+        if ctx.get("keep_settled"):
+            rest["revision_rule"] = ("Only statements that an open issue targets or names by id will "
+                                     "change; every other existing statement is kept as it was, whatever "
+                                     "you write for it. You may add statements.")
         return json.dumps({
             **rest,
             "open_issues": [{**{k: i[k] for k in ("id", "target", "severity", "observation",
@@ -68,9 +73,37 @@ class ArgumentBuilder(Agent):
         }, ensure_ascii=False)
 
     def postcheck(self, output, ctx):
+        if ctx.get("keep_settled"):
+            keep_settled(output, ctx["previous_argument"], ctx.get("previous_issues", []))
         errors = validate_argument(output, ctx["dossier"])
         return errors or ["The argument cannot support a paper: " + gap
                           for gap in paper_readiness(output, ctx["dossier"])]
+
+
+def keep_settled(argument, previous, issues) -> None:
+    """Put back, in place, every statement of the previous argument that no open issue is about.
+
+    A revision is asked to close the open issues, but the model rewrites the whole argument and
+    a sentence that closed an earlier issue is easily lost in the rewrite, which reopens it a
+    round later. So when the evidence and the author's feedback are unchanged, only what an open
+    issue targets or names may change: the rest is restored word for word, and statements the
+    revision dropped come back. New statements are kept. An issue about the dossier as a whole
+    may need any limitation changed, so limitations are restored only when no open issue is."""
+    owed = [i for i in issues if i["status"] == "open"]
+    text = " ".join(f"{i['target']} {i['required_action']} {(i.get('resolution') or {}).get('reason', '')}"
+                    for i in owed)
+    for key in ("claims", "setup", "related_work"):
+        before = {x["id"]: x for x in previous.get(key, [])}
+        if not before and key not in argument:
+            continue
+        now = {x["id"]: x for x in argument.get(key, [])}
+        named = {i for i in before if re.search(rf"\b{re.escape(i)}\b", text)}
+        # A named statement takes the revision's version, and is gone if the revision withdrew it.
+        merged = [now.get(i) if i in named else x for i, x in before.items()]
+        merged = [x for x in merged if x is not None]
+        argument[key] = merged + [x for i, x in now.items() if i not in before]
+    if not any(i["target"] == "dossier" or "limitation" in text.lower() for i in owed):
+        argument["limitations"] = list(previous["limitations"])
 
 
 def _dossier_block(dossier):

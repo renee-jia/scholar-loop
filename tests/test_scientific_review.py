@@ -683,3 +683,27 @@ def test_the_argument_builder_is_shown_what_is_still_owed_separately_from_what_i
     assert prompt["settled_issues"] == [{"id": "r1:experimental:1", "target": "claim_error",
                                         "required_action": ISSUE["required_action"], "status": "verified"}]
     assert "previous_issues" not in prompt and prompt["author_feedback"] == "f"
+
+
+def test_a_revision_changes_only_what_an_open_issue_is_about():
+    from scholarloop.review.critics import keep_settled
+    claim = lambda i, text: {**ARGUMENT["claims"][0], "id": i, "text": text}
+    previous = {**ARGUMENT, "claims": [claim("claim_a", "A as approved."), claim("claim_b", "B as approved."),
+                                       claim("claim_c", "C as approved.")]}
+    revised = {**ARGUMENT, "claims": [claim("claim_a", "A rewritten."), claim("claim_b", "B rewritten."),
+                                      claim("claim_new", "A new claim.")],        # claim_c was dropped
+               "limitations": ["A different limitation."]}
+    issues = [{**ISSUE, "id": "r2:argument:1", "status": "open", "target": "claim_b"},
+              {**ISSUE, "id": "r1:argument:1", "status": "verified", "target": "claim_a"}]
+    keep_settled(revised, previous, issues)
+    assert [(c["id"], c["text"]) for c in revised["claims"]] == [
+        ("claim_a", "A as approved."), ("claim_b", "B rewritten."), ("claim_c", "C as approved."),
+        ("claim_new", "A new claim.")]
+    assert revised["limitations"] == ARGUMENT["limitations"] and revised["setup"] == ARGUMENT["setup"]
+    withdrawn = {**previous, "claims": previous["claims"][:1]}                   # drops claim_b and claim_c
+    keep_settled(withdrawn, previous, issues)
+    assert [c["id"] for c in withdrawn["claims"]] == ["claim_a", "claim_c"]      # only the targeted one may go
+    about_all = [{**ISSUE, "id": "r2:argument:2", "status": "open", "target": "dossier"}]
+    again = {**previous, "limitations": ["A different limitation."]}
+    keep_settled(again, previous, about_all)
+    assert again["limitations"] == ["A different limitation."]
