@@ -318,3 +318,9 @@ def test_a_gap_in_the_evidence_stops_the_stage_instead_of_asking_for_another_rew
     assert not transcript[-1]["accepted"] and evidence_gaps(transcript) == gap["issues"]
     with pytest.raises(ReviewBlocked, match="run scientific review again"):
         WritingSession._require_panel(transcript)
+
+
+def test_a_panel_over_approved_statements_is_told_their_text_is_fixed():
+    reviewed = Panelist(MockLLM(jsons=[]), "Skeptic", fixed_text=True)
+    assert "cannot reword one" in reviewed.system and "missing_evidence" in reviewed.system
+    assert "cannot reword one" not in Panelist(MockLLM(jsons=[]), "Skeptic").system

@@ -440,10 +440,24 @@ class Outliner(Agent):
 class Panelist(Agent):
     schema = PANEL_SCHEMA
 
-    def __init__(self, llm, role: str, *, trace=None):
+    # Said only when the paper is written from an approved argument. The panel judges the plan:
+    # which statements are used, where, and whether a paper can be built from them. The wording of
+    # a statement was settled by scientific review and the author, and no writing step can change
+    # it, so an objection to it must not hold the stage open: it would never close.
+    FIXED_TEXT = (" The plan is assembled from approved statements: fixed text that passed "
+                  "scientific review and that the author approved. The writer may choose, place and "
+                  "omit statements but cannot reword one. Judge the plan, not the statements. If "
+                  "you object to what an approved statement itself says, record it as a "
+                  "`suggestion` addressed to the author; it is `blocking` only when the plan uses "
+                  "a statement to say more than its text says, puts it where it misleads, or "
+                  "leaves out a statement the paper needs. If the paper needs something that no "
+                  "approved statement says, that is `missing_evidence`.")
+
+    def __init__(self, llm, role: str, *, trace=None, fixed_text: bool = False):
         super().__init__(llm, trace=trace)
         self.role = role
         self.name = f"panel:{role}"
+        self._fixed_text = fixed_text
         self.system = (PERSONAS.get(role, f"You are the {role} on a paper-planning panel.")
                        + " List concrete, actionable issues (target + issue + suggestion) and give each a "
                          "severity. `blocking` is for what would make the paper wrong or unusable if "
@@ -456,7 +470,8 @@ class Panelist(Agent):
                          "better: wording, order, emphasis, repetition, extra detail. Vote revise "
                          "only if you list a blocking issue; otherwise vote accept, with or without "
                          "suggestions. Do not request experiments that were not run; work with the "
-                         "evidence given.\n\n"
+                         "evidence given."
+                       + (self.FIXED_TEXT if fixed_text else "") + "\n\n"
                        + load_skill("review"))
 
     def postcheck(self, output: dict, ctx: dict) -> list[str]:
@@ -862,7 +877,7 @@ class WritingSession:
         self.outliner = Outliner(llm, self.bank, trace=self.trace)
         self.key_pointer = KeyPointer(llm, self.bank, trace=self.trace)
         self.drafter = SectionDrafter(llm, self.bank, trace=self.trace)
-        self.panel = [Panelist(llm, r, trace=self.trace) for r in panel_roles]
+        self.panel = [Panelist(llm, r, trace=self.trace, fixed_text=not demo) for r in panel_roles]
         self.reviewers = [PaperReviewer(llm, p, trace=self.trace) for p in reviewer_personas]
         sp = self.out / self.STATE_FILE
         self.state = WritingState.from_dict(json.loads(sp.read_text())) if sp.exists() else WritingState()
