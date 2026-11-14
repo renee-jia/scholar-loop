@@ -41,6 +41,7 @@ invocations, or from another program. `examples/run_to_paper.py` ends every live
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -350,6 +351,23 @@ REVIEWER_PERSONAS = {
     "harsh-critical": "You are a harsh, critical reviewer looking for a result that would matter to the field.",
     "open-minded": "You are an open-minded reviewer looking for a non-obvious idea or finding.",
 }
+
+
+def _digest(value) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def _by_section(issues: list[str], key_points: dict) -> dict[str, list[str]]:
+    """Fidelity objections grouped by the section they begin with ("Results: ..."). An objection
+    that names no section of the draft is not routed, so nothing is rewritten for it."""
+    headings = {s["heading"].lower(): s["heading"] for s in key_points["sections"]}
+    routed: dict[str, list[str]] = {}
+    for issue in issues:
+        head = issue.split(":", 1)[0].strip().lower()
+        match = headings.get(head) or next((h for low, h in headings.items() if low in head or head in low and head), None)
+        if match:
+            routed.setdefault(match, []).append(issue)
+    return routed
 
 
 def _fmt_issues(issues: list[dict]) -> str:
@@ -665,6 +683,10 @@ class SectionDrafter(Agent):
                  "Key points to cover, in order:", pts, "", "Evidence details:", ev or "—"]
         if ctx.get("so_far"):
             parts += ["", "Sections already written (first sentences, for continuity):", ctx["so_far"]]
+        if ctx.get("objections"):
+            parts += ["", "Your previous version of this section:", ctx.get("previous", ""), "",
+                      "A fidelity check found that it changes what the approved statements say. Fix "
+                      "exactly these and keep the rest:", *[f"- {i}" for i in ctx["objections"]]]
         if self.bank.approved_dossier is None:
             parts += ["", "Write the section body as prose. Abstract: five sentences, no citations needed. "
                       "Other sections: one paragraph per one or two points, each paragraph opening with "
@@ -1006,6 +1028,8 @@ class WritingSession:
             render_keypoints_md(outline, kp, transcript, self._feedback("key_points")))
         return kp
 
+    FIDELITY_REVISIONS = 2
+
     # ---- [3] draft -------------------------------------------------------------------------------
     def draft(self) -> list[dict]:
         self._require_release()
@@ -1014,12 +1038,19 @@ class WritingSession:
         self._require_panel(self.state.keypoints_discussion)
         o, kp = self.state.outline, self.state.key_points
         purposes = {s["heading"].lower(): s["purpose"] for s in o["sections"]}
-        sections: list[dict] = []
-        for s in kp["sections"]:
+        # Sections already drafted for exactly this plan and release are kept: a fidelity
+        # objection or a crash in a later section must not cost the sections that were paid for.
+        key = _digest({"outline": o, "key_points": kp, "release": self.state.release_id})
+        saved = self.out / "draft_checkpoint.json"
+        done = json.loads(saved.read_text()) if saved.exists() else {}
+        done = done if done.get("key") == key else {"key": key, "sections": {}, "issues": []}
+
+        def write(s: dict, sections: list[dict], objections: list[str]) -> dict:
             so_far = "\n".join(f"- {d['heading']}: {_sentences(d['body'])[0] if d['body'].strip() else ''}"
                                for d in sections)
             ctx = {"outline": o, "heading": s["heading"], "purpose": purposes.get(s["heading"].lower(), ""),
-                   "points": s["points"], "so_far": so_far}
+                   "points": s["points"], "so_far": so_far, "objections": objections,
+                   "previous": done["sections"].get(s["heading"], {}).get("body", "") if objections else ""}
             warnings: list[str] = []
             try:
                 body = self.drafter.run(ctx)["body"]
@@ -1032,12 +1063,36 @@ class WritingSession:
             for i, p in enumerate(s["points"], 1):
                 if containment(p["claim"], body) < 0.4:
                     warnings.append(f"key point {i} may not be covered: \"{p['claim'][:70]}…\"")
-            sections.append({"heading": s["heading"], "body": body, "warnings": warnings})
+            section = {"heading": s["heading"], "body": body, "warnings": warnings}
+            done["sections"][s["heading"]] = section
+            atomic_json(saved, done)
+            return section
+
+        def assemble(objections: dict[str, list[str]]) -> list[dict]:
+            sections: list[dict] = []
+            for s in kp["sections"]:
+                mine = objections.get(s["heading"], [])
+                kept = done["sections"].get(s["heading"])
+                sections.append(kept if kept and not mine else write(s, sections, mine))
+            return sections
+
+        sections = assemble(_by_section(done["issues"], kp))
         if not self.demo:
-            verdict = FidelityReviewer(self.llm, trace=self.trace).run({
-                "dossier": self.bank.approved_dossier, "title": o["title"], "sections": sections})
-            if verdict["verdict"] != "pass":
-                raise ReviewBlocked("Draft changed approved claims: " + "; ".join(verdict["issues"]))
+            for attempt in range(self.FIDELITY_REVISIONS + 1):
+                verdict = FidelityReviewer(self.llm, trace=self.trace).run({
+                    "dossier": self.bank.approved_dossier, "title": o["title"], "sections": sections})
+                done["issues"] = verdict["issues"] if verdict["verdict"] != "pass" else []
+                atomic_json(saved, done)
+                if not done["issues"]:
+                    break
+                routed = _by_section(done["issues"], kp)
+                if attempt == self.FIDELITY_REVISIONS or not routed:
+                    (self.out / "draft_rejected.md").write_text(
+                        render_paper_md(o, sections, demo=self.demo) + "\n## Fidelity objections\n\n"
+                        + "\n".join(f"- {i}" for i in done["issues"]) + "\n")
+                    raise ReviewBlocked("Draft changed approved claims (see draft_rejected.md): "
+                                        + "; ".join(done["issues"]))
+                sections = assemble(routed)       # only the sections objected to are written again
             self._require_release()  # evidence may have changed during drafting
         self.state.sections, self.state.review = sections, None
         self.state.stage = "drafted"

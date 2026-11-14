@@ -710,3 +710,34 @@ def test_a_revision_changes_only_what_an_open_issue_is_about():
     again = {**previous, "limitations": ["A different limitation."]}
     keep_settled(again, previous, about_all)
     assert again["limitations"] == ["A different limitation."]
+
+
+def test_a_fidelity_objection_rewrites_only_its_section_and_keeps_the_rest(tmp_path):
+    paths = setup(tmp_path)
+    released(paths)
+    p, led, reg, out = paths
+    outline, kp, bodies = writing_outputs()
+    objection = {"verdict": "revise", "issues": ["Results: 'The validation error is 7.25 percent' drops the scope."]}
+    llm = MockLLM(jsons=[outline, *([PANEL_PASS] * 3), kp, *([PANEL_PASS] * 3), *bodies, objection,
+                         bodies[1], {"verdict": "pass", "issues": []}])
+    w = WritingSession(llm, p, out, ledger_path=led, registry_dir=reg)
+    w.outline()
+    w.key_points()
+    before = len(llm.calls)
+    w.draft()
+    drafted = [c for c in llm.calls[before:] if "Section to write" in c["prompt"]]
+    assert len(drafted) == 4 and "drops the scope" in drafted[-1]["prompt"]     # three sections, then Results again
+    assert w.stage == "drafted" and (out / "paper.md").exists()
+
+    # an objection that survives the revisions keeps the draft on disk for the author to read
+    out2 = tmp_path / "second"
+    llm = MockLLM(jsons=[outline, *([PANEL_PASS] * 3), kp, *([PANEL_PASS] * 3), *bodies,
+                         objection, bodies[1], objection, bodies[1], objection])
+    w = WritingSession(llm, p, out2, ledger_path=led, registry_dir=reg, review_dir=out)
+    w.outline()
+    w.key_points()
+    with pytest.raises(ReviewBlocked, match="draft_rejected.md"):
+        w.draft()
+    assert "drops the scope" in (out2 / "draft_rejected.md").read_text() and w.stage == "keypointed"
+    saved = json.loads((out2 / "draft_checkpoint.json").read_text())
+    assert set(saved["sections"]) == {"Abstract", "Results", "Limitations"}
