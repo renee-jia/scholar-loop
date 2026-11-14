@@ -831,8 +831,12 @@ def run_claim_audit(llm, dossier: dict, papers: dict[str, str], out_dir, *, pass
             claims = json.loads(path.read_text())["claims"]
             counts = {v: sum(c["verdict"] == v for c in claims) for v in VERDICTS}
             rows.append({"paper": name, "pass": n, "words": len(paper.split()), "claims": len(claims), **counts})
+    def group(name):                          # baseline_2 -> baseline; staged -> staged
+        head, _, tail = name.rpartition("_")
+        return head if head and tail.isdigit() else name
+
     def total(prefix):
-        mine = [r for r in rows if r["paper"].startswith(prefix)]
+        mine = [r for r in rows if group(r["paper"]) == prefix]
         claims = sum(r["claims"] for r in mine)
         beyond = sum(r["claims"] - r["supported"] for r in mine)
         return {"audits": len(mine), "claims": claims, "beyond_evidence": beyond,
@@ -845,7 +849,7 @@ def run_claim_audit(llm, dossier: dict, papers: dict[str, str], out_dir, *, pass
                                 "reviewers that approved the staged paper's statements, so agreement between "
                                 "them is not independent confirmation. Claims within a paper are not "
                                 "independent, so the intervals are too narrow.",
-              "rows": rows, "staged": total("staged"), "baseline": total("baseline")}
+              "rows": rows, "writers": {g: total(g) for g in dict.fromkeys(group(r["paper"]) for r in rows)}}
     (out / "claims.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
     (out / "claims.md").write_text(render_claims(report))
     return report
@@ -858,8 +862,7 @@ def render_claims(report: dict) -> str:
     lines += [f"| {r['paper']} | {r['pass']} | {r['words']} | {r['claims']} | {r['supported']} | "
               f"{r['overstated']} | {r['unsupported']} | {r['contradicted']} |" for r in report["rows"]]
     lines += ["", "| writer | audits | result claims | beyond the evidence |", "|---|---|---|---|"]
-    for name in ("staged", "baseline"):
-        t = report[name]
+    for name, t in report["writers"].items():
         if t["claims"]:
             lo, hi = t["interval_95"]
             lines.append(f"| {name} | {t['audits']} | {t['claims']} | {t['beyond_evidence']} "
@@ -1001,6 +1004,8 @@ def main(argv=None) -> int:
                                       "against the evidence (USES THE API)")
     run_args(p)
     p.add_argument("--passes", type=int, default=2)
+    p.add_argument("--paper", action="append", metavar="NAME=FILE",
+                   help="another paper on the same study to audit; NAME_<n> groups repeats of one writer")
     p.add_argument("--model")
     a = ap.parse_args(argv)
     out = Path(a.out)
@@ -1061,6 +1066,9 @@ def main(argv=None) -> int:
         papers = {"staged": "\n\n".join(f"## {s['heading']}\n\n{s['body']}" for s in state["sections"])}
         papers.update({f"baseline_{i}": f.read_text() for i, f in
                        enumerate(sorted(out.glob("baseline_[0-9]*.md")), 1)})
+        for spec in a.paper or []:
+            name, _, location = spec.partition("=")
+            papers[name] = Path(location).read_text()
         if len(papers) == 1:
             print("No baseline papers in --out; run the baseline first.", file=sys.stderr)
             return 1

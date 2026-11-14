@@ -240,8 +240,8 @@ def test_claim_audit_quotes_the_paper_blind_and_counts_claims_beyond_the_evidenc
     llm = MockLLM(jsons=[{"claims": [ok]}, {"claims": [ok, invented]}, {"claims": [ok, over]}])
     report = run_claim_audit(llm, ctx.bank.approved_dossier, {"staged": staged, "baseline_1": baseline},
                              tmp_path / "claims", passes=1)
-    assert report["staged"]["beyond_evidence"] == 0 and report["staged"]["claims"] == 1
-    assert report["baseline"]["beyond_evidence"] == 1 and report["baseline"]["claims"] == 2
+    assert report["writers"]["staged"]["beyond_evidence"] == 0 and report["writers"]["staged"]["claims"] == 1
+    assert report["writers"]["baseline"]["beyond_evidence"] == 1 and report["writers"]["baseline"]["claims"] == 2
     assert "claim_error" not in ClaimBlock(ctx.bank.approved_dossier)      # the argument is withheld
     again = run_claim_audit(MockLLM(jsons=[]), ctx.bank.approved_dossier,
                             {"staged": staged, "baseline_1": baseline}, tmp_path / "claims", passes=1)
