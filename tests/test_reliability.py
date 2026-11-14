@@ -223,3 +223,31 @@ def test_a_reviewed_baseline_is_audited_against_the_whole_dossier_not_the_run_me
     assert not ok["would_be_rejected"]
     bad = audit_paper("The error is 9.87 percent [exp_0001] [arXiv:9999.00001].", evidence)
     assert bad["ungrounded_numbers"] == ["9.87"] and bad["unknown_ids"] == ["arXiv:9999.00001"]
+
+
+def test_claim_audit_quotes_the_paper_blind_and_counts_claims_beyond_the_evidence(reviewed_run, tmp_path):
+    from scholarloop.reliability import blind_paper, run_claim_audit
+    profile, paths = reviewed_run
+    _, ctx = load_cases(profile, **paths)
+    staged = "The validation error is 7.25 percent [claim_error]."
+    baseline = "The validation error is 7.25 percent. The recipe is robustly better."
+    assert "claim_error" not in blind_paper(staged) and blind_paper(staged).endswith("percent.")
+    ok = {"quote": "The validation error is 7.25 percent.", "kind": "observation", "verdict": "supported",
+          "reason": "The run records it.", "evidence": ["exp_0001"]}
+    over = {"quote": "The recipe is robustly better.", "kind": "interpretation", "verdict": "overstated",
+            "reason": "One run records no comparison.", "evidence": ["exp_0001"]}
+    invented = {**over, "quote": "The recipe always wins."}          # not in the paper: sent back
+    llm = MockLLM(jsons=[{"claims": [ok]}, {"claims": [ok, invented]}, {"claims": [ok, over]}])
+    report = run_claim_audit(llm, ctx.bank.approved_dossier, {"staged": staged, "baseline_1": baseline},
+                             tmp_path / "claims", passes=1)
+    assert report["staged"]["beyond_evidence"] == 0 and report["staged"]["claims"] == 1
+    assert report["baseline"]["beyond_evidence"] == 1 and report["baseline"]["claims"] == 2
+    assert "claim_error" not in ClaimBlock(ctx.bank.approved_dossier)      # the argument is withheld
+    again = run_claim_audit(MockLLM(jsons=[]), ctx.bank.approved_dossier,
+                            {"staged": staged, "baseline_1": baseline}, tmp_path / "claims", passes=1)
+    assert again["rows"] == report["rows"]                                 # finished audits are reused
+
+
+def ClaimBlock(dossier):
+    from scholarloop.reliability import ClaimAuditor
+    return ClaimAuditor(MockLLM(jsons=[]), dossier)._block
