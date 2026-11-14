@@ -669,3 +669,17 @@ def test_a_measured_quantity_spelled_out_in_words_is_rejected(tmp_path):
     errors = validate_argument({**ARGUMENT, "claims": [claim]}, dossier)
     assert any("spelled out in words" in e for e in errors)
     assert validate_argument(ARGUMENT, dossier) == []
+
+
+def test_the_argument_builder_is_shown_what_is_still_owed_separately_from_what_is_settled():
+    from scholarloop.review.critics import ArgumentBuilder
+    issue = lambda n, status, **kw: {**ISSUE, "id": f"r1:experimental:{n}", "status": status, **kw}
+    prompt = json.loads(ArgumentBuilder(MockLLM(jsons=[])).build_prompt({"dossier": {}, "author_feedback": "f",
+        "previous_issues": [issue(1, "verified"), issue(2, "noted"),
+                            issue(3, "open", resolution={"reason": "The median is still absent."})]}))
+    assert [i["id"] for i in prompt["open_issues"]] == ["r1:experimental:3"]
+    assert prompt["open_issues"][0]["still_missing"] == "The median is still absent."
+    assert [i["id"] for i in prompt["notes"]] == ["r1:experimental:2"]
+    assert prompt["settled_issues"] == [{"id": "r1:experimental:1", "target": "claim_error",
+                                        "required_action": ISSUE["required_action"], "status": "verified"}]
+    assert "previous_issues" not in prompt and prompt["author_feedback"] == "f"

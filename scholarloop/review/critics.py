@@ -21,6 +21,9 @@ class ArgumentBuilder(Agent):
         "Use words for structural counts. Novelty and generalization must stay within evidence. "
         "Include concrete limitations and competing explanations. Never silently remove a "
         "previous objection: explain reframing through the revised claims and limitations. "
+        "Every entry in `open_issues` must be closed by this revision: do exactly what its "
+        "required_action and still_missing ask, in the statement it targets. `notes` are optional "
+        "improvements. `settled_issues` were already resolved: keep what resolved them. "
         "A claim may contain only numerals that are the value, std, median, seed_sd or a "
         "per-seed value of a measurement listed in that claim's own `measurements`, or a value "
         "a cited run reported about itself: no rounding to a different figure, no sums, "
@@ -48,7 +51,21 @@ class ArgumentBuilder(Agent):
         return _dossier_block(ctx["dossier"])
 
     def build_prompt(self, ctx):
-        return json.dumps({k: v for k, v in ctx.items() if k != "dossier"}, ensure_ascii=False)
+        # After many rounds most issues are closed. Handing all of them over in one list buries
+        # the few that still have to be fixed, so they are separated by what is owed on each.
+        issues = ctx.get("previous_issues", [])
+        brief = lambda i: {k: i[k] for k in ("id", "target", "required_action")}
+        rest = {k: v for k, v in ctx.items() if k not in ("dossier", "previous_issues")}
+        return json.dumps({
+            **rest,
+            "open_issues": [{**{k: i[k] for k in ("id", "target", "severity", "observation",
+                                                  "required_action", "resolution_criterion")},
+                             "still_missing": (i.get("resolution") or {}).get("reason", "")}
+                            for i in issues if i["status"] == "open"],
+            "notes": [brief(i) for i in issues if i["status"] == "noted"],
+            "settled_issues": [{**brief(i), "status": i["status"]} for i in issues
+                               if i["status"] in ("verified", "out_of_scope")],
+        }, ensure_ascii=False)
 
     def postcheck(self, output, ctx):
         errors = validate_argument(output, ctx["dossier"])
