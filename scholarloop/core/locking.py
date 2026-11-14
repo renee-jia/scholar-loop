@@ -1,6 +1,7 @@
 """Nonblocking advisory process lock, released by the OS even after a crash."""
 
 from contextlib import contextmanager
+import errno
 
 
 @contextmanager
@@ -14,7 +15,14 @@ def exclusive_lock(path):
                 stream.write(b"\0")
                 stream.flush()
             stream.seek(0)
-            msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            try:
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError as exc:
+                # Windows reports a competing lock as EACCES, not EAGAIN.
+                # Keep real file-access failures from open/write distinct.
+                if exc.errno in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                    raise BlockingIOError(errno.EAGAIN, "Another process holds this lock", str(path)) from exc
+                raise
             try:
                 yield
             finally:

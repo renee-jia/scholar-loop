@@ -2,11 +2,17 @@ name: tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, "codex/**"]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
+    # Keep the full engine suite on main and PRs; feature pushes run the UI checks.
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -27,3 +33,34 @@ jobs:
           pip install -e ".[dev,engines]"
       - name: Run tests
         run: pytest -q
+
+  ui:
+    name: UI (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.12"]
+        include:
+          - os: ubuntu-latest
+            python: "3.10"
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install UI and test dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Test UI, startup, paths, locks, and offline workers
+        run: python -m pytest tests/ui tests/test_case_study.py tests/core/test_call_budget.py tests/experiment/test_confirmation_boundary.py -q
+      - name: Check installed console entry point
+        run: scholarloop-ui --help
+      - name: Test browser interactions
+        run: node --test tests/ui/frontend.test.cjs
