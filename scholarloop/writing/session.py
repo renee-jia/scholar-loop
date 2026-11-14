@@ -503,7 +503,11 @@ class Panelist(Agent):
                   "`suggestion` addressed to the author; it is `blocking` only when the plan uses "
                   "a statement to say more than its text says, puts it where it misleads, or "
                   "leaves out a statement the paper needs. If the paper needs something that no "
-                  "approved statement says, that is `missing_evidence`.")
+                  "approved statement says, that is `missing_evidence`. A detail that an approved "
+                  "limitation already declares unrecorded is not: the paper can say it is absent by "
+                  "citing that limitation, and nobody can supply it afterwards. If the plan cites "
+                  "the limitation, the matter is closed; if you would still like the detail, record "
+                  "a `suggestion` to the author.")
 
     def __init__(self, llm, role: str, *, trace=None, fixed_text: bool = False):
         super().__init__(llm, trace=trace)

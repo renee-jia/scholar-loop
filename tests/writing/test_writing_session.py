@@ -334,4 +334,7 @@ def test_a_gap_in_the_evidence_stops_the_stage_instead_of_asking_for_another_rew
 def test_a_panel_over_approved_statements_is_told_their_text_is_fixed():
     reviewed = Panelist(MockLLM(jsons=[]), "Skeptic", fixed_text=True)
     assert "cannot reword one" in reviewed.system and "missing_evidence" in reviewed.system
+    # A detail an approved limitation declares unrecorded cannot be supplied later, so asking
+    # for it as missing evidence would stop the stage for good.
+    assert "already declares unrecorded is not" in reviewed.system
     assert "cannot reword one" not in Panelist(MockLLM(jsons=[]), "Skeptic").system
