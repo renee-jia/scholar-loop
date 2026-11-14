@@ -786,3 +786,19 @@ def test_a_verdict_on_a_prediction_needs_the_prediction_and_every_arm_needs_a_de
         {"id": "setup_arm", "text": "The treatment arm changes the sampler.", "evidence": ["c2"]},
         {"id": "setup_prediction", "text": "The protocol predicted that treat beats control.", "evidence": [ref]}]}
     assert paper_readiness(full, dossier) == []
+
+
+def test_a_statement_over_its_word_limit_is_sent_back_unless_it_was_carried_over_unchanged(tmp_path):
+    from scholarloop.review.critics import ArgumentBuilder
+    from scholarloop.review.dossier import WORD_LIMITS, overlong
+    long_text = "The validation error is 7.25 percent" + " in this scope" * 30 + "."
+    grown = {**ARGUMENT, "claims": [{**ARGUMENT["claims"][0], "text": long_text}],
+             "limitations": [*ARGUMENT["limitations"], "word " * (WORD_LIMITS["limitation"] + 1)]}
+    assert overlong(ARGUMENT) == []
+    first, second = overlong(grown)
+    assert first.startswith("claim_error is 96 words; the limit is 80") and "limitation" in first
+    assert second.startswith("limitation 2 is 61 words")
+    assert overlong(grown, previous=grown) == []           # nothing the revision was asked to change
+    dossier = build_dossier(session(setup(tmp_path)).inputs())
+    builder = ArgumentBuilder(MockLLM(jsons=[grown, ARGUMENT]))     # the builder is sent back to cut it
+    assert builder.run({"dossier": dossier}) == ARGUMENT

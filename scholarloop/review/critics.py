@@ -5,8 +5,8 @@ import re
 
 from scholarloop.core.agent import Agent
 from scholarloop.review.contracts import ARGUMENT_SCHEMA, REVIEW_SCHEMA, TEXT, STRINGS, obj
-from scholarloop.review.dossier import (approved_statements, evidence_ids, explain_unknown,
-                                         paper_readiness, prompt_view, validate_argument)
+from scholarloop.review.dossier import (WORD_LIMITS, approved_statements, evidence_ids, explain_unknown,
+                                         overlong, paper_readiness, prompt_view, validate_argument)
 
 
 class ArgumentBuilder(Agent):
@@ -37,7 +37,10 @@ class ArgumentBuilder(Agent):
         "sufficient for one, and make every statement stand on its own: its text is printed in "
         "the paper as written, so never refer to an earlier version of the argument, to labels "
         "or wording that were withdrawn, to reviewers, issues or review rounds, or to another "
-        "statement by its id. Say what is the case now. Report every arm that ran in an observation claim with its recorded "
+        "statement by its id. Say what is the case now. A claim states one finding in at most "
+        f"{WORD_LIMITS['claim']} words; a setup, related-work or limitation statement runs to at most "
+        f"{WORD_LIMITS['setup']}. A qualification of a claim is a limitation, written once, not one "
+        "more clause in the claim: a paper repeats every word of every statement. Report every arm that ran in an observation claim with its recorded "
         "value, including arms whose interpretation you withdraw: withdrawing a reading does not "
         "withdraw the measurement. In `setup`, state each fact a reader needs to rerun the study "
         "(model and data sizes, step budget, optimiser settings, thresholds, seeds and folds, "
@@ -75,7 +78,7 @@ class ArgumentBuilder(Agent):
     def postcheck(self, output, ctx):
         if ctx.get("keep_settled"):
             keep_settled(output, ctx["previous_argument"], ctx.get("previous_issues", []))
-        errors = validate_argument(output, ctx["dossier"])
+        errors = validate_argument(output, ctx["dossier"]) or overlong(output, ctx.get("previous_argument"))
         return errors or ["The argument cannot support a paper: " + gap
                           for gap in paper_readiness(output, ctx["dossier"])]
 
@@ -207,7 +210,9 @@ class ScientificCritic(Agent):
         "complete enough to rerun the study; raise an issue targeting the statement id when one "
         "misstates its source, and targeting the dossier when something needed is missing. "
         "A paper will be written from the argument's statements and nothing else, and the "
-        "argument cannot be extended once it is approved. So read it as that paper's only "
+        "argument cannot be extended once it is approved. A claim is held to "
+        f"{WORD_LIMITS['claim']} words, so ask for a qualification as a limitation or as a separate "
+        "claim, never as more text inside a claim. So read it as that paper's only "
         "material: a verdict on a prediction needs the prediction itself in a setup statement, "
         "a comparison needs both arms described, and a count of runs or seeds a reader would "
         "ask for needs a statement that gives it. Raise what is absent now, as an issue "

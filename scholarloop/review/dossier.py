@@ -511,6 +511,35 @@ def _validate_support(argument: dict, dossier: dict, claim_ids: list[str]) -> li
     return errors
 
 
+# Words a statement may run to. Every round of review asked for one more qualification inside a
+# claim, and nothing pushed back: after twenty rounds one claim was 290 words and the sixteen
+# claims together nearly two thousand, which a paper can only repeat. A qualification belongs
+# in a limitation, stated once.
+WORD_LIMITS = {"claim": 80, "setup": 60, "related_work": 60, "limitation": 60, "method_summary": 120}
+
+
+def overlong(argument: dict, previous: dict | None = None) -> list[str]:
+    """Statements over their word limit. One carried over unchanged from `previous` is not
+    reported: the revision was not asked to touch it."""
+    before = previous or {}
+    old = {x["id"]: x["text"] for key in ("claims", "setup", "related_work") for x in before.get(key, [])}
+    items = [("claim", c["id"], c["text"]) for c in argument["claims"]]
+    items += [(key, x["id"], x["text"]) for key in ("setup", "related_work") for x in argument.get(key, [])]
+    items += [("limitation", f"limitation {i}", text) for i, text in enumerate(argument["limitations"], 1)
+              if text not in before.get("limitations", [])]
+    if argument["method_summary"] != before.get("method_summary"):
+        items.append(("method_summary", "method_summary", argument["method_summary"]))
+    errors = []
+    for kind, name, text in items:
+        n = len(text.split())
+        if n > WORD_LIMITS[kind] and old.get(name) != text:
+            errors.append(f"{name} is {n} words; the limit is {WORD_LIMITS[kind]}. State one finding "
+                          "and move each qualification to a limitation, or split it into separate "
+                          "statements" if kind == "claim" else
+                          f"{name} is {n} words; the limit is {WORD_LIMITS[kind]}. Split it or cut it")
+    return errors
+
+
 def paper_readiness(argument: dict, dossier: dict) -> list[str]:
     """What a paper could not be written without. Writing may use approved statements only, so
     an argument of conclusions alone passes review and then stalls two stages into writing. This
