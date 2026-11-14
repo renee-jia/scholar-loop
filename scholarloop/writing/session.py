@@ -373,11 +373,19 @@ class Outliner(Agent):
         errs = []
         if self.bank.approved_dossier is not None:
             a = self.bank.approved_dossier["argument"]
-            texts = {c["text"] for c in a["claims"]}
-            if output["question"] != a["question"] or output["nugget"] not in texts:
-                errs.append("Use the approved question and an exact approved claim as the nugget")
-            if any(c not in texts for c in output["contributions"]):
-                errs.append("Contributions must be exact approved claims")
+            # The nugget and the contributions are approved claims, chosen by id. Their text and
+            # the question are filled in here, in place: retyping a long approved sentence failed
+            # on the first character that differed, three attempts in a row.
+            by_id = {c["id"]: c["text"] for c in a["claims"]}
+            output["question"] = a["question"]
+            output["nugget"] = by_id.get(output["nugget"].strip(), output["nugget"])
+            output["contributions"] = [by_id.get(c.strip(), c) for c in output["contributions"]]
+            texts = set(by_id.values())
+            if output["nugget"] not in texts:
+                errs.append("the nugget must be the id of one approved claim, e.g. " + next(iter(by_id)))
+            wrong = [c[:60] for c in output["contributions"] if c not in texts]
+            if wrong:
+                errs.append(f"each contribution must be the id of an approved claim; not ids: {wrong}")
             empty = [sec["heading"] for sec in output.get("sections", []) if not sec.get("evidence")]
             if empty:
                 errs.append(f"sections {empty} list no approved statement: every sentence of the paper "
@@ -417,6 +425,13 @@ class Outliner(Agent):
             parts += ["", "The discussion panel raised these issues — address every one:", _fmt_issues(ctx["issues"])]
         if ctx.get("feedback"):
             parts += ["", "The human author asked for these changes — follow them:", ctx["feedback"]]
+        if self.bank.approved_dossier is not None:
+            parts += ["", "Write the outline: title; nugget = the id of the one approved claim that is the "
+                      "paper's main finding; contributions = ids of approved claims, one per entry, nothing "
+                      "else in the entry; sections with purpose + the approved statement ids each will use. "
+                      "The question is fixed by the approved argument and is filled in for you. Abstract "
+                      "first; include Limitations."]
+            return "\n".join(parts)
         parts += ["", "Write the outline: title, question, nugget, contributions (each naming a specific "
                   "result), and sections with purpose + evidence ids. Abstract first; include Limitations."]
         return "\n".join(parts)

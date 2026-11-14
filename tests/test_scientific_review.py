@@ -80,8 +80,8 @@ def released(paths):
 
 def writing_outputs():
     text = ARGUMENT["claims"][0]["text"]
-    outline = {"title": "Recipe evaluation", "question": ARGUMENT["question"], "nugget": text,
-               "contributions": [text], "sections": [
+    outline = {"title": "Recipe evaluation", "question": "", "nugget": "claim_error",     # ids; text is filled in
+               "contributions": ["claim_error"], "sections": [
                    {"heading": "Abstract", "purpose": "observation", "evidence": ["claim_error"]},
                    {"heading": "Results", "purpose": "measurement", "evidence": ["claim_error"]},
                    {"heading": "Limitations", "purpose": "scope", "evidence": ["limit_1"]}]}
