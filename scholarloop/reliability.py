@@ -519,12 +519,15 @@ def run_injection(cases: list[Case], ctx: Context, *, seed: int = 0, per_case: i
             "ablation": ablation, "trials": trials}
 
 
+def _fmt(r: dict) -> str:
+    if not r["n"]:
+        return "n/a"
+    lo, hi = r["ci95"]
+    return f"{r['detected']}/{r['n']} ({100 * r['rate']:.0f}%, 95% CI {100 * lo:.0f}-{100 * hi:.0f})"
+
+
 def render_injection(report: dict) -> str:
-    def cell(r):
-        if not r["n"]:
-            return "n/a"
-        lo, hi = r["ci95"]
-        return f"{r['detected']}/{r['n']} ({100 * r['rate']:.0f}%, 95% CI {100 * lo:.0f}-{100 * hi:.0f})"
+    cell = _fmt
 
     c = report["controls"]
     lines = ["# Guard reliability: fault injection", "",
@@ -865,6 +868,95 @@ def render_claims(report: dict) -> str:
 
 
 # ---------------------------------------------------------------------------------------------
+# Semantic layer: faults the lexical checks pass, given to the fidelity reviewer
+# ---------------------------------------------------------------------------------------------
+def _changed_sentences(before: str, after: str) -> list[str]:
+    old = set(_squash(x) for x in re.split(r"(?<=[.!?])\s+", before))
+    return [x for x in (_squash(y) for y in re.split(r"(?<=[.!?])\s+", after)) if x and x not in old]
+
+
+def _names(issue: str, sentence: str, window: int = 5) -> bool:
+    """Whether an objection quotes the sentence: any run of `window` of its words appears."""
+    words, text = sentence.split(), _squash(issue)
+    return any(" ".join(words[i:i + window]) in text for i in range(max(1, len(words) - window + 1)))
+
+
+def run_semantic(llm, cases: list[Case], ctx: Context, state: dict, out_dir, *, seed: int = 0,
+                 per_fault: int = 12, controls: int = 5, trace=None) -> dict:
+    """Inject misattribution faults into drafted sections, keep those every lexical check
+    passes, and give the whole draft with that one change to the production fidelity reviewer.
+
+    A fault counts as caught only when an objection quotes the changed sentence; the same
+    reviewer also reads the unchanged draft `controls` times, and an objection there is a
+    false alarm. Finished calls are reused."""
+    from scholarloop.review.critics import FidelityReviewer
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    reviewer = FidelityReviewer(llm, trace=trace)
+    dossier, title = ctx.bank.approved_dossier, state["outline"]["title"]
+    draft = [{"heading": s["heading"], "body": s["body"]} for s in state["sections"]]
+
+    def review(name, sections):
+        path = out / f"semantic_{name}.json"
+        if not path.exists():
+            path.write_text(json.dumps(reviewer.run({"dossier": dossier, "title": title, "sections": sections}),
+                                       indent=2, ensure_ascii=False))
+        return json.loads(path.read_text())
+
+    control_rows = []
+    for i in range(1, controls + 1):
+        verdict = review(f"control_{i}", draft)
+        control_rows.append({"control": i, "objections": len(verdict["issues"]), "issues": verdict["issues"]})
+    trials = []
+    section_cases = [c for c in cases if c.target == "section" and not c.check(copy.deepcopy(c.artifact))]
+    for fault, (tier, operator) in FAULTS.items():
+        if tier != "misattribution":
+            continue
+        passed = []
+        for case in section_cases:
+            rng = random.Random(f"{seed}:{fault}:{case.name}")
+            for description, mutated in operator(rng, case, ctx):
+                changed = _changed_sentences(case.artifact["body"], mutated["body"])
+                if changed and not case.check(mutated):          # every lexical check passes it
+                    passed.append((case, description, mutated, changed))
+        rng = random.Random(f"{seed}:semantic:{fault}")
+        if len(passed) > per_fault:
+            passed = [passed[i] for i in sorted(rng.sample(range(len(passed)), per_fault))]
+        for n, (case, description, mutated, changed) in enumerate(passed, 1):
+            sections = [mutated if s["heading"] == mutated["heading"] else s for s in draft]
+            verdict = review(f"{fault}_{n}", sections)
+            hits = [i for i in verdict["issues"] if any(_names(i, c) for c in changed)]
+            trials.append({"fault": fault, "case": case.name, "change": description, "sentence": changed[0],
+                           "objections": len(verdict["issues"]), "detected": bool(hits), "hits": hits})
+    by_fault = defaultdict(list)
+    for t in trials:
+        by_fault[t["fault"]].append(t["detected"])
+    report = {"version": 1, "model": getattr(llm, "model", None), "seed": seed,
+              "interpretation": "Misattribution faults that every lexical check passed, each placed alone in the "
+                                "full draft and read by the production fidelity reviewer. Caught means an "
+                                "objection quotes the changed sentence. Controls are the unchanged draft; an "
+                                "objection there is a false alarm. The reviewer is a model: these rates describe "
+                                "this model on this draft.",
+              "controls": {"reads": len(control_rows), "with_objection": sum(bool(c["objections"]) for c in control_rows),
+                           "details": control_rows},
+              "by_fault": {k: _rate(sum(v), len(v)) for k, v in sorted(by_fault.items())},
+              "all": _rate(sum(t["detected"] for t in trials), len(trials)), "trials": trials}
+    (out / "semantic.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    (out / "semantic.md").write_text(render_semantic(report))
+    return report
+
+
+def render_semantic(report: dict) -> str:
+    c = report["controls"]
+    lines = ["# Guard reliability: the semantic layer", "", report["interpretation"], "",
+             f"Unchanged draft: {c['with_objection']} of {c['reads']} reads raised an objection.", "",
+             "| fault | caught by the fidelity reviewer |", "|---|---|"]
+    lines += [f"| {k} | {_fmt(v)} |" for k, v in report["by_fault"].items()]
+    lines += [f"| all | {_fmt(report['all'])} |"]
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------------------------
 def main(argv=None) -> int:
@@ -897,6 +989,13 @@ def main(argv=None) -> int:
     p = sub.add_parser("baseline", help="single-call writer, audited post hoc (USES THE API)")
     run_args(p)
     p.add_argument("--repeats", type=int, default=3)
+    p.add_argument("--model")
+    p = sub.add_parser("semantic", help="give lexically invisible faults to the fidelity reviewer "
+                                        "(USES THE API)")
+    run_args(p)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--per-fault", type=int, default=12)
+    p.add_argument("--controls", type=int, default=5)
     p.add_argument("--model")
     p = sub.add_parser("claims", help="audit result claims of the staged and baseline papers "
                                       "against the evidence (USES THE API)")
@@ -941,6 +1040,18 @@ def main(argv=None) -> int:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("ANTHROPIC_API_KEY is not set.", file=sys.stderr)
         return 1
+    if a.command == "semantic":
+        state = json.loads(Path(paths["writing"]).read_text())
+        if ctx.bank.approved_dossier is None or not state.get("sections"):
+            print("The semantic study needs a reviewed run with drafted sections.", file=sys.stderr)
+            return 1
+        from scholarloop.core.agent import AgentTrace
+        llm = CallLimitedLLM(AnthropicLLM(model=a.model or model_from_env()), 400,
+                             path=out / "semantic_call_budget.json")
+        report = run_semantic(llm, cases, ctx, state, out, seed=a.seed, per_fault=a.per_fault,
+                              controls=a.controls, trace=AgentTrace(path=out / "semantic.agents.jsonl"))
+        print(render_semantic(report))
+        return 0
     if a.command == "claims":
         dossier = ctx.bank.approved_dossier
         state = json.loads(Path(paths["writing"]).read_text())

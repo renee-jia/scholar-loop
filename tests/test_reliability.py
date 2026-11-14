@@ -251,3 +251,21 @@ def test_claim_audit_quotes_the_paper_blind_and_counts_claims_beyond_the_evidenc
 def ClaimBlock(dossier):
     from scholarloop.reliability import ClaimAuditor
     return ClaimAuditor(MockLLM(jsons=[]), dossier)._block
+
+
+def test_semantic_study_counts_a_fault_caught_only_when_the_objection_quotes_it(reviewed_run, tmp_path):
+    import json
+    from scholarloop.reliability import _changed_sentences, _names, run_semantic
+    profile, paths = reviewed_run
+    cases, ctx = load_cases(profile, **paths)
+    state = json.loads(paths["writing"].read_text())
+    assert _changed_sentences("A is lower. B holds.", "A is higher. B holds.") == ["A is higher."]
+    assert _names("Results: 'the error is higher than the baseline here' flips the direction",
+                  "The error is higher than the baseline here [claim_error].")
+    assert not _names("Results: something unrelated was changed", "The error is higher than the baseline here.")
+    passing = {"verdict": "pass", "issues": []}
+    vague = {"verdict": "revise", "issues": ["Draft: something is off"]}       # names no sentence
+    llm = MockLLM(jsons=[passing, vague] + [vague] * 50)
+    report = run_semantic(llm, cases, ctx, state, tmp_path / "sem", per_fault=2, controls=2)
+    assert report["controls"] == {**report["controls"], "reads": 2, "with_objection": 1}
+    assert report["all"]["detected"] == 0          # an objection that quotes nothing catches nothing
