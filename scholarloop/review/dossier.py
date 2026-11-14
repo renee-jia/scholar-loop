@@ -82,6 +82,40 @@ def snapshot(profile, ledger_path, registry_dir, research_dir=None) -> dict:
             "research_dir": str(Path(research_dir).resolve()) if research_dir else None}
 
 
+def input_hash(inputs) -> str:
+    """Hash of what the evidence says, not where it sits: file contents, profile and frozen
+    protocol contexts. Moving or renaming a run directory leaves it unchanged."""
+    portable = {k: v for k, v in inputs.items() if k not in ("files", "registry_dir", "research_dir")}
+    portable["files"] = {name: {"sha256": f["sha256"], "text": f["text"]}
+                         for name, f in inputs["files"].items()}
+    return digest(portable)
+
+
+def same_inputs(inputs, recorded_hash, manifest=None) -> bool:
+    """Whether `inputs` are the evidence a recorded hash was taken from.
+
+    Hashes recorded before `input_hash` also covered each file's absolute path. Such a hash is
+    recomputed from the current contents and the locations its own manifest recorded, so a
+    moved run still matches and any changed, added or removed file still does not."""
+    if input_hash(inputs) == recorded_hash:
+        return True
+    if not manifest or set(manifest) != set(inputs["files"]):
+        return False
+
+    def parent(prefix, levels):
+        for name in sorted(manifest):
+            if name.startswith(prefix):
+                return str(Path(manifest[name]["path"]).parents[levels - 1])
+        return None
+
+    legacy = dict(inputs)
+    legacy["files"] = {name: {**f, "path": manifest[name]["path"]} for name, f in inputs["files"].items()}
+    legacy["registry_dir"] = (parent("registry/", 1) or parent("protocols/", 2)
+                              or parent("candidates/", 2) or inputs["registry_dir"])
+    legacy["research_dir"] = parent("lit_review.json", 1)
+    return digest(legacy) == recorded_hash
+
+
 def _json(text):
     try:
         return json.loads(text, parse_constant=lambda s: (_ for _ in ()).throw(ValueError(s)))
@@ -245,7 +279,7 @@ def build_dossier(inputs: dict) -> dict:
         pid = r.get("protocol", {}).get("id")
         if pid and f"protocol:{pid}" not in protocols:
             checks.append(f"{r['id']}: frozen experiment protocol is missing")
-    return {"schema_version": VERSION, "input_hash": digest(inputs), "profile": profile,
+    return {"schema_version": VERSION, "input_hash": input_hash(inputs), "profile": profile,
             "input_manifest": {k: {"path": v["path"], "sha256": v["sha256"]} for k, v in files.items()},
             "runs": runs, "measurements": measurements, "papers": papers, "research": research,
             "protocols": protocols, "candidates": candidates,

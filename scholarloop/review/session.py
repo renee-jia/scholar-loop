@@ -17,7 +17,8 @@ from scholarloop.core.locking import exclusive_lock
 from scholarloop.review.contracts import ROLES, VERSION, REVIEW_SCHEMA, ReviewBlocked, atomic_json, digest, read_json
 from scholarloop.review.critics import (ArgumentBuilder, ScientificCritic, blocks_release,
                                         check_claim_assessments)
-from scholarloop.review.dossier import build_dossier, paper_readiness, snapshot, validate_argument
+from scholarloop.review.dossier import (build_dossier, input_hash, paper_readiness, same_inputs,
+                                         snapshot, validate_argument)
 
 
 class ScientificReviewSession:
@@ -139,7 +140,7 @@ class ScientificReviewSession:
                                                 "role": role, "status": _new_status(issue, state["round"]),
                                                 "dossier_hash": digest(dossier)})
                     self._save(state)  # partial reviews are inspectable but never releasable
-                if digest(self.inputs()) != dossier["input_hash"]:
+                if input_hash(self.inputs()) != dossier["input_hash"]:
                     raise ReviewBlocked("Evidence changed during scientific review; review the new snapshot")
                 issues = json.loads(json.dumps(state["issues"]))
                 for report in reports:
@@ -200,7 +201,7 @@ class ScientificReviewSession:
             raise ReviewBlocked("Scientific issues remain open")
         if self._review_hash(state) != state.get("review_hash"):
             raise ReviewBlocked("Review artifacts changed; review again")
-        if digest(self.inputs()) != d["input_hash"]:
+        if not same_inputs(self.inputs(), d["input_hash"], d.get("input_manifest")):
             raise ReviewBlocked("Evidence/profile/code changed; scientific review and approval are stale")
 
     def approve(self, *, author: str, review_hash: str):

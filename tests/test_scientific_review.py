@@ -802,3 +802,42 @@ def test_a_statement_over_its_word_limit_is_sent_back_unless_it_was_carried_over
     dossier = build_dossier(session(setup(tmp_path)).inputs())
     builder = ArgumentBuilder(MockLLM(jsons=[grown, ARGUMENT]))     # the builder is sent back to cut it
     assert builder.run({"dossier": dossier}) == ARGUMENT
+
+
+def _moved(paths, tmp_path):
+    p, led, reg, out = paths
+    new = tmp_path / "renamed_run"
+    new.mkdir()
+    for item in (led, reg, out):
+        if item.exists():
+            item.rename(new / item.name)
+    return p, new / led.name, new / reg.name, new / out.name
+
+
+def test_renaming_the_run_directory_keeps_the_release_and_a_later_edit_still_voids_it(tmp_path):
+    release = released(setup(tmp_path)).require_release()[1]
+    p, led, reg, out = _moved((load_profile(tmp_path / "profiles/image-classification.yaml"),
+                               tmp_path / "experiments.jsonl", tmp_path / "registry", tmp_path / "review"), tmp_path)
+    moved = ScientificReviewSession(None, p, out, ledger_path=led, registry_dir=reg)
+    assert moved.require_release()[1]["id"] == release["id"]
+    led.write_text(led.read_text().replace("7.25", "6.25"))
+    with pytest.raises(ReviewBlocked, match="stale"):
+        moved.require_release()
+
+
+def test_a_hash_that_recorded_absolute_paths_survives_a_move_but_not_a_change(tmp_path):
+    from scholarloop.review.contracts import digest
+    from scholarloop.review.dossier import same_inputs
+    p, led, reg, out = setup(tmp_path)
+    before = snapshot(p, led, reg)
+    recorded = digest(before)                 # the earlier scheme: locations were part of the hash
+    manifest = {k: {"path": v["path"], "sha256": v["sha256"]} for k, v in before["files"].items()}
+    p, led, reg, out = _moved((p, led, reg, out), tmp_path)
+    assert same_inputs(snapshot(p, led, reg), recorded, manifest)
+    assert not same_inputs(snapshot(p, led, reg), recorded)          # no manifest, no legacy match
+    extra = VerifiedRegistry(reg / "exp_0002.json", exp_id="exp_0002")
+    extra.save()
+    assert not same_inputs(snapshot(p, led, reg), recorded, manifest)    # an added record
+    (reg / "exp_0002.json").unlink()
+    (reg / "exp_0001.json").write_text((reg / "exp_0001.json").read_text().replace("7.25", "6.25"))
+    assert not same_inputs(snapshot(p, led, reg), recorded, manifest)    # changed contents

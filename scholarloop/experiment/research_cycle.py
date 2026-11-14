@@ -9,7 +9,7 @@ from pathlib import Path
 from scholarloop.core.agent import Agent, AgentTrace
 from scholarloop.core.locking import exclusive_lock
 from scholarloop.review.contracts import TEXT, STRINGS, obj, digest, atomic_json, read_json, ReviewBlocked
-from scholarloop.review.dossier import build_dossier, snapshot, evidence_ids
+from scholarloop.review.dossier import build_dossier, input_hash, snapshot, evidence_ids
 from scholarloop.experiment.test_boundary import require_unopened_test
 
 ASSESSMENT_SCHEMA = obj({
@@ -207,7 +207,7 @@ class ResearchCycle:
             require_unopened_test(self.ledger_path)
             if digest(snapshot(self.profile, self.ledger_path, self.registry_dir, self.research_dir)) != digest(inputs):
                 raise ReviewBlocked("Evidence changed during research assessment")
-            record = {"round": len(state["rounds"]) + 1, "input_hash": digest(inputs),
+            record = {"round": len(state["rounds"]) + 1, "input_hash": input_hash(inputs),
                       "question": question, "feedback": feedback, "assessment": result,
                       "available_evidence": sorted(evidence_ids(dossier)),
                       "status": "recommendation_requires_scientific_review"}

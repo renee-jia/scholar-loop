@@ -15,6 +15,7 @@ from scholarloop.core.ledger import Hypothesis, LedgerEntry
 from scholarloop.experiment.runner import run_experiment
 from scholarloop.experiment.spec import ExperimentPlanner, condition_budget, frozen_context, validate_spec
 from scholarloop.review.contracts import ReviewBlocked, atomic_json, digest, read_json
+from scholarloop.review.dossier import same_inputs
 
 
 class ExperimentAgenda:
@@ -35,7 +36,8 @@ class ExperimentAgenda:
                 raise ReviewBlocked("No completed scientific review with open experiment requests")
             if source.get("review_hash") != self.review._review_hash(source):
                 raise ReviewBlocked("Source review changed; review again before planning")
-            if digest(self.review.inputs()) != source["dossier"]["input_hash"]:
+            if not same_inputs(self.review.inputs(), source["dossier"]["input_hash"],
+                               source["dossier"].get("input_manifest")):
                 raise ReviewBlocked("Source evidence changed; review again before planning")
             issues = [i for i in source["issues"] if i["status"] == "open" and i["action"] == "experiment"]
             if not issues or source["status"] != "NEEDS_EXPERIMENTS":
@@ -53,7 +55,8 @@ class ExperimentAgenda:
             if "research_iteration" in source:
                 envelope["research_iteration"] = source["research_iteration"]
             # Check again after planning: a slow model must not freeze a stale review.
-            if digest(self.review.inputs()) != source["dossier"]["input_hash"]:
+            if not same_inputs(self.review.inputs(), source["dossier"]["input_hash"],
+                               source["dossier"].get("input_manifest")):
                 raise ReviewBlocked("Evidence changed while planning")
             return self._store_plan(envelope)
 
