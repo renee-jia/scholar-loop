@@ -665,15 +665,21 @@ class SectionDrafter(Agent):
                  "Key points to cover, in order:", pts, "", "Evidence details:", ev or "—"]
         if ctx.get("so_far"):
             parts += ["", "Sections already written (first sentences, for continuity):", ctx["so_far"]]
-        parts += ["", "Write the section body as prose. Abstract: five sentences, no citations needed. "
-                  "Other sections: one paragraph per one or two points, each paragraph opening with "
-                  "its message."]
-        if self.bank.approved_dossier is not None:
-            parts += ["For this reviewed run, EVERY sentence including the abstract must cite an "
-                      "approved statement id, e.g. [claim_001], [setup_steps], [related_gkd], "
-                      "[scope_method], [limit_1], BEFORE "
-                      "the sentence's final punctuation. Preserve each statement's scope, units "
-                      "and attribution. Use only the numbers written in that cited statement."]
+        if self.bank.approved_dossier is None:
+            parts += ["", "Write the section body as prose. Abstract: five sentences, no citations needed. "
+                      "Other sections: one paragraph per one or two points, each paragraph opening with "
+                      "its message."]
+            return "\n".join(parts)
+        # One instruction, not a general one plus an exception to it: told first that an abstract
+        # needs no citations and that paragraphs open with their message, the drafter wrote short
+        # uncited lead-in sentences and was rejected for them three times.
+        parts += ["", "Write the section body as prose, one paragraph per one or two points. Every "
+                  "sentence, in every section including the abstract, restates one approved statement "
+                  "and carries that statement's id in brackets before its final punctuation, e.g. "
+                  "[claim_001], [setup_steps], [related_gkd], [scope_method], [limit_1]. There are no "
+                  "uncited sentences: no lead-in, summary or transition sentence of your own. A paragraph "
+                  "opens with its most important cited sentence. Preserve each statement's scope, units "
+                  "and attribution, and use only the numbers written in the statement a sentence cites."]
         return "\n".join(parts)
 
 

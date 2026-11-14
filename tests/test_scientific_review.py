@@ -219,6 +219,9 @@ def test_prose_numeric_grounding_is_sentence_local(tmp_path):
     assert audit_prose("The error is 2 percent [claim_error].", d)
     assert audit_prose("The error is 7.25 percent [scope_method].", d)
     assert audit_prose("The error is 7.25 percent.", d)
+    # the rejection quotes the sentence, so the drafter knows which one to fix
+    errors = audit_prose("Here is the result. The error is 7.25 percent [claim_error].", d)
+    assert len(errors) == 1 and "'Here is the result.'" in errors[0] and "no approved statement" in errors[0]
 
 
 def test_panel_round_cap_cannot_advance(tmp_path):

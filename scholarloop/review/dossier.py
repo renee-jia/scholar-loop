@@ -584,9 +584,13 @@ def audit_prose(text: str, dossier: dict) -> list[str]:
         if not sentence.strip():
             continue
         ids = STATEMENT_ID.findall(sentence)
-        if not ids or set(ids) - set(statements):
-            errors.append("Every sentence must cite an approved [claim_*], [setup_*], [related_*], "
-                          "[scope_*] or [limit_*]")
+        unknown = sorted(set(ids) - set(statements))
+        if not ids or unknown:
+            quoted = sentence.strip() if len(sentence.strip()) <= 90 else sentence.strip()[:87] + "..."
+            errors.append((f"this sentence cites {unknown}, which are not approved statement ids"
+                           if unknown else "this sentence cites no approved statement") + f": {quoted!r}. "
+                          "Every sentence, lead-in sentences included, ends with the [id] of the approved "
+                          "statement it restates; merge a lead-in into the sentence it introduces")
             continue
         allowed = [t for cid in ids for t in _number_tokens(statements[cid]["text"])]
         reg = VerifiedRegistry(":sentence:")
@@ -594,5 +598,6 @@ def audit_prose(text: str, dossier: dict) -> list[str]:
             reg.capture(str(i), float(tok))
         bad = reg.audit_text(STATEMENT_ID.sub("", sentence))
         if bad:
-            errors.append(f"Numbers not supported by this sentence's approved statements: {bad}")
+            errors.append(f"numbers {bad} are not in the approved statements {ids} that this sentence "
+                          f"cites: {sentence.strip()[:90]!r}")
     return errors
