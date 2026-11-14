@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from scholarloop.core.registry import _number_tokens
+from scholarloop.core.registry import VerifiedRegistry, _number_tokens
 from scholarloop.review.contracts import STATEMENT_ID_PATTERN
 
 # ---------------------------------------------------------------------------------------------
@@ -640,6 +640,49 @@ BASELINE_SYSTEM = (
     "given. Do not add claims the evidence does not support.")
 
 
+class DossierEvidence:
+    """The evidence of a reviewed run, as a single-call writer is shown it and audited against it.
+
+    A reviewed paper draws on more than the run measurements: protocol settings, the recorded
+    code, paired differences, papers found after the literature review. Audited against the
+    run measurements alone, real protocol settings counted as ungrounded numbers, in the
+    baseline and in the staged paper alike. The approved argument is left out: it is the
+    pipeline's product, not evidence. A number is grounded when it is written anywhere in this
+    evidence, which is weaker than the sentence-local check the staged writer has to pass."""
+
+    def __init__(self, dossier: dict):
+        from scholarloop.review.dossier import evidence_ids, prompt_view
+        self._text = json.dumps(prompt_view({k: v for k, v in dossier.items() if k != "argument"}),
+                                ensure_ascii=False)
+        self._ids = evidence_ids(dossier)
+        self._numbers = VerifiedRegistry(":dossier:")
+        # Numbers are read from the decoded values: in the JSON text a line of recorded code ends
+        # in an escaped newline, which glues its last number to the next line's first word.
+        def leaves(value):
+            if isinstance(value, dict):
+                for k, v in value.items():
+                    yield str(k)
+                    yield from leaves(v)
+            elif isinstance(value, list):
+                for v in value:
+                    yield from leaves(v)
+            elif value is not None:
+                yield str(value)
+        decoded = "\n".join(leaves(json.loads(self._text)))
+        for i, tok in enumerate(dict.fromkeys(_number_tokens(decoded))):
+            self._numbers.capture(str(i), float(tok))
+
+    def to_prompt_block(self) -> str:
+        return self._text
+
+    def ungrounded(self, text: str) -> list[str]:
+        from scholarloop.writing.session import _SMALL_INTS, _YEARS
+        return self._numbers.audit_text(text, ignore=_YEARS | _SMALL_INTS)
+
+    def unknown(self, ids) -> list[str]:
+        return sorted({i for i in ids if i not in self._ids})
+
+
 def audit_paper(text: str, bank) -> dict:
     """Apply the pipeline's deterministic checks to a finished paper without rejecting it."""
     from scholarloop.writing.session import _ID_RX, _SMALL_INTS, _YEARS, lint_prose
@@ -767,13 +810,15 @@ def main(argv=None) -> int:
     review = LitReview.from_dict(json.loads((Path(paths["research"]) / "lit_review.json").read_text()))
     # The baseline sees the raw evidence and is audited against all of it (does each number
     # trace to some measurement, does each cited id exist), whatever mode the staged writer used.
+    evidence = DossierEvidence(ctx.bank.approved_dossier) if ctx.bank.approved_dossier is not None else ctx.bank
     ctx.bank.approved_dossier = None
-    report = run_baseline(llm, ctx.bank, review.to_prompt_block(), out, repeats=a.repeats)
+    report = run_baseline(llm, evidence, review.to_prompt_block(), out, repeats=a.repeats)
+    report["audited_against"] = "reviewed dossier" if isinstance(evidence, DossierEvidence) else "run measurements"
     state = json.loads(Path(paths["writing"]).read_text())
     if state.get("sections"):
         staged = "\n\n".join(s["body"] for s in state["sections"])
-        report["staged_pipeline_paper"] = audit_paper(staged, ctx.bank)
-        (out / "baseline.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
+        report["staged_pipeline_paper"] = audit_paper(staged, evidence)
+    (out / "baseline.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
     print(json.dumps({k: report[k] for k in ("summary", "staged_pipeline_paper") if k in report}, indent=2))
     return 0
 

@@ -210,3 +210,16 @@ def test_a_writing_directory_apart_from_its_review_still_runs_in_reviewed_mode(r
     moved = {**paths, "writing": apart / "writing.json"}
     assert load_cases(profile, **moved)[1].mode.startswith("legacy")
     assert load_cases(profile, **moved, review_dir=paths["research"])[1].mode == "reviewed"
+
+
+def test_a_reviewed_baseline_is_audited_against_the_whole_dossier_not_the_run_measurements(reviewed_run):
+    from scholarloop.reliability import DossierEvidence, audit_paper
+    profile, paths = reviewed_run
+    _, ctx = load_cases(profile, **paths)
+    evidence = DossierEvidence(ctx.bank.approved_dossier)
+    assert "claim_error" not in evidence.to_prompt_block()          # the argument is not evidence
+    # lr=0.1 is a recorded config value and 7.25 a measurement; 9.87 is written nowhere
+    ok = audit_paper("With learning rate 0.1 the error is 7.25 percent [exp_0001].", evidence)
+    assert not ok["would_be_rejected"]
+    bad = audit_paper("The error is 9.87 percent [exp_0001] [arXiv:9999.00001].", evidence)
+    assert bad["ungrounded_numbers"] == ["9.87"] and bad["unknown_ids"] == ["arXiv:9999.00001"]

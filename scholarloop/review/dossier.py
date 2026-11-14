@@ -660,6 +660,10 @@ def write_evidence_map(directory, dossier, release):
 
 
 STATEMENT_ID = re.compile(r"\[(" + STATEMENT_ID_PATTERN + r")\]")
+# A paper, run or protocol named in brackets inside a sentence. A sentence may name only the
+# sources of the statements it cites: fault injection showed that a paper id added to reviewed
+# prose, or swapped for another retrieved paper, passed every check.
+SOURCE_ID = re.compile(r"\[((?:arXiv|doi|openalex|s2):[^\]\s]+|exp_\d{4,}|protocol[_:]\w+)\]")
 
 
 def audit_prose(text: str, dossier: dict) -> list[str]:
@@ -682,6 +686,11 @@ def audit_prose(text: str, dossier: dict) -> list[str]:
                           "Every sentence, lead-in sentences included, ends with the [id] of the approved "
                           "statement it restates; merge a lead-in into the sentence it introduces")
             continue
+        sources = {e for cid in ids for e in statements[cid]["evidence"]}
+        foreign = sorted(set(SOURCE_ID.findall(sentence)) - sources)
+        if foreign:
+            errors.append(f"sources {foreign} are not evidence of the approved statements {ids} that this "
+                          f"sentence cites: {sentence.strip()[:90]!r}")
         allowed = [t for cid in ids for t in _number_tokens(statements[cid]["text"])]
         reg = VerifiedRegistry(":sentence:")
         for i, tok in enumerate(allowed):
