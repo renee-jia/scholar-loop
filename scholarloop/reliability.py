@@ -115,7 +115,7 @@ def _set(obj, path, value):
     obj[path[-1]] = value
 
 
-def load_cases(profile, *, ledger, registry, research, writing) -> tuple[list[Case], Context]:
+def load_cases(profile, *, ledger, registry, research, writing, review_dir=None) -> tuple[list[Case], Context]:
     """Build cases from one captured run: its ledger, registry, research session and writing state.
 
     When the writing state is bound to a scientific release that still validates, the guards
@@ -140,7 +140,8 @@ def load_cases(profile, *, ledger, registry, research, writing) -> tuple[list[Ca
     state = json.loads(Path(writing).read_text())
     if state.get("release_id"):
         ctx.mode = _bind_release(profile, bank, ctx, ledger=ledger, registry=registry,
-                                 research=research, review_dir=Path(writing).parent)
+                                 research=research,
+                                 review_dir=Path(review_dir or Path(writing).parent))
     cases: list[Case] = []
 
     if review:
@@ -708,6 +709,8 @@ def main(argv=None) -> int:
         p.add_argument("--registry")
         p.add_argument("--research")
         p.add_argument("--writing")
+        p.add_argument("--review-dir", help="scientific review directory when the writing was "
+                       "written elsewhere (default: beside writing.json)")
         p.add_argument("--out", required=True)
 
     p = sub.add_parser("inject", help="seeded fault injection (free, deterministic)")
@@ -739,7 +742,8 @@ def main(argv=None) -> int:
 
     run = Path(a.run)
     paths = {"ledger": a.ledger or run / "experiments.jsonl", "registry": a.registry or run / "registry",
-             "research": a.research or run, "writing": a.writing or run / "writing.json"}
+             "research": a.research or run, "writing": a.writing or run / "writing.json",
+             "review_dir": a.review_dir}
     profile = load_profile(a.profile)
     cases, ctx = load_cases(profile, **paths)
 

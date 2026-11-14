@@ -200,3 +200,13 @@ def test_a_release_that_no_longer_validates_falls_back_and_says_so(reviewed_run)
         stream.write(paths["ledger"].read_text().splitlines()[0].replace("exp_0001", "exp_0002") + "\n")
     _, ctx = load_cases(profile, **paths)
     assert ctx.mode.startswith("legacy (the writing cites a release that no longer validates")
+
+
+def test_a_writing_directory_apart_from_its_review_still_runs_in_reviewed_mode(reviewed_run, tmp_path):
+    profile, paths = reviewed_run
+    apart = tmp_path / "paper_elsewhere"
+    apart.mkdir()
+    (apart / "writing.json").write_text(paths["writing"].read_text())
+    moved = {**paths, "writing": apart / "writing.json"}
+    assert load_cases(profile, **moved)[1].mode.startswith("legacy")
+    assert load_cases(profile, **moved, review_dir=paths["research"])[1].mode == "reviewed"
