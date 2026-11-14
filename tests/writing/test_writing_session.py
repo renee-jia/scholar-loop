@@ -299,3 +299,22 @@ def test_a_vote_must_agree_with_the_severity_of_its_issues():
     assert blocking_issues({"verdict": "revise", "issues": [_issue()]}) == [_issue()]
     assert blocking_issues({"verdict": "accept", "issues": [_issue()]}) == []
     assert panelist.postcheck({"verdict": "accept", "issues": [_issue()]}, {}) == []
+
+
+def test_a_gap_in_the_evidence_stops_the_stage_instead_of_asking_for_another_rewrite():
+    from scholarloop.review.contracts import ReviewBlocked
+    from scholarloop.writing.session import evidence_gaps
+    gap = {"verdict": "revise", "issues": [{"target": "Method", "issue": "no record says how prompts are generated",
+                                            "suggestion": "record it", "severity": "missing_evidence"}]}
+    seen = []
+
+    def propose(issues):
+        seen.append(issues)
+        return {"v": len(seen)}
+
+    panel = [Panelist(MockLLM(jsons=[gap]), "Methodologist"), Panelist(MockLLM(jsons=[ACCEPT]), "Editor")]
+    final, transcript = discuss(propose, panel, "key points", json.dumps, "ev", max_rounds=3)
+    assert seen == [None] and len(transcript) == 1                 # no revision was paid for
+    assert not transcript[-1]["accepted"] and evidence_gaps(transcript) == gap["issues"]
+    with pytest.raises(ReviewBlocked, match="run scientific review again"):
+        WritingSession._require_panel(transcript)

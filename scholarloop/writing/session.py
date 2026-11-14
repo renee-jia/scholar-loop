@@ -288,7 +288,9 @@ PANEL_SCHEMA = {
             "properties": {"target": {"type": "string"}, "issue": {"type": "string"},
                            "suggestion": {"type": "string"},
                            # blocking: the stage cannot advance; suggestion: recorded for the author
-                           "severity": {"type": "string", "enum": ["blocking", "suggestion"]}},
+                           # missing_evidence: blocks too, but no rewrite can fix it; the stage stops
+                           "severity": {"type": "string",
+                                        "enum": ["blocking", "suggestion", "missing_evidence"]}},
             "required": ["target", "issue", "suggestion"]}},
     },
     "required": ["verdict", "issues"],
@@ -432,7 +434,10 @@ class Panelist(Agent):
                          "severity. `blocking` is for what would make the paper wrong or unusable if "
                          "written from this plan: a statement the evidence does not support or that "
                          "contradicts it, a required element that is missing, a plan a reader could "
-                         "not follow. `suggestion` is for everything that would merely make it "
+                         "not follow. `missing_evidence` is for a required element that the "
+                         "evidence given does not contain at all, so that no rewriting of this plan "
+                         "could supply it (a setup detail, a count, a definition nobody recorded): "
+                         "name exactly what is missing. `suggestion` is for everything that would merely make it "
                          "better: wording, order, emphasis, repetition, extra detail. Vote revise "
                          "only if you list a blocking issue; otherwise vote accept, with or without "
                          "suggestions. Do not request experiments that were not run; work with the "
@@ -470,7 +475,16 @@ def blocking_issues(review: dict) -> list[dict]:
     """A review's blocking issues. An issue without a severity takes it from the vote: it blocks
     under a revise vote, as every issue once did, and is a suggestion under an accept vote."""
     default = "blocking" if review.get("verdict") == "revise" else "suggestion"
-    return [i for i in review.get("issues", []) if i.get("severity", default) == "blocking"]
+    return [i for i in review.get("issues", []) if i.get("severity", default) in ("blocking", GAP)]
+
+
+GAP = "missing_evidence"
+
+
+def evidence_gaps(transcript: list[dict]) -> list[dict]:
+    """What the last round found missing from the evidence itself. A writer cannot add it, so the
+    stage stops here and the gap goes back to whoever supplies the evidence."""
+    return transcript[-1].get("evidence_gaps", []) if transcript else []
 
 
 KEYPOINT_IDS_SCHEMA = {
@@ -666,11 +680,12 @@ def discuss(propose, panel: list[Panelist], stage: str, render, evidence: str,
                    for p in panel]
         raised = {r["role"]: blocking_issues(r) for r in reviews}
         issues = [i for r in reviews for i in raised[r["role"]]]
+        gaps = [i for i in issues if i.get("severity") == GAP]
         transcript.append({"round": rnd + 1, "artifact": artifact, "reviews": reviews,
-                           "accepted": not issues})
+                           "accepted": not issues, **({"evidence_gaps": gaps} if gaps else {})})
         if checkpoint is not None:
             checkpoint(artifact, list(transcript))      # a later failure keeps the rounds already paid for
-        if not issues or rnd == max_rounds:
+        if not issues or gaps or rnd == max_rounds:     # another revision cannot close a gap
             break
         artifact = propose(issues)
     return artifact, transcript
@@ -699,6 +714,7 @@ def _render_transcript(transcript: list[dict]) -> list[str]:
     out = ["## Discussion", ""]
     for t in transcript:
         status = ("✅ no blocking issue left" if t["accepted"] else
+                  "🧩 the evidence lacks something the paper needs" if t.get("evidence_gaps") else
                   "🔁 revised" if t is not transcript[-1] else "⛔ blocking issues remain")
         out.append(f"### Round {t['round']} — {status}")
         for r in t["reviews"]:
@@ -856,6 +872,12 @@ class WritingSession:
 
     @staticmethod
     def _require_panel(transcript):
+        gaps = evidence_gaps(transcript)
+        if gaps:
+            raise ReviewBlocked(
+                "The approved evidence lacks what the paper needs, and no rewrite of this stage can "
+                "supply it. Add it to the argument (run scientific review again with this as feedback), "
+                "then write from the new release: " + "; ".join(f"{g['target']}: {g['issue']}" for g in gaps))
         if not transcript or not transcript[-1]["accepted"]:
             raise ReviewBlocked("Panel concerns remain unresolved; revise this stage before advancing")
 
