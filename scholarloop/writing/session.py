@@ -475,11 +475,14 @@ class Panelist(Agent):
                        + load_skill("review"))
 
     def postcheck(self, output: dict, ctx: dict) -> list[str]:
-        blocking = blocking_issues(output)
-        if output.get("verdict") == "revise" and not blocking:
-            return ["a revise vote must list at least one blocking issue; with only suggestions, accept"]
-        if output.get("verdict") == "accept" and blocking:
-            return ["an accept vote cannot carry a blocking issue; vote revise or mark it a suggestion"]
+        """The vote is what the issues say, set here in place. A panelist that marked an issue
+        blocking and voted accept (or the reverse) used to be sent back to try again, and a weak
+        model repeated the same mismatch until the stage failed; the severities are the more
+        specific statement, so they decide. An unlabelled issue keeps the meaning its vote gave it."""
+        default = "blocking" if output.get("verdict") == "revise" else "suggestion"
+        for issue in output.get("issues", []):
+            issue.setdefault("severity", default)
+        output["verdict"] = "revise" if blocking_issues(output) else "accept"
         return []
 
     def build_prompt(self, ctx: dict) -> str:

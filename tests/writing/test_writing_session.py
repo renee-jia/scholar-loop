@@ -292,9 +292,15 @@ def test_a_revision_round_shows_each_panelist_only_its_own_blocking_issues():
 def test_a_vote_must_agree_with_the_severity_of_its_issues():
     from scholarloop.writing.session import Panelist, blocking_issues
     panelist = Panelist(MockLLM(), "Skeptic")
-    assert panelist.postcheck({"verdict": "revise", "issues": [_issue("suggestion")]}, {})
-    assert panelist.postcheck({"verdict": "accept", "issues": [_issue("blocking")]}, {})
-    assert panelist.postcheck({"verdict": "accept", "issues": [_issue("suggestion")]}, {}) == []
+    def settled(review):
+        assert panelist.postcheck(review, {}) == []
+        return review["verdict"]
+    # the severities decide the vote; a mismatch is corrected, not sent back
+    assert settled({"verdict": "revise", "issues": [_issue("suggestion")]}) == "accept"
+    assert settled({"verdict": "accept", "issues": [_issue("blocking")]}) == "revise"
+    assert settled({"verdict": "accept", "issues": [_issue("suggestion")]}) == "accept"
+    mixed = {"verdict": "accept", "issues": [_issue("blocking"), _issue()]}
+    assert settled(mixed) == "revise" and len(blocking_issues(mixed)) == 1     # the unlabelled one stays a suggestion
     # an issue without a severity follows the vote it came with
     assert blocking_issues({"verdict": "revise", "issues": [_issue()]}) == [_issue()]
     assert blocking_issues({"verdict": "accept", "issues": [_issue()]}) == []
