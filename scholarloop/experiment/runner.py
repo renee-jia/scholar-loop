@@ -99,7 +99,7 @@ def _engine_root(train_entrypoint: str, edits: list[dict], src_root: Path = ROOT
 
 def _run(module_args: list[str], cwd: Path, timeout_sec: int, extra_env: dict, seed: int, what: str):
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(cwd) + (":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    env["PYTHONPATH"] = str(cwd) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     env.update(extra_env)
     try:
         return subprocess.run([sys.executable, "-m", *module_args], cwd=str(cwd), env=env,

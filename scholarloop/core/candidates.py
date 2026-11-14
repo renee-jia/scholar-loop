@@ -45,7 +45,8 @@ def engine_sources(profile):
     for path in sorted(paths):
         if root not in path.resolve().parents:
             raise CandidateError("Engine sources must remain inside the profile root")
-        sources[str(path.relative_to(root))] = path.read_text() if path.is_file() else None
+        # Profile entrypoints use '/' on every OS; snapshot keys must use the same spelling.
+        sources[path.relative_to(root).as_posix()] = path.read_text() if path.is_file() else None
     return sources
 
 

@@ -29,12 +29,16 @@ nlp = ["datasets>=2.14"]                         # one-time AG News download for
 [project.urls]
 Repository = "https://github.com/renee-jia/scholar-loop"
 
+[project.scripts]
+scholarloop-ui = "scholarloop.ui.__main__:main"
+
 [tool.setuptools.packages.find]
 include = ["scholarloop*"]
 
 [tool.setuptools.package-data]
 "scholarloop.writing" = ["skills/*.md"]
 "scholarloop.core" = ["profile.schema.yaml"]
+"scholarloop.ui" = ["static/*.html", "static/*.css", "static/*.js", "static/*.svg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
