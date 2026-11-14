@@ -51,7 +51,9 @@ def _reporting_every_arm(dossier):
                "evidence": [run], "measurements": [ref], "depends_on": [], "scope": "This arm only."}
               for i, (run, (ref, value)) in enumerate(arms.items())]
     checks = [{**PASS["claim_checks"][0], "claim_id": c["id"], "evidence": c["evidence"]} for c in claims]
-    return ({**ARGUMENT, "claims": [*ARGUMENT["claims"], *claims]},
+    described = [{"id": f"setup_arm_{i}", "text": "This arm is one condition of the protocol.",
+                  "evidence": [run]} for i, run in enumerate(arms)]         # and every arm described
+    return ({**ARGUMENT, "claims": [*ARGUMENT["claims"], *claims], "setup": [*ARGUMENT["setup"], *described]},
             {**PASS, "claim_checks": [*PASS["claim_checks"], *checks]})
 
 

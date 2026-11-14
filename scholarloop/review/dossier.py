@@ -20,6 +20,7 @@ from jsonschema import Draft7Validator
 from scholarloop.core.ledger import LedgerEntry
 from scholarloop.core.candidates import CandidateStore, CandidateError, validate_snapshot, content_id
 from scholarloop.core.registry import VerifiedRegistry, _number_tokens
+from scholarloop.core.text import containment
 from scholarloop.review.contracts import (ARGUMENT_SCHEMA, STATEMENT_ID_PATTERN, ReviewBlocked, VERSION,
                                            digest, atomic_json)
 
@@ -534,7 +535,33 @@ def paper_readiness(argument: dict, dossier: dict) -> list[str]:
         if missing:
             gaps.append(f"arms {missing} of {ref} ran but no claim reports their recorded value: "
                         "report every arm in an observation claim, even one whose reading is withdrawn")
+    # The next two were each found by the writing panel after approval, and each cost a return
+    # to review, a new approval and a new outline. They are properties of the argument alone.
+    setup = argument.get("setup", [])
+    cited = {e for item in setup for e in item["evidence"]}
+    for ref, protocol in dossier.get("protocols", {}).items():
+        pid = ref.removeprefix("protocol:")
+        runs = [r for r in dossier["runs"] if r.get("protocol", {}).get("id") == pid]
+        described = {r["protocol"]["condition"] for r in runs
+                     if {r["id"], r.get("registry_id"), r.get("candidate_id")} & cited}
+        undescribed = sorted({r["protocol"]["condition"] for r in runs} - described)
+        if setup and undescribed:
+            gaps.append(f"arms {undescribed} of {ref} ran but no setup statement cites their run or "
+                        "code version: describe what each arm changes")
+        # A verdict on a prediction is unreadable without the prediction. Wording differs, so
+        # this asks only that one statement carries at least half of the registered terms.
+        predicted = ((protocol.get("specification") or {}).get("spec") or {}).get("predicted_observation", "")
+        about = [x for x in [*argument["claims"], *setup]
+                 if ref in x["evidence"] or {r["id"] for r in runs} & set(x["evidence"])]
+        judged = [x["id"] for x in about if _PREDICTION.search(x["text"])]
+        if predicted and judged and not any(containment(predicted, x["text"]) >= 0.5 for x in about):
+            gaps.append(f"{judged} judge the prediction registered in {ref}, but no statement gives "
+                        "that prediction: state what was predicted, in a setup statement citing the "
+                        "protocol, so a reader can check the verdict")
     return gaps
+
+
+_PREDICTION = re.compile(r"\bpredict", re.IGNORECASE)
 
 
 def approved_statements(dossier: dict) -> dict:
