@@ -120,7 +120,9 @@ def test_negative_result_can_be_reviewed_approved_and_written(tmp_path):
     w.key_points()
     w.draft()
     assert w.state.release_id == release["id"]
-    assert "7.25 percent [claim_error]" in (out / "paper.md").read_text()
+    assert "7.25 percent [claim_error]" in (out / "paper_traced.md").read_text()
+    reader = (out / "paper.md").read_text()                # the edition to read carries no statement ids
+    assert "7.25 percent." in reader and "[claim_error]" not in reader and "paper_traced.md" in reader
 
 
 def test_dissent_blocks_approval_and_records_experiment_request(tmp_path):
@@ -741,3 +743,46 @@ def test_a_fidelity_objection_rewrites_only_its_section_and_keeps_the_rest(tmp_p
     assert "drops the scope" in (out2 / "draft_rejected.md").read_text() and w.stage == "keypointed"
     saved = json.loads((out2 / "draft_checkpoint.json").read_text())
     assert set(saved["sections"]) == {"Abstract", "Results", "Limitations"}
+
+
+# ---- a statement is written out once -------------------------------------------------------
+def test_a_statement_has_one_home_and_is_only_mentioned_elsewhere(tmp_path):
+    from scholarloop.writing.session import KeyPointer, SectionDrafter, EvidenceBank, statement_homes
+    paths = setup(tmp_path)
+    s = released(paths)
+    outline, kp, _ = writing_outputs()
+    assert statement_homes(kp["sections"]) == {"claim_error": "Results", "limit_1": "Limitations"}
+    p, led, reg, out = paths
+    w = WritingSession(MockLLM(), p, out, ledger_path=led, registry_dir=reg)
+    w._require_release()                                             # loads the approved statements
+    pointer = KeyPointer(MockLLM(), w.bank)
+    assert pointer.postcheck(kp, {"outline": outline}) == []         # abstract plus one body section
+    twice = {"sections": [*kp["sections"][:2], {"heading": "Limitations", "points": [
+        {"statement": "limit_1", "role": "limitation"}, {"statement": "claim_error", "role": "result"}]}]}
+    (err,) = pointer.postcheck(twice, {"outline": outline})
+    assert "claim_error is in ['Results', 'Limitations']" in err
+    drafter = SectionDrafter(MockLLM(), w.bank)
+    line = "The validation error is 7.25 percent [claim_error]."
+    ctx = {"mentions": ["claim_error"]}
+    assert drafter.postcheck({"body": " ".join([line] * 2)}, ctx) == []
+    (err,) = drafter.postcheck({"body": " ".join([line] * 3)}, ctx)
+    assert "takes 3 sentences here" in err
+    assert drafter.postcheck({"body": " ".join([line] * 3)}, {}) == []   # in its home it may be long
+
+
+def test_a_verdict_on_a_prediction_needs_the_prediction_and_every_arm_needs_a_description():
+    from scholarloop.review.dossier import paper_readiness
+    ref = "protocol:p1"
+    run = {"id": "protocol_p1_treat", "registry_id": "v2", "candidate_id": "c2",
+           "protocol": {"id": "p1", "condition": "treat"}}
+    dossier = {"papers": {}, "runs": [run], "measurements": {},
+               "protocols": {ref: {"specification": {"spec": {"predicted_observation": "treat beats control"}}}}}
+    claim = {"id": "claim_verdict", "text": "The predicted effect was not met.", "evidence": [ref],
+             "measurements": []}
+    bare = {"claims": [claim], "setup": [{"id": "setup_scorer", "text": "Frozen scorer.", "evidence": ["scorer"]}]}
+    gaps = paper_readiness(bare, dossier)
+    assert len(gaps) == 2 and "['treat']" in gaps[0] and "no statement gives that prediction" in gaps[1]
+    full = {"claims": [claim], "setup": [
+        {"id": "setup_arm", "text": "The treatment arm changes the sampler.", "evidence": ["c2"]},
+        {"id": "setup_prediction", "text": "The protocol predicted that treat beats control.", "evidence": [ref]}]}
+    assert paper_readiness(full, dossier) == []

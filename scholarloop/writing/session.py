@@ -56,7 +56,7 @@ from scholarloop.ideation.litreview import LitReview
 from scholarloop.core.profile import Profile
 from scholarloop.core.registry import VerifiedRegistry
 from scholarloop.core.text import containment
-from scholarloop.review.contracts import ReviewBlocked, atomic_json
+from scholarloop.review.contracts import STATEMENT_ID_PATTERN, ReviewBlocked, atomic_json
 from scholarloop.review.session import ScientificReviewSession
 from scholarloop.review.dossier import approved_statements, audit_prose
 from scholarloop.review.critics import FidelityReviewer
@@ -370,6 +370,36 @@ def _by_section(issues: list[str], key_points: dict) -> dict[str, list[str]]:
     return routed
 
 
+# A statement is written out in one section, its home, and only mentioned anywhere else. Without
+# this the abstract, the results, the discussion and the conclusion each expanded the same
+# approved statement in full, and reviewers measured the draft as two-fifths repetition.
+SUMMARY_SECTIONS = {"abstract", "introduction", "conclusion", "conclusions"}
+MENTION_SENTENCES = 2
+_STATEMENT_CITE = re.compile(r"\s*\[(?:" + STATEMENT_ID_PATTERN + r")\]")
+
+
+def _point_ids(point: dict) -> list[str]:
+    return [point["statement"]] if "statement" in point else list(point.get("evidence", []))
+
+
+def statement_homes(sections: list[dict]) -> dict[str, str]:
+    """The section each statement is given in full: the first body section that uses it, or the
+    first summary section when no body section does."""
+    homes: dict[str, str] = {}
+    for summary in (False, True):
+        for s in sections:
+            if (s["heading"].strip().lower() in SUMMARY_SECTIONS) == summary:
+                for p in s.get("points", []):
+                    for sid in _point_ids(p):
+                        homes.setdefault(sid, s["heading"])
+    return homes
+
+
+def reader_edition(text: str) -> str:
+    """The prose without the statement ids that trace each sentence. Paper and run ids stay."""
+    return _STATEMENT_CITE.sub("", text)
+
+
 def _fmt_issues(issues: list[dict]) -> str:
     lines = [f"- [{i['target']}] {i['issue']} → {i['suggestion']}"
              + ("  (The evidence does not contain this and you cannot add it: change the plan so it "
@@ -617,6 +647,19 @@ class KeyPointer(Agent):
                 if bad:
                     errs.append(f"{s['heading']} point {i}: numbers not in the evidence: {bad}")
         if self.bank.approved_dossier is not None:
+            used: dict[str, list[str]] = {}
+            for s in output.get("sections", []):
+                ids = [sid for p in s.get("points", []) for sid in _point_ids(p)]
+                for sid in sorted({x for x in ids if ids.count(x) > 1}):
+                    errs.append(f"{s['heading']}: {sid} is listed more than once; list it once")
+                if s["heading"].strip().lower() not in SUMMARY_SECTIONS:
+                    for sid in set(ids):
+                        used.setdefault(sid, []).append(s["heading"])
+            for sid, where in sorted(used.items()):
+                if len(where) > 1:
+                    errs.append(f"{sid} is in {where}: a statement is given in one body section; keep "
+                                "it where it belongs and drop it from the others (the abstract, "
+                                "introduction and conclusion may still mention it)")
             required = {f"limit_{i}" for i in range(1, len(self.bank.approved_dossier["argument"]["limitations"]) + 1)}
             cited = {e for s in output.get("sections", []) for p in s["points"]
                      for e in ([p["statement"]] if "statement" in p else p["evidence"])}
@@ -635,7 +678,9 @@ class KeyPointer(Agent):
         if self.bank.approved_dossier is not None:
             parts += ["", f"For every section list, in order, the ids of the approved statements it will "
                       f"make, each with its role ({POINT_ROLES}). Give ids only; the text is fixed. "
-                      "Every limit_* statement must appear somewhere."]
+                      "Every limit_* statement must appear somewhere. A statement belongs to one body section: "
+                      "do not repeat it in a second one. The abstract, introduction and conclusion may "
+                      "list a few statements again, and the draft will only mention them there."]
         else:
             parts += ["", f"Write the key points for every section (roles: {POINT_ROLES}). Every number "
                       "must appear in the evidence exactly."]
@@ -662,6 +707,11 @@ class SectionDrafter(Agent):
             errs.append("empty section")
         errs += lint_prose(body)
         if self.bank.approved_dossier is not None:
+            for sid in ctx.get("mentions", []):
+                n = sum(f"[{sid}]" in sentence for sentence in _sentences(body))
+                if n > MENTION_SENTENCES:
+                    errs.append(f"{sid} is given in full in another section but takes {n} sentences here: "
+                                f"mention it in at most {MENTION_SENTENCES}")
             return errs + audit_prose(body, self.bank.approved_dossier)
         bad = self.bank.ungrounded(body)
         if bad:
@@ -673,7 +723,9 @@ class SectionDrafter(Agent):
 
     def build_prompt(self, ctx: dict) -> str:
         o = ctx["outline"]
-        pts = "\n".join(f"{i}. ({p['role']}) {p['claim']}  evidence: {p['evidence'] or '—'}"
+        mentions = set(ctx.get("mentions", []))
+        pts = "\n".join(f"{i}. ({p['role']}{', mention only' if mentions & set(p['evidence']) else ''}) "
+                        f"{p['claim']}  evidence: {p['evidence'] or '—'}"
                         for i, p in enumerate(ctx["points"], 1))
         ev_ids = sorted({e for p in ctx["points"] for e in p["evidence"]})
         ev = "\n".join("- " + self.bank.describe(e) for e in ev_ids)
@@ -702,6 +754,10 @@ class SectionDrafter(Agent):
                   "uncited sentences: no lead-in, summary or transition sentence of your own. A paragraph "
                   "opens with its most important cited sentence. Preserve each statement's scope, units "
                   "and attribution, and use only the numbers written in the statement a sentence cites."]
+        if mentions:
+            parts += ["", "Points marked `mention only` are written out in full in another section. Here "
+                      f"give each at most {MENTION_SENTENCES} sentences: its main finding, with no more "
+                      "of its detail than this section needs. Do not restate it clause by clause."]
         return "\n".join(parts)
 
 
@@ -826,21 +882,24 @@ def render_keypoints_md(o: dict, kp: dict, transcript: list[dict], feedback: lis
     return "\n".join(out)
 
 
-def render_paper_md(o: dict, sections: list[dict], review: dict | None = None, *, demo=False) -> str:
+def render_paper_md(o: dict, sections: list[dict], review: dict | None = None, *, demo=False,
+                    traced=True) -> str:
+    """`traced` keeps the statement id after every sentence; the reader's edition drops them."""
     out = [f"# {o['title']}", ""]
     if review:
         scores = " · ".join(f"{r['persona']} {r['score']}" for r in review["reviews"])
         out += [f"> **Panel review:** {review['recommendation']} · mean score {review['mean_score']}/10 "
                 f"({scores})", ""]
     for s in sections:
-        out += [f"## {s['heading']}", "", s["body"], ""]
+        out += [f"## {s['heading']}", "", s["body"] if traced else reader_edition(s["body"]), ""]
     warns = [(s["heading"], w) for s in sections for w in s.get("warnings", [])]
     if warns:
         out += ["---", "", "### Drafting notes (for the author)", ""]
         out += [f"- **{h}**: {w}" for h, w in warns] + [""]
     out += ["*DEMO — unreviewed synthetic workflow; no scientific or author approval.*" if demo else
             "*Written under a version-bound scientific review and author release. Automated checks "
-            "and semantic review can still miss errors; inspect the [evidence bindings](evidence_map.md).*", ""]
+            "and semantic review can still miss errors; inspect the [evidence bindings](evidence_map.md)"
+            + ("" if traced else " and the [sentence-by-sentence trace](paper_traced.md)") + ".*", ""]
     return "\n".join(out)
 
 
@@ -1045,11 +1104,15 @@ class WritingSession:
         done = json.loads(saved.read_text()) if saved.exists() else {}
         done = done if done.get("key") == key else {"key": key, "sections": {}, "issues": []}
 
+        homes = statement_homes(kp["sections"])
+
         def write(s: dict, sections: list[dict], objections: list[str]) -> dict:
             so_far = "\n".join(f"- {d['heading']}: {_sentences(d['body'])[0] if d['body'].strip() else ''}"
                                for d in sections)
             ctx = {"outline": o, "heading": s["heading"], "purpose": purposes.get(s["heading"].lower(), ""),
                    "points": s["points"], "so_far": so_far, "objections": objections,
+                   "mentions": sorted({e for p in s["points"] for e in p["evidence"]
+                                       if homes.get(e) != s["heading"]}) if not self.demo else [],
                    "previous": done["sections"].get(s["heading"], {}).get("body", "") if objections else ""}
             warnings: list[str] = []
             try:
@@ -1097,8 +1160,16 @@ class WritingSession:
         self.state.sections, self.state.review = sections, None
         self.state.stage = "drafted"
         self._save()
-        (self.out / "paper.md").write_text(render_paper_md(o, sections, demo=self.demo))
+        self._write_paper()
         return sections
+
+    def _write_paper(self) -> None:
+        """Two editions of one draft: `paper.md` to read, `paper_traced.md` with the approved
+        statement behind every sentence. A demo draft has no statements and gets one file."""
+        o, sections, review = self.state.outline, self.state.sections, self.state.review
+        (self.out / "paper.md").write_text(render_paper_md(o, sections, review, demo=self.demo, traced=self.demo))
+        if not self.demo:
+            (self.out / "paper_traced.md").write_text(render_paper_md(o, sections, review))
 
     # ---- [4] review ------------------------------------------------------------------------------
     def review(self) -> dict:
@@ -1106,7 +1177,8 @@ class WritingSession:
         if not self.state.sections:
             raise RuntimeError("run draft() first")
         o = self.state.outline
-        paper = render_paper_md(o, self.state.sections, demo=self.demo)
+        # Reviewers judge what a reader would see; the statement ids are audit scaffolding.
+        paper = render_paper_md(o, self.state.sections, demo=self.demo, traced=self.demo)
         ev = self.bank.to_prompt_block()
         reviews = [{"persona": r.persona, **r.run({"paper": paper, "evidence": ev})} for r in self.reviewers]
         seen, weaknesses, strengths, questions = set(), [], [], []
@@ -1126,7 +1198,7 @@ class WritingSession:
         self.state.review = result
         self.state.stage = "reviewed"
         self._save()
-        (self.out / "paper.md").write_text(render_paper_md(o, self.state.sections, result, demo=self.demo))
+        self._write_paper()
         (self.out / "review.md").write_text(render_review_md(result))
         return result
 
