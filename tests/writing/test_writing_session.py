@@ -318,12 +318,17 @@ def test_a_gap_in_the_evidence_stops_the_stage_instead_of_asking_for_another_rew
         seen.append(issues)
         return {"v": len(seen)}
 
-    panel = [Panelist(MockLLM(jsons=[gap]), "Methodologist"), Panelist(MockLLM(jsons=[ACCEPT]), "Editor")]
+    panel = [Panelist(MockLLM(jsons=[gap, gap]), "Methodologist"), Panelist(MockLLM(jsons=[ACCEPT, ACCEPT]), "Editor")]
     final, transcript = discuss(propose, panel, "key points", json.dumps, "ev", max_rounds=3)
-    assert seen == [None] and len(transcript) == 1                 # no revision was paid for
+    # one revision, in case the plan only asked for too much; then it stops, two rounds short of the cap
+    assert len(seen) == 2 and seen[1] == gap["issues"] and len(transcript) == 2
     assert not transcript[-1]["accepted"] and evidence_gaps(transcript) == gap["issues"]
     with pytest.raises(ReviewBlocked, match="run scientific review again"):
         WritingSession._require_panel(transcript)
+    seen.clear()                                   # the plan stops asking: the gap is gone and the stage passes
+    panel = [Panelist(MockLLM(jsons=[gap, ACCEPT]), "Methodologist")]
+    final, transcript = discuss(propose, panel, "key points", json.dumps, "ev", max_rounds=3)
+    assert transcript[-1]["accepted"] and not evidence_gaps(transcript)
 
 
 def test_a_panel_over_approved_statements_is_told_their_text_is_fixed():

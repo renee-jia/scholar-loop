@@ -353,7 +353,11 @@ REVIEWER_PERSONAS = {
 
 
 def _fmt_issues(issues: list[dict]) -> str:
-    return "\n".join(f"- [{i['target']}] {i['issue']} → {i['suggestion']}" for i in issues)
+    lines = [f"- [{i['target']}] {i['issue']} → {i['suggestion']}"
+             + ("  (The evidence does not contain this and you cannot add it: change the plan so it "
+                "no longer asks for it.)" if i.get("severity") == "missing_evidence" else "")
+             for i in issues]
+    return "\n".join(lines)
 
 
 class Outliner(Agent):
@@ -708,7 +712,9 @@ def discuss(propose, panel: list[Panelist], stage: str, render, evidence: str,
     transcript: list[dict] = []
     artifact = propose(None)
     raised: dict[str, list[dict]] = {}
+    gaps: list[dict] = []
     for rnd in range(max_rounds + 1):
+        had_gap = bool(gaps)
         reviews = [{"role": p.role, **p.critique(stage, render(artifact), evidence, raised.get(p.role))}
                    for p in panel]
         raised = {r["role"]: blocking_issues(r) for r in reviews}
@@ -718,7 +724,10 @@ def discuss(propose, panel: list[Panelist], stage: str, render, evidence: str,
                            "accepted": not issues, **({"evidence_gaps": gaps} if gaps else {})})
         if checkpoint is not None:
             checkpoint(artifact, list(transcript))      # a later failure keeps the rounds already paid for
-        if not issues or gaps or rnd == max_rounds:     # another revision cannot close a gap
+        # A gap gets one revision: the plan may simply have asked for more than the evidence
+        # holds, and the proposer can stop asking. If a gap is still there after that, no
+        # rewrite will close it and the stage stops.
+        if not issues or (gaps and had_gap) or rnd == max_rounds:
             break
         artifact = propose(issues)
     return artifact, transcript
