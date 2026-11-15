@@ -162,7 +162,7 @@ def test_input_validation_and_readonly_sample(app, tmp_path):
         app.store.artifact(r["id"], "../../projects.json")
     with pytest.raises(ValueError):
         app.store.update(r["id"], {"profile": "digits-mlp.yaml"})
-    sample = app.store.import_run(ROOT / "examples/sample_runs/digits_early")
+    sample = app.store.import_run(ROOT / "examples/sample_runs/digits_hyperparameter_tuning")
     assert sample["readonly"]
     assert len(app.store.detail(sample["id"])["entries"]) == 18
     with pytest.raises(ValueError, match="read-only"):
@@ -346,7 +346,7 @@ def test_deleted_research_stays_deleted_until_explicitly_reopened(app):
 
 
 def test_delete_archive_removes_only_its_workspace_entry(app):
-    sample = ROOT / "examples/sample_runs/digits_early"
+    sample = ROOT / "examples/sample_runs/digits_hyperparameter_tuning"
     before = (sample / "experiments.jsonl").read_bytes()
     r = app.store.import_run(sample, readonly=True)
     app.store.delete(r["id"])
@@ -359,7 +359,7 @@ def test_every_shipped_run_opens_read_only_and_is_shown_as_recorded(app):
     shown = app.store.import_samples()
     assert Path(shown["path"]).name == "distillation"
     runs = {Path(r["path"]).name: r for r in app.store.list_runs()}
-    assert {"distillation", "agnews", "digits_skip_connection", "digits_early"} <= set(runs)
+    assert {"distillation", "agnews", "digits_skip_connection", "digits_hyperparameter_tuning"} <= set(runs)
     for name in ("distillation", "agnews", "digits_skip_connection"):
         assert runs[name]["readonly"]
         detail = app.store.detail(runs[name]["id"])

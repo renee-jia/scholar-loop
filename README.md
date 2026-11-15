@@ -239,7 +239,7 @@ so the rejected attempts stay on the record too.
 
 ### A full live run, and why its own reviewers rejected it
 
-[`examples/sample_runs/digits_early`](examples/sample_runs/digits_early/) is a verbatim capture of one
+[`examples/sample_runs/digits_hyperparameter_tuning`](examples/sample_runs/digits_hyperparameter_tuning/) is a verbatim capture of one
 complete run with `claude-opus-5-5`: a literature review, five ideas, a tournament pick, 18 real
 training runs, a staged write-up and a review. It cost about $0.94 for the campaign and $5.53
 for the write-up.
@@ -250,7 +250,7 @@ campaign only tuned hyperparameters, and so the paper's own hypothesis was never
 run also showed that the funnel's tiers were being compared on different validation folds.
 
 Both are fixed now. That failure is where the treatment-versus-control rule comes from. The
-capture's [README](examples/sample_runs/digits_early/README.md) lists everything else the run exposed.
+capture's [README](examples/sample_runs/digits_hyperparameter_tuning/README.md) lists everything else the run exposed.
 
 ### Agent versus random search
 
