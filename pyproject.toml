@@ -28,6 +28,7 @@ nlp = ["datasets>=2.14"]                         # one-time AG News download for
 
 [project.scripts]
 scholarloop = "scholarloop.replay:main"   # replay, trace and check a recorded run; needs no model key
+scholarloop-ui = "scholarloop.ui.__main__:main"
 
 [project.urls]
 Repository = "https://github.com/renee-jia/scholar-loop"
@@ -39,6 +40,7 @@ include = ["scholarloop*"]
 "scholarloop.writing" = ["skills/*.md"]
 "scholarloop.core" = ["profile.schema.yaml"]
 "scholarloop" = ["samples/*/*"]
+"scholarloop.ui" = ["static/*.html", "static/*.css", "static/*.js", "static/*.svg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

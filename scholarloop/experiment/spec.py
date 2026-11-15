@@ -122,7 +122,7 @@ def frozen_context(profile, spec):
     paths.update(root / p for p in spec["data_files"])
     sources, data = {}, {}
     for p in sorted(paths):
-        rel = str(p.relative_to(root))
+        rel = p.relative_to(root).as_posix()
         if p.suffix == ".py" and rel not in spec["data_files"]:
             sources[rel] = p.read_text()
         else:

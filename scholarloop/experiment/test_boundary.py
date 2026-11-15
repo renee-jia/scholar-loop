@@ -62,12 +62,15 @@ def reserve_test_access(ledger_path, run_id, candidate_id, protocol):
             json.dump(value, stream, sort_keys=True)
             stream.flush()
             os.fsync(stream.fileno())
-        for target in (directory, directory.parent):
-            fd = os.open(target, os.O_RDONLY)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
+        # The receipt file is flushed on every platform. Windows cannot open a
+        # directory through os.open; directory-entry fsync is a POSIX facility.
+        if os.name != "nt":
+            for target in (directory, directory.parent):
+                fd = os.open(target, os.O_RDONLY)
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
 
 
 def validate_confirmation_run(profile, registry_dir, ledger_path, protocol, candidate,

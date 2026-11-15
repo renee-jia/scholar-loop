@@ -74,6 +74,28 @@ pytest -q
 
 For live runs, add `".[llm]"` and set `ANTHROPIC_API_KEY`.
 
+### Web UI
+
+Use the local web UI on Windows, macOS, or Linux to manage research, experiments, and drafts.
+
+![ScholarLoop web UI](assets/ui-workspace.jpg)
+
+From the repository root, start the UI:
+
+**Windows (PowerShell)**
+
+```powershell
+python -m scholarloop.ui
+```
+
+**macOS / Linux**
+
+```bash
+python3 -m scholarloop.ui
+```
+
+This opens `http://127.0.0.1:8765` in your browser. Press `Ctrl+C` to stop.
+
 ## 🧭 How it works
 
 ### 1 · Ideation: you say where to dig, then choose what is worth running
