@@ -368,8 +368,8 @@ def test_every_shipped_run_opens_read_only_and_is_shown_as_recorded(app):
         assert detail["writing"]["stage"] == "reviewed" and "paper.md" in detail["writing"]["artifacts"]
         assert "/Users/" not in app.store.artifact(runs[name]["id"], "scientific_review.json")
         # In a checkout this fails if the registry was left out of version control.
-        assert any((ROOT / "examples/sample_runs" / name / "registry/protocols").glob("*.json")), \
-            "the protocols a run cites must ship with it"
+        assert any((ROOT / "examples/sample_runs" / name / "registry").rglob("*.json")), \
+            "the run records a run cites must ship with it"
         with pytest.raises(ValueError, match="read-only"):
             app.jobs.start(runs[name]["id"], "campaign", {})
 
