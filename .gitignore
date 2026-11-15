@@ -35,3 +35,7 @@ DESIGN.md
 # Persistent training reservation state
 *.training_budget.json
 *.training_budget.lock
+
+# Rater packet for the human check of the claim audit (built by scholarloop.human_eval;
+# published as its own repository, without the organiser's key)
+human_eval/
