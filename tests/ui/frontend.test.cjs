@@ -221,3 +221,20 @@ test("deletion makes no request until the confirmation callback runs",async()=>{
   assert.equal(h.state.run,null);
   assert.equal(h.state.boot.runs.length,0);
 });
+
+test("an archive shows what it recorded, never an invitation to act",()=>{
+  const h=harness();
+  h.state.detail.config.readonly=true;
+  h.state.detail.entries=[{id:"e",score:1,fidelity:["full"]}];
+  h.state.detail.artifacts=[{path:"ideas.md",size:1}];
+  h.state.detail.writing.artifacts={"review.md":"review.md"};
+  assert.match(h.run("ideas()"),/data-file="ideas.md"/);
+  assert.doesNotMatch(h.run("ideas()"),/Develop a testable hypothesis/);
+  assert.match(h.run("review()"),/predates the scientific review/);
+  assert.match(h.run("research()"),/Nothing was recorded for this stage/);
+  assert.match(h.run("stats()"),/Recorded in this run&#39;s README|Recorded in this run's README/);
+  assert.doesNotMatch(h.run("stats()"),/\$0\.00/);
+  h.state.detail.review.status="READY_TO_WRITE";
+  h.state.detail.writing.stage="reviewed";
+  assert.equal((h.run("progress()").match(/workflow-step done/g)||[]).length,5);
+});
