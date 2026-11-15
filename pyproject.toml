@@ -1,7 +1,7 @@
 [project]
 name = "scholarloop"
-version = "0.0.1"
-description = "An auto-research framework that replicates a PhD's research workflow (literature review, ideas, experiments, writing) on a small-GPU budget."
+version = "0.1.0"
+description = "An interactive research loop in which a harness of deterministic checks, not the model, decides what a paper may claim."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -26,6 +26,9 @@ llm = ["anthropic>=0.109"]                      # only needed for real runs (Ant
 engines = ["torch>=2.0", "numpy>=1.23", "scikit-learn>=1.1"]  # the real torch experiment engines
 nlp = ["datasets>=2.14"]                         # one-time AG News download for the agnews-bow engine
 
+[project.scripts]
+scholarloop = "scholarloop.replay:main"   # replay, trace and check a recorded run; needs no model key
+
 [project.urls]
 Repository = "https://github.com/renee-jia/scholar-loop"
 
@@ -35,6 +38,7 @@ include = ["scholarloop*"]
 [tool.setuptools.package-data]
 "scholarloop.writing" = ["skills/*.md"]
 "scholarloop.core" = ["profile.schema.yaml"]
+"scholarloop" = ["samples/*/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
