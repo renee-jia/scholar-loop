@@ -337,3 +337,30 @@ test("recognised sources link to their public pages; anything else stays plain t
   assert.match(h.run('sourceChip("arXiv:2306.13649")'),/^<a class="source-chip" href="https:\/\/arxiv\.org\/abs\/2306\.13649" target="_blank" rel="noopener noreferrer"/);
   assert.match(h.run('sourceChip("my own notes")'),/^<span>my own notes<\/span>$/);
 });
+
+test("the writing page leads with the manuscript and marks each stage done, current or still to come",()=>{
+  const h=harness();
+  h.state.detail.review.status="READY_TO_WRITE";
+  h.state.detail.writing={stage:"keypointed",artifacts:{"outline.md":"outline.md","key_points.md":"key_points.md"},summary:{title:"A <b>title</b>",sections:0,words:0,reviewers:0,mean_score:null}};
+  let html=h.run("writing()");
+  assert.match(html,/Manuscript · stage 3 of 4/);
+  assert.match(html,/A &lt;b&gt;title&lt;\/b&gt;/);
+  assert.deepEqual([...html.matchAll(/write-step (done|current|todo)/g)].map(m=>m[1]),["done","done","current","todo"]);
+  assert.match(html,/Up next/);
+  h.state.detail.writing={stage:"reviewed",artifacts:{"paper.md":"paper.md","paper_traced.md":"paper_traced.md","evidence_map.md":"evidence_map.md"},summary:{title:"T",sections:8,words:3376,reviewers:3,mean_score:2.2,recommendation:"reject"}};
+  html=h.run("writing()");
+  assert.match(html,/manuscript-hero done/);
+  assert.match(html,/<b>3,376<\/b><span>Words/);
+  assert.match(html,/<b>2\.2<small>\/10<\/small><\/b><span>Panel score · reject/);
+  assert.match(html,/data-file="paper_traced.md"/);
+  assert.doesNotMatch(html,/data-action="write"/);
+});
+
+test("tools are shelved by whether they call the model",()=>{
+  const h=harness();
+  h.state.boot.actions=["evaluate","baseline","compare","traces","new_tool"].map(id=>({id,label:id,group:"tools"}));
+  const html=h.run("toolsPage()").split('<div class="spacer">')[0], [free,live]=html.split('<section class="tool-shelf').slice(1);
+  assert.deepEqual([...free.matchAll(/<h3>([^<]+)</g)].map(m=>m[1]),["evaluate","traces"]);
+  assert.deepEqual([...live.matchAll(/<h3>([^<]+)</g)].map(m=>m[1]),["baseline","compare","new_tool"]);
+  assert.match(live,/Random search alone is free/);
+});

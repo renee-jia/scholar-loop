@@ -65,7 +65,7 @@ function toast(message, error=false) {
 }
 function busy() { return state.detail?.jobs.some(j=>j.status==="running") || false; }
 function fileExists(name) {
-  if(["writing.json","outline.md","key_points.md","paper.md","review.md","evidence_map.md","approved_evidence.json"].includes(name))return !!state.detail?.writing.artifacts?.[name];
+  if(["writing.json","outline.md","key_points.md","paper.md","paper_traced.md","review.md","evidence_map.md","approved_evidence.json"].includes(name))return !!state.detail?.writing.artifacts?.[name];
   return state.detail?.artifacts.some(f=>f.path===name);
 }
 function profile() { return state.boot.profiles.find(p=>p.id===state.detail?.config.profile); }
@@ -271,19 +271,37 @@ function review() {
     (r.issues.length?`<div class="spacer"></div>`+panel(`Review issues <span class="file-group-count">${r.issues.length}</span>`,reviewIssues(r.issues)):"")+
     `<div class="spacer"></div>${protocols()}<div class="spacer"></div>${jobPanel()}`;
 }
+// The manuscript leads; the four stages below show how it was built and what each one left behind.
+const writeSteps=[["outline.md","Outline","The narrative, and the question each section answers."],["key_points.md","Key points","What each section will say, and the evidence it draws on."],
+  ["paper.md","Manuscript","Sections drafted from the approved key points."],["review.md","Panel review","Simulated reviewers read the finished draft."]];
 function writing() {
-  const d=state.detail, stages=["new","outlined","keypointed","drafted","reviewed"], current=stages.indexOf(d.writing.stage);
+  const d=state.detail, stages=["new","outlined","keypointed","drafted","reviewed"], current=Math.max(0,stages.indexOf(d.writing.stage));
   const labels=["Generate outline","Approve outline and generate key points","Approve key points and draft manuscript","Submit manuscript for review","Writing complete"];
+  const m=d.writing.summary||{}, done=current===4;
+  const stat=(value,label)=>`<div class="review-stat"><b>${value}</b><span>${label}</span></div>`;
+  const hero=current||m.title?`<section class="panel manuscript-hero${done?" done":""}"><div class="manuscript-head"><div class="idea-kicker">${done?"Manuscript · writing complete":`Manuscript · stage ${Math.min(current+1,4)} of 4`}</div><h2>${esc(m.title||"Untitled manuscript")}</h2></div>`+
+    `<div class="review-stats">${stat(m.sections||"—","Sections drafted")}${stat(m.words?Number(m.words).toLocaleString("en-US"):"—","Words")}${stat(m.reviewers||"—","Simulated reviewers")}${stat(m.mean_score!=null?`${esc(m.mean_score)}<small>/10</small>`:"—",m.recommendation?`Panel score · ${esc(m.recommendation)}`:"Panel score")}</div>`+
+    `<div class="manuscript-foot">${fileExists("paper.md")?artifactButton("paper.md","Read the manuscript","primary"):""}${fileExists("paper_traced.md")?artifactButton("paper_traced.md","Sentence-by-sentence trace"):""}${fileExists("evidence_map.md")?artifactButton("evidence_map.md","Evidence map"):""}<span class="manuscript-note">${icon("shield")} Every sentence cites an approved statement.</span></div></section>`:"";
   return heading("Turn tested ideas into a paper","Build an evidence-backed paper through an outline, key points, manuscript, and review.","05 / WRITING")+
     ((d.review.status!=="READY_TO_WRITE"||d.review.release_error)&&!d.config.readonly?`<div class="notice">Writing requires a successful scientific review and author approval. <button class="btn ghost small" data-tab="review">Go to scientific review ${icon("arrow")}</button></div>`:"")+
-    `<div class="writing-stages">${["Outline","Key points","Manuscript sections","Manuscript review"].map((l,i)=>`<div class="writing-stage ${i===current?"active":""}"><div class="eyebrow">STAGE 0${i+1}</div>${i<current?"✓ ":""}${l}</div>`).join("")}</div><div class="action-row">${current<4?button("write",labels[Math.max(0,current)],"primary"):""}${button("write_feedback","Give feedback and revise")}${current<4?button("write_auto","Complete remaining writing stages"):""}</div>`+
-    `<div class="tool-grid">${[["outline.md","Outline","Define the narrative and the questions each section will answer."],["key_points.md","Key points","Specify what each section will say and the evidence it draws on."],["paper.md","Manuscript","Draft each section from the approved key points."],["review.md","Manuscript review","Read the final reviews and issues that still need attention."]].map(([file,title,desc])=>`<article class="panel tool-card"><div class="row space-between"><h3>${title}</h3>${tag(fileExists(file)?"Ready":"Not yet generated",fileExists(file)?"green":"")}</div><p>${desc}</p>${fileExists(file)?artifactButton(file,"Read"):""}</article>`).join("")}</div><div class="spacer"></div>`+
-    (fileExists("evidence_map.md")?panel("Trace every claim to its evidence",`<div class="list-row"><div class="file-icon">${icon("shield")}</div><div class="grow"><strong>Manuscript evidence map</strong><small>See how approved claims connect to original experiments and measurements.</small></div>${artifactButton("evidence_map.md","View evidence")}</div>`)+`<div class="spacer"></div>`:"")+jobPanel();
+    hero+`<div class="section-title write-title"><h2>How it was written</h2><small>${done?"All four stages complete":`Next: ${esc(labels[current])}`}</small></div>`+
+    `<div class="write-track">${writeSteps.map(([file,title,desc],i)=>{const state_=i<current?"done":i===current?"current":"todo";
+      return `<article class="panel write-step ${state_}"><div class="write-step-top"><div class="write-circle">${state_==="done"?icon("check"):i+1}</div><div class="write-line"></div></div><div class="write-stage-label">Stage 0${i+1}</div><h3>${title}</h3><p>${desc}</p><div class="write-step-foot">${fileExists(file)?artifactButton(file,"Read","ghost small"):tag(state_==="current"?"Up next":"Not yet generated",state_==="current"?"amber":"outline")}</div></article>`;}).join("")}</div>`+
+    `<div class="action-row">${current<4?button("write",labels[current],"primary"):""}${button("write_feedback","Give feedback and revise")}${current<4?button("write_auto","Complete remaining writing stages"):""}</div>`+jobPanel();
 }
 const toolNotes={evaluate:"Inspect experiment records, review validity, and model logs without changing them.",traces:"Summarize accepted, rejected, failed, and incomplete model outputs.",inject_faults:"Inject errors into artifact copies to check whether validators detect them.",baseline:"Use a live model for a single writing pass, then apply the same checks.",decision_bench:"Evaluate synthetic research decisions without a model API.",decision_policy:"Compare model strategies with request limits for each task and strategy.",suite:"Run random search evaluations across the tasks in a manifest.",compare:"Compare random search and the agent under the same budget rules."};
+// Tools in two shelves: what is free to run, and what spends model budget.
+const toolIcons={evaluate:"shield",traces:"file",inject_faults:"flask",decision_bench:"sliders",suite:"grid",baseline:"pen",decision_policy:"bulb",compare:"play"};
+const toolShelves=[["Offline checks","Run on the records already on disk. No model calls, no cost.",["evaluate","traces","inject_faults","decision_bench","suite"],"free","No model calls"],
+  ["Live comparisons","Call the model to produce something to compare against. These spend from the research budget.",["baseline","decision_policy","compare"],"live","Uses the model"]];
 function toolsPage() {
+  const actions=state.boot.actions.filter(a=>a.group==="tools"), placed=new Set(toolShelves.flatMap(shelf=>shelf[2]));
+  const shelves=toolShelves.map(([title,note,ids,kind,badge])=>[title,note,ids.map(id=>actions.find(a=>a.id===id)).filter(Boolean),kind,badge]);
+  shelves[1][2].push(...actions.filter(a=>!placed.has(a.id)));
   return heading("Evaluate research with consistent standards","Run the existing diagnostics, reliability checks, and comparative evaluations.","EVALUATION & TOOLS")+
-    `<div class="tool-grid">${state.boot.actions.filter(a=>a.group==="tools").map(a=>`<article class="panel tool-card"><h3>${esc(a.label)}</h3><p>${esc(toolNotes[a.id])}</p>${button(a.id,"Configure and run",a.id==="evaluate"?"primary":"")}</article>`).join("")}</div><div class="spacer"></div>${jobPanel()}`;
+    shelves.filter(shelf=>shelf[2].length).map(([title,note,items,kind,badge])=>`<section class="tool-shelf ${kind}"><div class="tool-shelf-head"><h2>${title}</h2><span class="file-group-count">${items.length}</span><p>${note}</p></div><div class="tool-cards">${items.map(a=>
+      `<article class="panel tool-tile"><div class="tool-tile-icon">${icon(toolIcons[a.id]||"sliders")}</div><div class="grow"><h3>${esc(a.label)}</h3><p>${esc(toolNotes[a.id]||"")}</p></div><div class="tool-tile-foot"><span class="tool-cost">${a.id==="compare"?"Random search alone is free":badge}</span>${button(a.id,"Configure and run")}</div></article>`).join("")}</div></section>`).join("")+
+    `<div class="spacer"></div>${jobPanel()}`;
 }
 function filesPage() {
   const files=state.detail.artifacts.filter(f=>f.path.toLowerCase().includes(state.filter.toLowerCase()));

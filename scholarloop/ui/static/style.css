@@ -447,3 +447,56 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .idea-card.chosen .idea-rank { color: var(--action); }
 .idea-sources a.source-chip { color: var(--action); }
 .idea-sources a.source-chip:hover { border-color: var(--action); }
+
+/* The review page uses the same warm charcoal as the buttons. */
+.idea-label { color: var(--action); }
+.review-verdict.approved { border-left-color: var(--action); }
+.review-verdict.approved .review-mark { background: var(--action); border-color: var(--action); }
+.review-stat b { color: var(--action); }
+.reviewer-card { border-top-color: var(--action); }
+.more-points > summary { color: var(--action); }
+
+/* Writing: the manuscript leads, the four stages show how it was built. */
+.manuscript-hero { border-left: 4px solid var(--line-strong); margin-bottom: 30px; }
+.manuscript-hero.done { border-left-color: var(--action); box-shadow: var(--shadow); }
+.manuscript-head { padding: 28px 30px 24px; }
+.manuscript-head h2 { font-family: var(--font-heading); font-size: 27px; line-height: 1.3; font-weight: 500; letter-spacing: -0.4px; text-wrap: balance; max-width: 30em; }
+.manuscript-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 16px 30px; }
+.manuscript-note { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 11px; color: var(--muted); }
+.manuscript-note .icon { width: 14px; height: 14px; }
+.write-title { align-items: baseline; }
+.write-title small { font-size: 12px; color: var(--muted); }
+.write-track { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; }
+.write-step { padding: 20px 22px; display: flex; flex-direction: column; }
+.write-step-top { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.write-circle { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: 13px; font-weight: 600; border: 1px solid var(--line-strong); color: var(--muted); background: var(--paper); }
+.write-circle .icon { width: 16px; height: 16px; }
+.write-line { flex: 1; height: 2px; background: var(--line); border-radius: 2px; }
+.write-step.done .write-circle { background: var(--action); border-color: var(--action); color: var(--paper); }
+.write-step.done .write-line { background: var(--action); }
+.write-step.current { border-color: var(--action); }
+.write-step.current .write-circle { border: 2px solid var(--action); color: var(--action); }
+.write-step.todo { background: transparent; }
+.write-step.todo h3, .write-step.todo .write-stage-label { color: var(--muted); }
+.write-stage-label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--action); }
+.write-step h3 { font-family: var(--font-heading); font-size: 20px; font-weight: 500; margin: 4px 0 6px; }
+.write-step p { font-size: 12px; line-height: 1.7; color: var(--muted); }
+.write-step-foot { margin-top: auto; padding-top: 14px; }
+@media (max-width: 1000px) { .write-track { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Evaluation and tools: a free shelf and a paid shelf. */
+.tool-shelf { margin-bottom: 30px; }
+.tool-shelf-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.tool-shelf-head h2 { font-family: var(--font-heading); font-size: 22px; font-weight: 500; }
+.tool-shelf-head p { font-size: 12px; color: var(--muted); }
+.tool-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.tool-tile { padding: 22px 22px 0; display: flex; flex-direction: column; gap: 14px; border-top: 3px solid var(--action); }
+.tool-shelf.live .tool-tile { border-top-color: var(--warning); }
+.tool-tile-icon { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: #f4f1e8; color: var(--action); }
+.tool-shelf.live .tool-tile-icon { background: var(--warning-soft); color: var(--warning); }
+.tool-tile h3 { font-size: 15px; font-weight: 650; }
+.tool-tile p { font-size: 12px; line-height: 1.7; color: var(--muted); margin-top: 5px; }
+.tool-tile .grow { flex: 1; }
+.tool-tile-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 -22px; padding: 12px 22px; background: var(--surface); border-top: 1px solid var(--line); }
+.tool-cost { font-size: 11px; color: var(--muted); }
+.tool-shelf.live .tool-cost { color: var(--warning); font-weight: 600; }

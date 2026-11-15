@@ -366,6 +366,10 @@ def test_every_shipped_run_opens_read_only_and_is_shown_as_recorded(app):
         assert detail["entries"] and not detail["warnings"]
         assert detail["review"]["status"] == "READY_TO_WRITE" and not detail["review"]["release_error"]
         assert detail["writing"]["stage"] == "reviewed" and "paper.md" in detail["writing"]["artifacts"]
+        summary = detail["writing"]["summary"]
+        assert summary["title"] and summary["sections"] >= 8 and summary["words"] > 2000
+        assert summary["reviewers"] == 3 and 1 <= summary["mean_score"] <= 10
+        assert "paper_traced.md" in detail["writing"]["artifacts"]
         assert "/Users/" not in app.store.artifact(runs[name]["id"], "scientific_review.json")
         # In a checkout this fails if the registry was left out of version control.
         assert any((ROOT / "examples/sample_runs" / name / "registry").rglob("*.json")), \

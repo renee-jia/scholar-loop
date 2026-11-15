@@ -266,8 +266,16 @@ class Store:
             writing_root = root
         writing = read((writing_root / "writing.json").relative_to(root))
         writing_artifacts = {name: (writing_root / name).relative_to(root).as_posix()
-                             for name in ("writing.json", "outline.md", "key_points.md", "paper.md", "review.md",
-                                          "evidence_map.md", "approved_evidence.json") if (writing_root / name).exists()}
+                             for name in ("writing.json", "outline.md", "key_points.md", "paper.md", "paper_traced.md",
+                                          "review.md", "evidence_map.md", "approved_evidence.json")
+                             if (writing_root / name).exists()}
+        outline, panel = writing.get("outline"), writing.get("review")
+        outline, panel = outline if isinstance(outline, dict) else {}, panel if isinstance(panel, dict) else {}
+        sections = [s for s in writing.get("sections") or [] if isinstance(s, dict)]
+        writing_summary = {"title": outline.get("title"), "sections": len(sections),
+                           "words": sum(len(str(s.get("body", "")).split()) for s in sections),
+                           "mean_score": panel.get("mean_score"), "recommendation": panel.get("recommendation"),
+                           "reviewers": len(panel.get("reviews") or [])}
         protocols = []
         for folder in ("experiment_agenda",):
             for file in (root / folder).glob("*.json"):
@@ -316,7 +324,8 @@ class Store:
                            "issues": review.get("issues", []), "reports": review.get("reports", []),
                            "argument": dossier.get("argument"), "release_error": release_error},
                 "writing": {"stage": writing.get("stage", "new"), "demo": writing.get("demo", False),
-                            "artifacts": writing_artifacts, "directory": str(writing_root)},
+                            "artifacts": writing_artifacts, "directory": str(writing_root),
+                            "summary": writing_summary},
                 "entries": entries, "protocols": protocols, "artifacts": self.artifacts(ident),
                 "spend": read("ui_spend.json"), "warnings": warnings,
                 "iteration": read("research_iterations.json"), "handoff": read("handoff.json"), "activity": activity[:12]}
