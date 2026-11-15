@@ -857,3 +857,66 @@ def test_a_hash_that_recorded_absolute_paths_survives_a_move_but_not_a_change(tm
     (reg / "exp_0002.json").unlink()
     (reg / "exp_0001.json").write_text((reg / "exp_0001.json").read_text().replace("7.25", "6.25"))
     assert not same_inputs(snapshot(p, led, reg), recorded, manifest)    # changed contents
+
+
+def test_a_round_that_fails_before_it_has_an_argument_keeps_the_last_one(tmp_path):
+    paths = setup(tmp_path)
+    s = session(paths, MockLLM(jsons=[PASS] * 4))
+    assert s.review(argument=ARGUMENT)["status"] == "READY_FOR_AUTHOR"
+    s.llm = MockLLM(jsons=[])                                   # the argument builder gets no answer
+    with pytest.raises(Exception):
+        s.review(feedback="Narrow the claim.")
+    failed = s.load()
+    assert failed["status"] == "REVIEW_FAILED" and not failed["dossier"].get("argument")
+    assert failed["last_argument"]["argument"] == ARGUMENT
+    s.llm = MockLLM(jsons=[])                                   # and a second failure does not drop it
+    with pytest.raises(Exception):
+        s.review(feedback="Narrow the claim.")
+    assert s.load()["last_argument"]["argument"] == ARGUMENT
+    fresh = MockLLM(jsons=[ARGUMENT] + [PASS] * 4)
+    s.llm = fresh
+    assert s.review(feedback="Narrow the claim.")["status"] == "READY_FOR_AUTHOR"
+    builder_prompt = fresh.calls[0]["prompt"]
+    assert '"previous_argument": {' in builder_prompt and ARGUMENT["claims"][0]["text"] in builder_prompt
+
+
+@pytest.mark.parametrize("severity,reworded,status", [
+    ("major", False, "READY_FOR_AUTHOR"),       # the reviewer passed these words last round: a note
+    ("blocker", False, "NEEDS_REFRAMING"),      # a claim that is wrong blocks however late
+    ("major", True, "NEEDS_REFRAMING"),         # the statement changed, so nothing was passed
+])
+def test_a_late_major_issue_on_a_statement_the_reviewer_passed_unchanged_is_a_note(tmp_path, severity, reworded, status):
+    s = session(setup(tmp_path), MockLLM(jsons=[PASS] * 4))
+    assert s.review(argument=ARGUMENT)["status"] == "READY_FOR_AUTHOR"
+    blocks = status != "READY_FOR_AUTHOR"
+    late = {**PASS, "verdict": "revise" if blocks else "pass",
+            "issues": [{**ISSUE, "severity": severity, "action": "reframe"}]}
+    argument = ARGUMENT
+    if reworded:
+        claim = {**ARGUMENT["claims"][0], "scope": "This recipe, this split and this seed only."}
+        argument = {**ARGUMENT, "claims": [claim]}
+    s.llm = MockLLM(jsons=[PASS, late, PASS, PASS])
+    state = s.review(argument=argument)
+    assert state["status"] == status
+    assert state["settled"]["experimental"] == (["setup_scorer"] if reworded else ["claim_error", "setup_scorer"])
+    issue = state["issues"][-1]
+    assert (issue["status"], issue.get("late", False)) == (("open", False) if blocks else ("noted", True))
+    if not blocks:
+        assert ", late)" in (s.out / "scientific_review.md").read_text()
+        s.approve(author="Researcher", review_hash=state["review_hash"])
+        s.require_release()
+        tampered = s.load()
+        tampered["settled"]["experimental"] = []                # the note was only a note because of this
+        (s.out / s.STATE_FILE).write_text(json.dumps(tampered))
+        with pytest.raises(ReviewBlocked):
+            s.require_release()
+
+
+def test_a_reviewer_has_not_passed_a_statement_it_doubted_or_still_has_an_issue_on():
+    from scholarloop.review.critics import settled_statements
+    report = {"claim_checks": [CHECK], "issues": []}
+    assert settled_statements(ARGUMENT, ARGUMENT, report) == ["claim_error", "setup_scorer"]
+    assert settled_statements(ARGUMENT, ARGUMENT, report, open_targets=["setup_scorer"]) == ["claim_error"]
+    doubted = {"claim_checks": [{**CHECK, "status": "concern"}], "issues": [ISSUE]}
+    assert settled_statements(ARGUMENT, ARGUMENT, doubted) == ["setup_scorer"]
+    assert settled_statements(None, ARGUMENT, report) == [] and settled_statements(ARGUMENT, ARGUMENT, None) == []

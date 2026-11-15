@@ -131,13 +131,35 @@ LENSES = {
 }
 
 
-def blocks_release(issue, round_number) -> bool:
+def blocks_release(issue, round_number, settled=()) -> bool:
     """Whether a newly raised issue must be closed before the author is asked to approve.
 
     In the first round every issue blocks. Afterwards a new minor issue is a note: it is kept in
     the report the author approves, but it does not hold the review open. Without this a review
-    need never end, because a reviewer can always find one more thing to tighten."""
-    return round_number <= 1 or issue["severity"] != "minor"
+    need never end, because a reviewer can always find one more thing to tighten.
+
+    `settled` are statements the same reviewer read last round, unchanged since, without a
+    concern. A reviewer reading the same words again does not always reach the same verdict, and
+    a new major issue on such a statement reopened reviews that had converged. It is a note too.
+    A blocker still blocks: a claim that is wrong stays wrong however late it is noticed."""
+    if round_number <= 1:
+        return True
+    if issue["severity"] == "minor":
+        return False
+    return not (issue["severity"] == "major" and issue["target"] in settled)
+
+
+def settled_statements(previous_argument, argument, report, open_targets=()) -> list[str]:
+    """Statement ids one reviewer has already passed as they now read: word for word what the
+    previous argument said, with no concern, no issue and no open issue from that reviewer."""
+    if not previous_argument or not report:
+        return []
+    before = {x["id"]: x for key in ("claims", "setup", "related_work") for x in previous_argument.get(key, [])}
+    same = {x["id"] for key in ("claims", "setup", "related_work") for x in argument.get(key, [])
+            if before.get(x["id"]) == x}
+    doubted = {c["claim_id"] for c in report.get("claim_checks", []) if c["status"] == "concern"}
+    doubted |= {i["target"] for i in report.get("issues", [])} | set(open_targets)
+    return sorted(same - doubted)
 
 
 def check_claim_assessments(output, dossier, previous_issues=()):
@@ -187,7 +209,10 @@ class ScientificCritic(Agent):
         "problems that no previous issue covers. After the first round, a new issue of severity "
         "minor is recorded as a note for the author and does not block release: use blocker or "
         "major only when a claim is wrong, unsupported or misleading as written, and minor for "
-        "anything that would merely make a correct claim more complete. A claim may only state numbers that the dossier "
+        "anything that would merely make a correct claim more complete. `settled_statements` "
+        "lists statements that are unchanged since you reviewed them without a concern: a new "
+        "issue on one of them holds the review open only at severity blocker, and is otherwise a "
+        "note for the author. A claim may only state numbers that the dossier "
         "records: a measurement's value, per-seed values, median, seed_sd and std, and a cited "
         "run's self-reported values. Never require a claim to state a number that is not recorded "
         "(a ratio, an interval, a difference between two arms that no measurement holds): require "
@@ -262,11 +287,13 @@ class ScientificCritic(Agent):
                 errors.append(f"disposition of {item['issue_id']} cites no evidence")
             elif set(item["evidence"]) - known:
                 errors.append(f"disposition of {item['issue_id']}: " + explain_unknown(item["evidence"], known, d))
-        blocking = [i for i in output["issues"] if blocks_release(i, ctx.get("round", 1))]
+        blocking = [i for i in output["issues"]
+                    if blocks_release(i, ctx.get("round", 1), ctx.get("settled_statements", ()))]
         unresolved = bool(blocking) or any(x["status"] == "open" for x in dispositions)
         if (output["verdict"] == "pass") == unresolved:
             errors.append("Pass requires no blocking issue and no open disposition; revise requires one "
-                          "(after the first round a new minor issue is a note and does not block)")
+                          "(after the first round a new minor issue is a note and does not block, nor "
+                          "does a major one on a statement listed in settled_statements)")
         return errors
 
 

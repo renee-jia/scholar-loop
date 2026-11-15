@@ -15,7 +15,7 @@ from jsonschema import Draft7Validator
 from scholarloop.core.agent import AgentTrace
 from scholarloop.core.locking import exclusive_lock
 from scholarloop.review.contracts import ROLES, VERSION, REVIEW_SCHEMA, ReviewBlocked, atomic_json, digest, read_json
-from scholarloop.review.critics import (ArgumentBuilder, ScientificCritic, blocks_release,
+from scholarloop.review.critics import (ArgumentBuilder, ScientificCritic, blocks_release, settled_statements,
                                         check_claim_assessments)
 from scholarloop.review.dossier import (build_dossier, input_hash, paper_readiness, same_inputs,
                                          snapshot, validate_argument)
@@ -74,6 +74,13 @@ class ScientificReviewSession:
                      "status": "REVIEWING", "dossier": None, "reports": [],
                      "issues": old.get("issues", []), "feedback": feedback,
                      "release": None, "author_decisions": old.get("author_decisions", [])}
+            # The last argument that passed validation survives a round that fails before it has
+            # one of its own, so the next revision starts from it and not from nothing.
+            kept = old.get("dossier") or {}
+            last = ({"argument": kept["argument"], "input_hash": kept.get("input_hash"),
+                     "feedback": old.get("feedback", "")} if kept.get("argument") else old.get("last_argument"))
+            if last:
+                state["last_argument"] = last
             self._save(state)  # invalidate before even reading/building the new dossier
             try:
                 inputs = self.inputs()
@@ -100,14 +107,20 @@ class ScientificReviewSession:
                         and argument in (None, before["argument"])):
                     argument, done = before["argument"], list(old.get("reports", []))
                     state["round"], state["resumed_roles"] = old["round"], [r["role"] for r in done]
+                last = last or {}
+                # What each reviewer passed last round, as it still reads. A round that is being
+                # continued uses the list it started with.
+                complete = (old.get("status") not in (None, "REVIEWING", "REVIEW_FAILED", "INSUFFICIENT_EVIDENCE")
+                            and before.get("argument") and before.get("input_hash") == dossier["input_hash"])
+                passed = {r["role"]: r for r in old.get("reports", [])} if complete else {}
                 if argument is None:
                     # Same evidence and same feedback: the revision exists to close the open
                     # issues, so statements no open issue is about are kept word for word.
-                    settled = bool(before.get("argument") and old.get("feedback", "") == feedback
-                                   and before.get("input_hash") == dossier["input_hash"]
+                    settled = bool(last.get("argument") and last.get("feedback", "") == feedback
+                                   and last.get("input_hash") == dossier["input_hash"]
                                    and any(i["status"] == "open" for i in state["issues"]))
                     argument = ArgumentBuilder(self.llm, trace=self.trace).run({
-                        "dossier": dossier, "previous_argument": before.get("argument"),
+                        "dossier": dossier, "previous_argument": last.get("argument"),
                         "previous_issues": state["issues"], "author_feedback": feedback,
                         "keep_settled": settled})
                 errors = validate_argument(argument, dossier)
@@ -119,6 +132,10 @@ class ScientificReviewSession:
                 dossier["argument"] = argument
                 this_round = f"r{state['round']}:"
                 pending = [i for i in state["issues"] if i["status"] == "open" and not i["id"].startswith(this_round)]
+                state["settled"] = (old.get("settled", {}) if done else {
+                    role: settled_statements(before["argument"], argument, report,
+                                             [i["target"] for i in pending if i["role"] == role])
+                    for role, report in passed.items()})
                 reports = list(done)
                 state["reports"] = list(reports)
                 for role in ROLES:
@@ -128,7 +145,8 @@ class ScientificReviewSession:
                     client = self.critic_llms.get(role, self.llm)
                     report = ScientificCritic(client, role, trace=self.trace).run({
                         "dossier": dossier, "previous_issues": [i for i in pending if i["role"] == role],
-                        "author_feedback": feedback, "round": state["round"]})
+                        "author_feedback": feedback, "round": state["round"],
+                        "settled_statements": state["settled"].get(role, [])})
                     raw_client = getattr(client, "client", client)
                     identity = {"client": f"{type(raw_client).__module__}.{type(raw_client).__name__}",
                                 "model": getattr(client, "model", None),
@@ -137,8 +155,8 @@ class ScientificReviewSession:
                     state["reports"] = list(reports)
                     for index, issue in enumerate(report["issues"], 1):
                         state["issues"].append({**issue, "id": f"r{state['round']}:{role}:{index}",
-                                                "role": role, "status": _new_status(issue, state["round"]),
-                                                "dossier_hash": digest(dossier)})
+                                                "role": role, "dossier_hash": digest(dossier),
+                                                **_new_status(issue, state["round"], state["settled"].get(role, []))})
                     self._save(state)  # partial reviews are inspectable but never releasable
                 if input_hash(self.inputs()) != dossier["input_hash"]:
                     raise ReviewBlocked("Evidence changed during scientific review; review the new snapshot")
@@ -165,8 +183,9 @@ class ScientificReviewSession:
                         iid = f"r{state['round']}:{report['role']}:{index}"
                         if iid not in known:
                             state["issues"].append({**issue, "id": iid, "role": report["role"],
-                                                    "status": _new_status(issue, state["round"]),
-                                                    "dossier_hash": digest(state["dossier"])})
+                                                    "dossier_hash": digest(state["dossier"]),
+                                                    **_new_status(issue, state["round"],
+                                                                  state.get("settled", {}).get(report["role"], []))})
                             known.add(iid)
                 state["status"], state["failure"] = "REVIEW_FAILED", str(exc)
                 self._save(state)
@@ -175,6 +194,8 @@ class ScientificReviewSession:
     @staticmethod
     def _review_hash(state):
         payload = {k: state[k] for k in ("round", "dossier", "reports", "issues", "feedback")}
+        if state.get("settled"):                # what was treated as already passed is part of the review
+            payload["settled"] = state["settled"]
         if "research_iteration" in state:
             payload["research_iteration"] = state["research_iteration"]
         return digest(payload)
@@ -187,7 +208,9 @@ class ScientificReviewSession:
             raise ReviewBlocked("Scientific argument or deterministic evidence checks are incomplete")
         if {r["role"] for r in state["reports"]} != set(ROLES) or len(state["reports"]) != len(ROLES):
             raise ReviewBlocked("All four scientific critics must complete review")
-        if any(r["verdict"] != "pass" or any(blocks_release(i, state["round"]) for i in r["issues"])
+        settled = state.get("settled", {})
+        if any(r["verdict"] != "pass" or any(blocks_release(i, state["round"], settled.get(r["role"], ()))
+                                             for i in r["issues"])
                for r in state["reports"]):
             raise ReviewBlocked("Scientific critics have unresolved concerns")
         for report in state["reports"]:
@@ -273,10 +296,12 @@ class ScientificReviewSession:
         lines += ["", "## Issues", ""]
         notes = sum(i["status"] == "noted" for i in state["issues"])
         if notes:
-            lines += [f"_{notes} minor issue(s) raised after the first round are marked `noted`: they do "
-                      "not block approval, and the author should read them before approving._", ""]
+            lines += [f"_{notes} issue(s) raised after the first round are marked `noted`: they do "
+                      "not block approval, and the author should read them before approving. A note "
+                      "marked late is a major issue a reviewer raised on a statement it had passed "
+                      "unchanged the round before._", ""]
         for i in state["issues"]:
-            lines += [f"- **{i['id']}** ({i['severity']}, {i['status']}): {i['observation']}",
+            lines += [f"- **{i['id']}** ({i['severity']}, {i['status']}{', late' if i.get('late') else ''}): {i['observation']}",
                       f"  Action: {i['required_action']}", f"  Verify: {i['resolution_criterion']}"]
             if i.get("resolution"):
                 lines += [f"  Disposition: {i['resolution']['reason']} "
@@ -297,8 +322,11 @@ class ScientificReviewSession:
         atomic_json(self.out / "pending_decisions.json", decisions)
 
 
-def _new_status(issue, round_number) -> str:
-    return "open" if blocks_release(issue, round_number) else "noted"
+def _new_status(issue, round_number, settled=()) -> dict:
+    if blocks_release(issue, round_number, settled):
+        return {"status": "open"}
+    # A major issue that does not block was raised on a statement this reviewer had passed.
+    return {"status": "noted", **({"late": True} if issue["severity"] != "minor" else {})}
 
 
 OUTPUT_TOKENS_PER_CALL = 7200       # mean over the live reviews so far, thinking included
