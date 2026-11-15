@@ -439,3 +439,11 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .idea-sources a.source-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--done); border: 1px solid var(--line); border-radius: 10px; padding: 2px 8px; background: var(--paper); text-decoration: none; }
 .idea-sources a.source-chip:hover { border-color: var(--done); text-decoration: underline; }
 .idea-sources a.source-chip .icon { width: 10px; height: 10px; transform: rotate(-45deg); }
+/* Idea cards use the warm charcoal of the primary buttons for every mark. */
+.idea-card .idea-hypothesis { border-left-color: var(--action); }
+.idea-card .idea-label { color: var(--action); }
+.idea-card .idea-dots i.on { background: var(--action); }
+.idea-list .idea-card.chosen { border-left-color: var(--action); }
+.idea-card.chosen .idea-rank { color: var(--action); }
+.idea-sources a.source-chip { color: var(--action); }
+.idea-sources a.source-chip:hover { border-color: var(--action); }
