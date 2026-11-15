@@ -12,14 +12,14 @@ THEMES = {
 W, PW, GAP, X0 = 1200, 354, 49, 20
 NW, NH, PITCH, Y0 = 280, 62, 90, 86
 COLS = [
- ("IDEATION", "you choose what is worth running", [
-   ("Topic", "one sentence from you", "in"),
+ ("IDEATION", "you steer, then choose", [
+   ("Your steer", "what you want to find out, and your hunch", "you"),
    ("Literature review", "arXiv + OpenAlex, every citation checked", ""),
-   ("Ideas", "tied to open gaps and to what was tried", ""),
-   ("Tournament", "each pair judged twice, order swapped", ""),
-   ("Pick an idea", "or push back, or bring your own", "you")]),
+   ("Direction map", "you choose; one must challenge your hunch", "you"),
+   ("Ideas + tournament", "each pair judged twice, order swapped", ""),
+   ("Pick an idea", "or reject them all, or bring your own", "you")]),
  ("EXPERIMENTS", "runs unattended", [
-   ("Propose a run", "control or treatment of your idea", ""),
+   ("Control vs treatment", "your idea is run, not tuned around", ""),
    ("Debate gate", "three critics vote: worth the compute?", ""),
    ("Funnel", "smoke → verify → full, most ideas die early", ""),
    ("Frozen scorer", "the only source of a reported number", ""),
@@ -28,11 +28,11 @@ COLS = [
    ("Scientific review", "four critics question every claim", ""),
    ("Approve the release", "bound to a hash of the evidence", "you"),
    ("Staged writing", "outline → key points → draft", "you"),
-   ("Reviewer panel", "three reviewers score the draft", ""),
-   ("Paper + evidence map", "every number traces to a run", "out")]),
+   ("Sentence checks", "each sentence cites an approved statement", ""),
+   ("Paper + evidence map", "sentence → statement → run → code", "out")]),
 ]
-CHECKS = ["citations exist", "numbers are measured", "edits stay in train.py",
-          "test set stays sealed", "approval tracks evidence", "every attempt logged"]
+CHECKS = ["citations exist", "numbers are measured", "scorer is frozen",
+          "protocol hashed first", "approval tracks evidence", "sentences cite statements"]
 FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
 
 def build(theme):
@@ -87,7 +87,7 @@ def build(theme):
     o.append(f'<text transform="translate({g2 - 9} {(ny[1] + ny[3]) / 2 + 30}) rotate(-90)" font-size="11.5" text-anchor="middle" fill="{t["acc"][1]}">ledger + registry</text>')
     # scientific review -> propose (more experiments), dashed
     o.append(f'<path d="M{nx[2] - 3} {ny[0] + 16} H{nx[1] + NW + 5}" stroke="{t["acc"][2]}" stroke-width="1.6" stroke-dasharray="6 4" fill="none" marker-end="url(#a2)"/>')
-    o.append(f'<text x="{(nx[2] + nx[1] + NW) / 2}" y="{ny[0] + 8}" font-size="11.5" text-anchor="middle" fill="{t["acc"][2]}">more experiments</text>')
+    o.append(f'<text x="{(nx[2] + nx[1] + NW) / 2}" y="{ny[0] + 8}" font-size="11.5" text-anchor="middle" fill="{t["acc"][2]}">frozen protocol</text>')
     # the band of checks
     o.append(f'<rect x="{X0}" y="{band_y}" width="{W - 2 * X0}" height="96" rx="18" fill="{t["band"]}" stroke="{t["panel_stroke"]}"/>')
     o.append(f'<text x="{X0 + 24}" y="{band_y + 32}" font-size="14" font-weight="700" letter-spacing="1.4" fill="{t["text"]}">ENFORCED IN CODE</text>')
