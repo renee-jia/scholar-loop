@@ -1,6 +1,6 @@
 [project]
 name = "scholarloop"
-version = "0.1.0"
+version = "0.0.1"
 description = "An interactive research loop in which a harness of deterministic checks, not the model, decides what a paper may claim."
 readme = "README.md"
 requires-python = ">=3.10"
