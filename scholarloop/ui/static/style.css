@@ -434,3 +434,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .review-issue[open] > summary::before { content: "▾"; }
 .review-issue[open] > summary { background: var(--surface); }
 .issue-body { padding-left: 114px; }
+
+/* A source that opens its public page. */
+.idea-sources a.source-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--done); border: 1px solid var(--line); border-radius: 10px; padding: 2px 8px; background: var(--paper); text-decoration: none; }
+.idea-sources a.source-chip:hover { border-color: var(--done); text-decoration: underline; }
+.idea-sources a.source-chip .icon { width: 10px; height: 10px; transform: rotate(-45deg); }

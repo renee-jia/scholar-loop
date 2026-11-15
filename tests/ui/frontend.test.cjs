@@ -325,3 +325,15 @@ test("the review page leads with the verdict and its counts; open issues come fi
   assert.match(html,/issue-group" open><summary><span class="file-group-title">Open</);
   assert.match(html,/review-stat alert"><b>1<\/b><span>Issues still open/);
 });
+
+test("recognised sources link to their public pages; anything else stays plain text",()=>{
+  const h=harness();
+  assert.equal(h.run('sourceLink("arXiv:2306.13649")'),"https://arxiv.org/abs/2306.13649");
+  assert.equal(h.run('sourceLink("arXiv:2106.10885v1")'),"https://arxiv.org/abs/2106.10885v1");
+  assert.equal(h.run('sourceLink("doi:10.1007/s00521-025-11162-0")'),"https://doi.org/10.1007/s00521-025-11162-0");
+  assert.equal(h.run('sourceLink("openalex:W3007689282")'),"https://openalex.org/W3007689282");
+  assert.equal(h.run('sourceLink("arXiv:x\\" onclick=1")'),"");
+  assert.equal(h.run('sourceLink("javascript:alert(1)")'),"");
+  assert.match(h.run('sourceChip("arXiv:2306.13649")'),/^<a class="source-chip" href="https:\/\/arxiv\.org\/abs\/2306\.13649" target="_blank" rel="noopener noreferrer"/);
+  assert.match(h.run('sourceChip("my own notes")'),/^<span>my own notes<\/span>$/);
+});

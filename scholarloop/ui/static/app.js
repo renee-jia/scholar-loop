@@ -74,6 +74,19 @@ function recorded(file, what, label) {
   return fileExists(file) ? `<div class="empty"><div class="empty-symbol">${icon("folder")}</div><h3>${esc(what)}</h3><p>This archived run did not record this stage in a structured form.</p>${artifactButton(file,label)}</div>`
     : `<div class="empty"><div class="empty-symbol">${icon("folder")}</div><h3>Nothing was recorded for this stage</h3><p>This archived run kept no record here.</p></div>`;
 }
+// A cited source as a link to its public page, when the identifier is one we recognise.
+function sourceLink(id) {
+  const text=String(id??"").trim();
+  let m;
+  if((m=/^arxiv:(\d{4}\.\d{4,5}(?:v\d+)?|[a-z.-]+\/\d{7}(?:v\d+)?)$/i.exec(text)))return "https://arxiv.org/abs/"+m[1];
+  if((m=/^doi:(10\.\d{4,9}\/[^\s"<>]+)$/i.exec(text)))return "https://doi.org/"+encodeURI(m[1]);
+  if((m=/^openalex:(W\d+)$/i.exec(text)))return "https://openalex.org/"+m[1];
+  return "";
+}
+function sourceChip(id) {
+  const url=sourceLink(id);
+  return url?`<a class="source-chip" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(id)} in a new tab">${esc(id)} ${icon("arrow")}</a>`:`<span>${esc(id)}</span>`;
+}
 // One idea: the hypothesis leads, scores and tournament standing sit beside the title, and the
 // longer parts fold away. The chosen idea is marked and starts unfolded.
 function ideaCard(idea, i) {
@@ -87,7 +100,7 @@ function ideaCard(idea, i) {
     `<section class="idea-hypothesis"><div class="idea-label">Hypothesis</div><p>${esc(h.claim??"")}</p>${h.predicted_effect?`<div class="idea-label">Predicted effect</div>${points(h.predicted_effect)}`:""}</section>`+
     `<div class="idea-scores">${score("Feasibility",idea.feasibility)}${score("Impact",idea.impact)}${novelty?`<span class="idea-score">Novelty check <b>${esc(String(novelty).replaceAll("_"," "))}</b></span>`:""}</div>`+
     fold("Approach",idea.description,chosen)+fold("Why it might work",idea.design?.mechanism,false)+fold("Experiment plan",idea.experiment_plan,chosen)+
-    `<footer class="idea-foot"><div class="idea-sources">${(idea.sources||[]).map(x=>`<span>${esc(x)}</span>`).join("")}<span class="mono">${esc(idea.idea_id)}</span></div>${button("select",chosen?"Confirm selection again":"Select this idea",chosen?"soft":"",{select:i+1})}</footer></article>`;
+    `<footer class="idea-foot"><div class="idea-sources">${(idea.sources||[]).map(sourceChip).join("")}<span class="mono">${esc(idea.idea_id)}</span></div>${button("select",chosen?"Confirm selection again":"Select this idea",chosen?"soft":"",{select:i+1})}</footer></article>`;
 }
 // A long recorded paragraph, shown one sentence per point. The words are not changed.
 function sentences(text) {
