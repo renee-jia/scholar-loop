@@ -666,6 +666,7 @@ STATEMENT_ID = re.compile(r"\[(" + STATEMENT_ID_PATTERN + r")\]")
 # A paper, run or protocol named in brackets inside a sentence. A sentence may name only the
 # sources of the statements it cites: fault injection showed that a paper id added to reviewed
 # prose, or swapped for another retrieved paper, passed every check.
+RUN_ID = re.compile(r"\bexp_\d{4,}\b")
 SOURCE_ID = re.compile(r"\[((?:arXiv|doi|openalex|s2):[^\]\s]+|exp_\d{4,}|protocol[_:]\w+)\]")
 
 
@@ -694,6 +695,15 @@ def audit_prose(text: str, dossier: dict) -> list[str]:
         if foreign:
             errors.append(f"sources {foreign} are not evidence of the approved statements {ids} that this "
                           f"sentence cites: {sentence.strip()[:90]!r}")
+        # A run named in running prose, without brackets, is still a reference to a record. Such
+        # a run must be one the cited statements name or rest on: an invented exp_ id in a
+        # sentence passed every check until fault injection on a paper that names its runs.
+        known_runs = {e for e in sources if RUN_ID.fullmatch(e)}
+        known_runs |= {r for cid in ids for r in RUN_ID.findall(statements[cid]["text"])}
+        strangers = sorted(set(RUN_ID.findall(sentence)) - known_runs)
+        if strangers:
+            errors.append(f"runs {strangers} are not named by or evidence of the approved statements {ids} "
+                          f"that this sentence cites: {sentence.strip()[:90]!r}")
         allowed = [t for cid in ids for t in _number_tokens(statements[cid]["text"])]
         reg = VerifiedRegistry(":sentence:")
         for i, tok in enumerate(allowed):
