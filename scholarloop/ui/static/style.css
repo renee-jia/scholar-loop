@@ -381,3 +381,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .idea-sources span.mono { border: 0; background: none; }
 @media (max-width: 760px) { .idea-head { flex-wrap: wrap; } .idea-tags { flex-direction: row; align-items: center; } }
 .idea-hypothesis .idea-label ~ .idea-label + p { font-size: 13px; line-height: 1.7; color: var(--muted); }
+/* The hypothesis sits on a calm sand panel with a deep-green rule, not on the accent colour. */
+.idea-hypothesis { background: #f4f1e8; border-left-color: var(--done); }
+.idea-label { color: var(--done); }
+.idea-dots i.on { background: var(--done); }
