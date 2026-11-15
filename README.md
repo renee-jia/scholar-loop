@@ -96,6 +96,10 @@ python3 -m scholarloop.ui
 
 This opens `http://127.0.0.1:8765` in your browser. Press `Ctrl+C` to stop.
 
+Click **Explore a real run** to browse the [recorded runs](examples/sample_runs/), which open
+read-only and need no API key. Live research from the UI needs `pip install -e ".[llm]"` and an
+Anthropic API key, entered under Connections.
+
 ## 🧭 How it works
 
 ### 1 · Ideation: you say where to dig, then choose what is worth running

@@ -1,0 +1,1959 @@
+{
+  "stage": "reviewed",
+  "outline": {
+    "title": "Does an Adaptive Off-to-On-Policy Switch Help Distillation? A Pre-Registered Negative Result on a Multimodal Transduction Task",
+    "question": "On the multimodal-transduction-L6-A8 seq-distill task, does switching from off-policy to on-policy training when the student's own probe invalid rate falls below a threshold lower val_invalid_rate compared with pure off-policy, pure on-policy and a fixed-step switch? If it does, does the benefit depend on the trigger responding to the student's state, and on the student's own prefixes?",
+    "nugget": "The pre-registered falsifying outcome was met. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way (see limitations). The conservative reading is that this experiment does not distinguish the switching rules.",
+    "contributions": [
+      "The pre-registered falsifying outcome was met. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way (see limitations). The conservative reading is that this experiment does not distinguish the switching rules.",
+      "The adaptive-switch arm did not beat pure_on_policy on mean val_invalid_rate: pure_on_policy averaged 9.04 and the adaptive arm averaged 12.88. The pre-registered prediction that the adaptive switch would be below both pure regimes by a margin therefore fails for the on-policy endpoint. The adaptive arm had the narrower spread across seed–fold pairs.",
+      "pure_on_policy had a paired mean difference of -4.96 against off_policy_ref, but the per-pair pattern was heterogeneous. On three of five seed–fold pairs it was much better than off-policy, reaching values of 4.6, 2.6 and 4.2. On one pair it was about equal. On the remaining pair it was clearly worse (23.2 against the reference's 15.8). The direction is not uniform and the spread is large, so the sign of the mean difference is not established at this sample size.",
+      "The adaptive-switch arm had a lower mean val_invalid_rate (12.88) than off_policy_ref (14.0), a paired mean difference of -1.12. The per-seed paired differences were small and mixed in sign: four of the five seed–fold pairs were within about one point of zero, and one of those four was positive. Most of the mean improvement comes from the single pair where off_policy_ref had its highest value (18.4). The improvement is small relative to the seed–fold spread and is not robust across pairs.",
+      "The fixed-step switch arm had the highest mean val_invalid_rate of all arms (15.0), a paired mean difference of 1.0 against off_policy_ref. The paired differences were mixed in sign: three of the five seed–fold pairs were worse than the reference and two were better, and the mean difference is within the seed–fold spread. The direction of the fixed-step arm relative to pure off-policy is therefore not established. The adaptive arm (12.88) had a lower mean than the fixed-step arm, which formally satisfies the prediction that adaptive is no worse than the fixed switch. This contrast confounds trigger responsiveness with switch timing: according to self-reported diagnostics, the adaptive switches fired earlier than the fixed step on every seed, so the adaptive arm spent more of training on-policy.",
+      "According to self-reported diagnostics, the adaptive trigger fired before the forced-switch cap on all five seed–fold pairs, and no switch was forced. On-policy batches occurred only after the reported switch step. The adaptive mechanism was therefore exercised in this run, rather than every switch coming from the cap."
+    ],
+    "sections": [
+      {
+        "heading": "Abstract",
+        "purpose": "Five sentences. (1) The registered question, and the finding that the pre-registered falsifying outcome was met. (2) Why it matters: when to switch from off-policy to on-policy prefixes is an open scheduling choice. (3) How: a probe-gated, one-way switch from off-policy to on-policy under a fixed forward-KL loss, compared across six arms on one synthetic task, with five seed–fold pairs per arm and a frozen scorer; lower val_invalid_rate is better. (4) Evidence: the trigger was exercised on every pair according to self-reported diagnostics, and the adaptive arm still did not beat pure on-policy. (5) The headline numbers are 12.88 for the adaptive arm against 9.04 for pure on-policy. The experiment does not distinguish the switching rules.",
+        "evidence": [
+          "scope_question",
+          "scope_method",
+          "claim_hypothesis_not_supported",
+          "claim_adaptive_not_below_pure_on",
+          "claim_trigger_exercised"
+        ]
+      },
+      {
+        "heading": "Introduction",
+        "purpose": "Task: distil a small transformer student on a three-mode transduction task, scored by invalid-output rate. Position the work only through the approved contrasts. GKD uses a static student-data fraction. DASH-OPD and DTDD switch adaptively within rollouts. Instance-ordering curricula schedule instances rather than the policy that generates prefixes. Our move is a pre-registered falsification test of a single training-schedule switch gated by the student's probe invalid rate. State the registered prediction and the falsification criterion, then the negative headline result. Close with the contribution bullets.",
+        "evidence": [
+          "scope_question",
+          "setup_task",
+          "setup_prediction",
+          "setup_falsification",
+          "claim_hypothesis_not_supported",
+          "claim_adaptive_not_below_pure_on",
+          "related_gkd",
+          "related_adaptive_triggers",
+          "related_curriculum"
+        ]
+      },
+      {
+        "heading": "Related Work",
+        "purpose": "Group prior work by mechanism, and state for each group how this study differs.\n- Off-policy SeqKD as the reference.\n- On-policy and imitation-learning distillation, and the exposure-bias account.\n- Static mixing (GKD) versus adaptive within-rollout triggers (DASH-OPD, DTDD).\n- Instance-ordering curricula versus scheduling the prefix-generating policy.\n- Separating the state distribution from the divergence: MiniLLM changes both, while this study fixes the loss at forward KL.\n- Capacity and entropy caveats, which this study does not vary.\n- Mask Forcing's perturbation as a method, versus this study's corruption as a control.",
+        "evidence": [
+          "related_seqkd",
+          "related_imitation",
+          "related_gkd",
+          "related_minillm",
+          "related_adaptive_triggers",
+          "related_curriculum",
+          "related_state_distribution",
+          "related_capacity",
+          "related_entropy",
+          "related_mask_forcing"
+        ]
+      },
+      {
+        "heading": "Setup and Pre-Registered Protocol",
+        "purpose": "Give the recorded setup.\n- Task, folds and metric (lower is better).\n- Student and teacher architectures, and teacher training.\n- Shared training hyperparameters and prefix sampling.\n- The probe, the six arm definitions and per-token error.\n- Seeds and folds (confounded), attempts, budget and software environment.\n- Descriptive paired analysis.\n- The declared baseline, which was not re-run.\n- The registered prediction and falsification criteria.\nState that hardware, attempts outside the protocol and setup details absent from the setup statements are not recorded (limit_15). Implementation details fixed only in the frozen scorer and the versioned scripts are not described (limit_16).",
+        "evidence": [
+          "setup_task",
+          "setup_folds",
+          "setup_metric",
+          "setup_models",
+          "setup_teacher_training",
+          "setup_training",
+          "setup_prefix_sampling",
+          "setup_probe",
+          "setup_arm_offpolicy",
+          "setup_arm_pureon",
+          "setup_arm_fixed",
+          "setup_arm_adaptive",
+          "setup_arm_yoked",
+          "setup_arm_corrupt",
+          "setup_token_error",
+          "setup_seeds_folds",
+          "setup_attempts",
+          "setup_budget",
+          "setup_environment",
+          "setup_analysis",
+          "setup_baseline",
+          "setup_prediction",
+          "setup_falsification",
+          "scope_method",
+          "limit_15",
+          "limit_16"
+        ]
+      },
+      {
+        "heading": "Results",
+        "purpose": "Open with the six-arm means and seed SD; lower is better. Then go through each registered prediction in turn, stating the claim it tests before the evidence.\n1. Precondition: according to self-reported diagnostics, the trigger fired before the cap on every pair, so responsiveness was exercised.\n2. Adaptive at least 1.0 point below both pure regimes:\n   - It fails against pure on-policy.\n   - Against off-policy, the gain is small and non-robust, driven by one pair.\n   - Pure on-policy versus the reference is heterogeneous across pairs, and the sign of its mean difference is not established. Apply the wording correction (limit_5).\n3. Adaptive below the 8.8 hard-label baseline: no arm's mean reached it, and the baseline was not re-measured.\n4. Adaptive no worse than the fixed switch: formally satisfied, but confounded with switch timing.\n5. Yoked within noise of adaptive, and corrupt recovering less than half the gain: neither can be assessed, because the controls did not implement their intended contrasts. Refer to Limitations for the reasons, without restating them.\nThe falsifying outcome was met.",
+        "evidence": [
+          "claim_all_arms_observation",
+          "claim_trigger_exercised",
+          "setup_prediction",
+          "claim_adaptive_not_below_pure_on",
+          "claim_adaptive_vs_offpolicy",
+          "claim_pure_on_high_variance",
+          "limit_5",
+          "setup_baseline",
+          "limit_12",
+          "claim_fixed_switch_worse",
+          "claim_hypothesis_not_supported"
+        ]
+      },
+      {
+        "heading": "Discussion",
+        "purpose": "Separate what was measured from interpretation. Measured: the registered falsifying outcome was met, and this experiment does not distinguish the switching rules. The adaptive-versus-fixed contrast confounds trigger responsiveness with switch timing. Interpretation, hedged: mode commitment is an untested competing explanation for the pure on-policy mean. The exposure-bias account remains untested here.",
+        "evidence": [
+          "claim_hypothesis_not_supported",
+          "claim_fixed_switch_worse",
+          "limit_14",
+          "related_imitation"
+        ]
+      },
+      {
+        "heading": "Limitations",
+        "purpose": "State each limitation as written, tied to its scope boundary, and add no examples. This is the single place where the withdrawn claims are explained:\n- the corrupted-prefix control (limit_2);\n- the yoked control (limit_3);\n- the variance-mechanism hypothesis (limit_4).",
+        "evidence": [
+          "limit_1",
+          "limit_6",
+          "limit_7",
+          "limit_8",
+          "limit_9",
+          "limit_10",
+          "limit_11",
+          "limit_12",
+          "limit_13",
+          "limit_15",
+          "limit_16",
+          "limit_2",
+          "limit_3",
+          "limit_4"
+        ]
+      },
+      {
+        "heading": "Conclusion",
+        "purpose": "Restate the question and the answer: a probe-gated adaptive switch did not beat the better pure regime on this task, and the switching rules are not distinguished. Give the scope: a single task and five seed–fold pairs. Name the next steps as the reruns listed in the limitations.",
+        "evidence": [
+          "claim_hypothesis_not_supported",
+          "claim_adaptive_not_below_pure_on",
+          "limit_11",
+          "limit_13"
+        ]
+      }
+    ]
+  },
+  "outline_discussion": [
+    {
+      "round": 1,
+      "artifact": {
+        "title": "Does an Adaptive Off-to-On-Policy Switch Help Distillation? A Pre-Registered Negative Result on a Multimodal Transduction Task",
+        "question": "On the multimodal-transduction-L6-A8 seq-distill task, does switching from off-policy to on-policy training when the student's own probe invalid rate falls below a threshold lower val_invalid_rate compared with pure off-policy, pure on-policy and a fixed-step switch? If it does, does the benefit depend on the trigger responding to the student's state, and on the student's own prefixes?",
+        "nugget": "The pre-registered falsifying outcome was met. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way (see limitations). The conservative reading is that this experiment does not distinguish the switching rules.",
+        "contributions": [
+          "The pre-registered falsifying outcome was met. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way (see limitations). The conservative reading is that this experiment does not distinguish the switching rules.",
+          "The adaptive-switch arm did not beat pure_on_policy on mean val_invalid_rate: pure_on_policy averaged 9.04 and the adaptive arm averaged 12.88. The pre-registered prediction that the adaptive switch would be below both pure regimes by a margin therefore fails for the on-policy endpoint. The adaptive arm had the narrower spread across seed–fold pairs.",
+          "pure_on_policy had a paired mean difference of -4.96 against off_policy_ref, but the per-pair pattern was heterogeneous. On three of five seed–fold pairs it was much better than off-policy, reaching values of 4.6, 2.6 and 4.2. On one pair it was about equal. On the remaining pair it was clearly worse (23.2 against the reference's 15.8). The direction is not uniform and the spread is large, so the sign of the mean difference is not established at this sample size.",
+          "The adaptive-switch arm had a lower mean val_invalid_rate (12.88) than off_policy_ref (14.0), a paired mean difference of -1.12. The per-seed paired differences were small and mixed in sign: four of the five seed–fold pairs were within about one point of zero, and one of those four was positive. Most of the mean improvement comes from the single pair where off_policy_ref had its highest value (18.4). The improvement is small relative to the seed–fold spread and is not robust across pairs.",
+          "The fixed-step switch arm had the highest mean val_invalid_rate of all arms (15.0), a paired mean difference of 1.0 against off_policy_ref. The paired differences were mixed in sign: three of the five seed–fold pairs were worse than the reference and two were better, and the mean difference is within the seed–fold spread. The direction of the fixed-step arm relative to pure off-policy is therefore not established. The adaptive arm (12.88) had a lower mean than the fixed-step arm, which formally satisfies the prediction that adaptive is no worse than the fixed switch. This contrast confounds trigger responsiveness with switch timing: according to self-reported diagnostics, the adaptive switches fired earlier than the fixed step on every seed, so the adaptive arm spent more of training on-policy.",
+          "According to self-reported diagnostics, the adaptive trigger fired before the forced-switch cap on all five seed–fold pairs, and no switch was forced. On-policy batches occurred only after the reported switch step. The adaptive mechanism was therefore exercised in this run, rather than every switch coming from the cap."
+        ],
+        "sections": [
+          {
+            "heading": "Abstract",
+            "purpose": "Five sentences. (1) The registered question, and the finding that the pre-registered falsifying outcome was met. (2) Why it matters: when to switch from off-policy to on-policy prefixes is an open scheduling choice. (3) How: a probe-gated, one-way switch from off-policy to on-policy under a fixed forward-KL loss, compared across six arms on one synthetic task, with five seed–fold pairs per arm and a frozen scorer; lower val_invalid_rate is better. (4) Evidence: the trigger was exercised on every pair according to self-reported diagnostics, and the adaptive arm still did not beat pure on-policy. (5) The headline numbers are 12.88 for the adaptive arm against 9.04 for pure on-policy. The experiment does not distinguish the switching rules.",
+            "evidence": [
+              "scope_question",
+              "scope_method",
+              "claim_hypothesis_not_supported",
+              "claim_adaptive_not_below_pure_on",
+              "claim_trigger_exercised"
+            ]
+          },
+          {
+            "heading": "Introduction",
+            "purpose": "Task: distil a small transformer student on a three-mode transduction task, scored by invalid-output rate. Position the work only through the approved contrasts. GKD uses a static student-data fraction. DASH-OPD and DTDD switch adaptively within rollouts. Instance-ordering curricula schedule instances rather than the policy that generates prefixes. Our move is a pre-registered falsification test of a single training-schedule switch gated by the student's probe invalid rate. State the registered prediction and the falsification criterion, then the negative headline result. Close with the contribution bullets.",
+            "evidence": [
+              "scope_question",
+              "setup_task",
+              "setup_prediction",
+              "setup_falsification",
+              "claim_hypothesis_not_supported",
+              "claim_adaptive_not_below_pure_on",
+              "related_gkd",
+              "related_adaptive_triggers",
+              "related_curriculum"
+            ]
+          },
+          {
+            "heading": "Related Work",
+            "purpose": "Group prior work by mechanism, and state for each group how this study differs.\n- Off-policy SeqKD as the reference.\n- On-policy and imitation-learning distillation, and the exposure-bias account.\n- Static mixing (GKD) versus adaptive within-rollout triggers (DASH-OPD, DTDD).\n- Instance-ordering curricula versus scheduling the prefix-generating policy.\n- Separating the state distribution from the divergence: MiniLLM changes both, while this study fixes the loss at forward KL.\n- Capacity and entropy caveats, which this study does not vary.\n- Mask Forcing's perturbation as a method, versus this study's corruption as a control.",
+            "evidence": [
+              "related_seqkd",
+              "related_imitation",
+              "related_gkd",
+              "related_minillm",
+              "related_adaptive_triggers",
+              "related_curriculum",
+              "related_state_distribution",
+              "related_capacity",
+              "related_entropy",
+              "related_mask_forcing"
+            ]
+          },
+          {
+            "heading": "Setup and Pre-Registered Protocol",
+            "purpose": "Give the recorded setup.\n- Task, folds and metric (lower is better).\n- Student and teacher architectures, and teacher training.\n- Shared training hyperparameters and prefix sampling.\n- The probe, the six arm definitions and per-token error.\n- Seeds and folds (confounded), attempts, budget and software environment.\n- Descriptive paired analysis.\n- The declared baseline, which was not re-run.\n- The registered prediction and falsification criteria.\nState that hardware, attempts outside the protocol and setup details absent from the setup statements are not recorded (limit_15). Implementation details fixed only in the frozen scorer and the versioned scripts are not described (limit_16).",
+            "evidence": [
+              "setup_task",
+              "setup_folds",
+              "setup_metric",
+              "setup_models",
+              "setup_teacher_training",
+              "setup_training",
+              "setup_prefix_sampling",
+              "setup_probe",
+              "setup_arm_offpolicy",
+              "setup_arm_pureon",
+              "setup_arm_fixed",
+              "setup_arm_adaptive",
+              "setup_arm_yoked",
+              "setup_arm_corrupt",
+              "setup_token_error",
+              "setup_seeds_folds",
+              "setup_attempts",
+              "setup_budget",
+              "setup_environment",
+              "setup_analysis",
+              "setup_baseline",
+              "setup_prediction",
+              "setup_falsification",
+              "scope_method",
+              "limit_15",
+              "limit_16"
+            ]
+          },
+          {
+            "heading": "Results",
+            "purpose": "Open with the six-arm means and seed SD; lower is better. Then go through each registered prediction in turn, stating the claim it tests before the evidence.\n1. Precondition: according to self-reported diagnostics, the trigger fired before the cap on every pair, so responsiveness was exercised.\n2. Adaptive at least 1.0 point below both pure regimes:\n   - It fails against pure on-policy.\n   - Against off-policy, the gain is small and non-robust, driven by one pair.\n   - Pure on-policy versus the reference is heterogeneous across pairs, and the sign of its mean difference is not established. Apply the wording correction (limit_5).\n3. Adaptive below the 8.8 hard-label baseline: no arm's mean reached it, and the baseline was not re-measured.\n4. Adaptive no worse than the fixed switch: formally satisfied, but confounded with switch timing.\n5. Yoked within noise of adaptive, and corrupt recovering less than half the gain: neither can be assessed, because the controls did not implement their intended contrasts. Refer to Limitations for the reasons, without restating them.\nThe falsifying outcome was met.",
+            "evidence": [
+              "claim_all_arms_observation",
+              "claim_trigger_exercised",
+              "setup_prediction",
+              "claim_adaptive_not_below_pure_on",
+              "claim_adaptive_vs_offpolicy",
+              "claim_pure_on_high_variance",
+              "limit_5",
+              "setup_baseline",
+              "limit_12",
+              "claim_fixed_switch_worse",
+              "claim_hypothesis_not_supported"
+            ]
+          },
+          {
+            "heading": "Discussion",
+            "purpose": "Separate what was measured from interpretation. Measured: the registered falsifying outcome was met, and this experiment does not distinguish the switching rules. The adaptive-versus-fixed contrast confounds trigger responsiveness with switch timing. Interpretation, hedged: mode commitment is an untested competing explanation for the pure on-policy mean. The exposure-bias account remains untested here.",
+            "evidence": [
+              "claim_hypothesis_not_supported",
+              "claim_fixed_switch_worse",
+              "limit_14",
+              "related_imitation"
+            ]
+          },
+          {
+            "heading": "Limitations",
+            "purpose": "State each limitation as written, tied to its scope boundary, and add no examples. This is the single place where the withdrawn claims are explained:\n- the corrupted-prefix control (limit_2);\n- the yoked control (limit_3);\n- the variance-mechanism hypothesis (limit_4).",
+            "evidence": [
+              "limit_1",
+              "limit_6",
+              "limit_7",
+              "limit_8",
+              "limit_9",
+              "limit_10",
+              "limit_11",
+              "limit_12",
+              "limit_13",
+              "limit_15",
+              "limit_16",
+              "limit_2",
+              "limit_3",
+              "limit_4"
+            ]
+          },
+          {
+            "heading": "Conclusion",
+            "purpose": "Restate the question and the answer: a probe-gated adaptive switch did not beat the better pure regime on this task, and the switching rules are not distinguished. Give the scope: a single task and five seed–fold pairs. Name the next steps as the reruns listed in the limitations.",
+            "evidence": [
+              "claim_hypothesis_not_supported",
+              "claim_adaptive_not_below_pure_on",
+              "limit_11",
+              "limit_13"
+            ]
+          }
+        ]
+      },
+      "reviews": [
+        {
+          "role": "Skeptic",
+          "verdict": "accept",
+          "issues": [
+            {
+              "target": "Abstract, sentence (2) 'when to switch from off-policy to on-policy prefixes is an open scheduling choice'",
+              "issue": "No approved statement says this. It reads as a new motivational claim about the state of the field.",
+              "suggestion": "Tie the motivation to the approved contrasts instead: GKD uses a static fraction (related_gkd), and DASH-OPD and DTDD switch within rollouts (related_adaptive_triggers). Alternatively, fold it into sentence (1) as the question itself (scope_question).",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Abstract, sentence (5) headline numbers 12.88 vs 9.04",
+              "issue": "Giving the two means without spread invites the reading that pure on-policy is reliably better. Its SD is 8.48, and claim_pure_on_high_variance says the sign of its difference from the reference is not established. The nugget already carries the 'not better by more than the seed–fold spread' framing, but the bare numbers in sentence (5) can undercut it.",
+              "suggestion": "Add the SDs from claim_all_arms_observation. Or add one clause from claim_pure_on_high_variance saying the pure on-policy advantage over the reference is not established, so that 9.04 is not read as a recommendation.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Introduction 'Close with the contribution bullets' / Contributions bullet 1",
+              "issue": "The first contribution is the nugget verbatim and also appears in the abstract, the introduction, the results and the conclusion. This is heavy repetition of the same approved text.",
+              "suggestion": "In the introduction, cite the nugget once and keep the contribution bullets to the per-comparison statements. Or drop bullet 1, since the nugget already states it.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Results, opening six-arm table (claim_all_arms_observation)",
+              "issue": "The table shows yoked_replay at 11.0, below adaptive. Item 5 only refers readers to Limitations, so readers may draw a yoked-vs-adaptive conclusion from the table that limit_3 rules out.",
+              "suggestion": "At the table, add a pointer that the yoked and corrupt rows are not interpretable as the intended controls (limit_2, limit_3). Do not restate the reasons.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Results, item 2 (adaptive vs off-policy driven by one pair)",
+              "issue": "limit_6 says binomial evaluation noise is of the same order as the adaptive-vs-reference difference, and that 'within noise' was never quantified. It is cited only in Limitations.",
+              "suggestion": "Cite limit_6 alongside claim_adaptive_vs_offpolicy and claim_fixed_switch_worse in Results. The 'within spread' readings would then carry their quantification caveat where they are made.",
+              "severity": "suggestion"
+            }
+          ]
+        },
+        {
+          "role": "Editor",
+          "verdict": "accept",
+          "issues": [
+            {
+              "target": "Abstract, sentence (2)",
+              "issue": "The line 'when to switch from off-policy to on-policy prefixes is an open scheduling choice' cites no approved statement. The evidence list for this section contains no related-work statement, so the sentence reads as a new framing claim.",
+              "suggestion": "Ground the motivation in approved statements, for example related_gkd (static fraction) and related_adaptive_triggers (within-rollout switching), and add them to the abstract's evidence list. Alternatively, fold the motivation into sentence (1).",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Abstract, sentence (5)",
+              "issue": "Giving 12.88 against 9.04 alone may lead readers to treat pure on-policy as a clear winner. claim_pure_on_high_variance says the sign of pure on-policy's advantage over the reference is not established. The abstract also omits the nugget's point that the yoked and corrupted-prefix controls support no conclusion.",
+              "suggestion": "After the numbers, add that pure on-policy's advantage is heterogeneous across pairs. Note that the two mechanism controls did not implement their intended contrasts. Both points are already in approved statements (claim_pure_on_high_variance, claim_hypothesis_not_supported).",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Contributions list",
+              "issue": "Contribution 1 is the nugget verbatim, and contribution 2 repeats its central 9.04 against 12.88 comparison. Contributions 3–6 are per-arm results details rather than contributions, so the list reads as a dump of results.",
+              "suggestion": "Keep the nugget as the main contribution. Collapse or drop contribution 2. Consider replacing 3–6 with a single bullet pointing to the per-prediction audit in Results, or keep only claim_trigger_exercised as a separate contribution, since it is the precondition that makes the negative result meaningful.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Introduction vs Related Work",
+              "issue": "Both sections position the work against GKD, DASH-OPD/DTDD and instance-ordering curricula, using the same approved statements.",
+              "suggestion": "In the Introduction, give a one-sentence contrast (for example, GKD alone) and leave the full grouping to Related Work. Alternatively, merge Related Work into the Introduction.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "limit_12, limit_15, limit_16 placement",
+              "issue": "limit_12 appears in both Results and Limitations, and limit_15 and limit_16 appear in both Setup and Limitations. Because statements cannot be reworded, the same fixed text would appear twice.",
+              "suggestion": "Cite each limitation once in full, in Limitations, and refer to it by pointer elsewhere. Or keep limit_15 and limit_16 only in Setup and limit_12 only in Results.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Results, opening table",
+              "issue": "claim_all_arms_observation lists means for yoked_replay and corrupt_prefix next to the others. Readers may compare them directly before reaching item 5, which says they cannot be assessed.",
+              "suggestion": "Mark the yoked and corrupt rows in the table, for example with a footnote pointing to item 5 and the Limitations, so the descriptive numbers are not read as evidence about the controls.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Discussion",
+              "issue": "The Discussion repeats the nugget's conclusion and the fixed-switch confound, adding little beyond limit_14 and related_imitation.",
+              "suggestion": "Keep it short. Lead with the interpretive content (mode commitment as an untested alternative; exposure bias untested) and refer back to Results for what was measured, rather than restating it.",
+              "severity": "suggestion"
+            }
+          ]
+        },
+        {
+          "role": "Methodologist",
+          "verdict": "accept",
+          "issues": [
+            {
+              "target": "Section 1 Abstract, sentence (5) headline numbers",
+              "issue": "Pairing 12.88 against 9.04 with no spread may read as pure on-policy being reliably better. Pure on-policy's seed SD (8.48) is the largest of all arms, and claim_pure_on_high_variance says the sign of its difference from the reference is not established.",
+              "suggestion": "Cite claim_all_arms_observation (or claim_pure_on_high_variance) in the abstract and report the seed SDs beside the two means, so the headline carries its spread.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Section 5 Results, item 1 (trigger precondition)",
+              "issue": "The precondition rests on self-reported switch steps. limit_10, which says these diagnostics are not verified by the scorer, is cited only in Limitations.",
+              "suggestion": "Cite limit_10 in the Results evidence at item 1 so the unverified status sits next to the precondition it qualifies.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Section 5 Results, item 2 (adaptive vs off-policy)",
+              "issue": "The non-robust -1.12 gain is presented without the statement that binomial evaluation noise is of the same order and that no interval was computed.",
+              "suggestion": "Add limit_6 to the Results evidence at item 2, alongside claim_adaptive_vs_offpolicy.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Section 5 Results, opening and Section 4 seeds/folds",
+              "issue": "The seed SDs are seed-plus-fold variation (limit_1). The Results opening labels them 'seed SD' without this caveat.",
+              "suggestion": "Cite limit_1 (or scope_method) where the six-arm table is introduced, so readers know the spread mixes seed and fold.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Contributions, first bullet",
+              "issue": "It repeats the nugget verbatim. Bullets 1 and 2 also overlap on the 9.04 vs 12.88 comparison.",
+              "suggestion": "Consider dropping or merging the first bullet so the contribution list is not redundant with the nugget.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Section 7 Limitations",
+              "issue": "limit_14 and limit_5 appear only in Discussion and Results. A reader scanning Limitations for all declared limits will miss the untested mode-commitment explanation.",
+              "suggestion": "Optionally list limit_14 in Limitations as well, or add a cross-reference to the Discussion.",
+              "severity": "suggestion"
+            }
+          ]
+        }
+      ],
+      "accepted": true
+    }
+  ],
+  "key_points": {
+    "sections": [
+      {
+        "heading": "Abstract",
+        "points": [
+          {
+            "claim": "On the multimodal-transduction-L6-A8 seq-distill task, does switching from off-policy to on-policy training when the student's own probe invalid rate falls below a threshold lower val_invalid_rate compared with pure off-policy, pure on-policy and a fixed-step switch? If it does, does the benefit depend on the trigger responding to the student's state, and on the student's own prefixes?",
+            "evidence": [
+              "scope_question"
+            ],
+            "role": "context"
+          },
+          {
+            "claim": "The pre-registered falsifying outcome was met. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way (see limitations). The conservative reading is that this experiment does not distinguish the switching rules.",
+            "evidence": [
+              "claim_hypothesis_not_supported"
+            ],
+            "role": "result"
+          },
+          {
+            "claim": "One pre-registered falsification protocol was run with six arms, each at full fidelity over five seed–fold pairs. Seed i was trained on the training prompts of cross-validation fold i and evaluated on that fold's val prompts, so seed and fold are confounded and no arm was evaluated on a single fold. Learning rate, temperature, forward-KL loss and step budget were the same in every arm, and the student architecture and teacher were frozen. The arms were: off_policy_ref (reference); pure_on_policy; a fixed switch to fully on-policy at a mid-run step; an adaptive arm that switches to fully on-policy once the greedy invalid rate on a training-prompt probe batch drops below threshold, with a forced-switch cap; a yoked replay that switches at the adaptive arm's firing step but trains on a different seed; and a corrupted-prefix arm that uses the same trigger but replaces post-switch prefixes with ground truth under token substitution. The trusted metric is val_invalid_rate from the frozen scorer. The analysis reports descriptive paired mean differences against off_policy_ref, with no inferential test. Probe trajectories, switch steps and on-policy batch counts are self-reported by train.py and are not verified by the scorer. The author decided to run no further experiments. This revision therefore narrows the argument: two control comparisons and one mechanism hypothesis are withdrawn as claims and moved to the limitations.",
+            "evidence": [
+              "scope_method"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "According to self-reported diagnostics, the adaptive trigger fired before the forced-switch cap on all five seed–fold pairs, and no switch was forced. On-policy batches occurred only after the reported switch step. The adaptive mechanism was therefore exercised in this run, rather than every switch coming from the cap.",
+            "evidence": [
+              "claim_trigger_exercised"
+            ],
+            "role": "result"
+          },
+          {
+            "claim": "The adaptive-switch arm did not beat pure_on_policy on mean val_invalid_rate: pure_on_policy averaged 9.04 and the adaptive arm averaged 12.88. The pre-registered prediction that the adaptive switch would be below both pure regimes by a margin therefore fails for the on-policy endpoint. The adaptive arm had the narrower spread across seed–fold pairs.",
+            "evidence": [
+              "claim_adaptive_not_below_pure_on"
+            ],
+            "role": "result"
+          }
+        ]
+      },
+      {
+        "heading": "Introduction",
+        "points": [
+          {
+            "claim": "Task multimodal-transduction-L6-A8: each input is L=6 symbols from an alphabet of 8. Three outputs are valid: the copy, the reversal, and the reversal incremented mod 8. A mixture of modes counts as invalid.",
+            "evidence": [
+              "setup_task"
+            ],
+            "role": "context"
+          },
+          {
+            "claim": "GKD trains students on a mixture of fixed and self-generated sequences with a static student-data fraction. This study keeps that fraction knob but switches it once during training, conditioned on the student's probe invalid rate.",
+            "evidence": [
+              "related_gkd"
+            ],
+            "role": "context"
+          },
+          {
+            "claim": "DASH-OPD and DTDD switch adaptively between teacher and student within rollouts, using discrepancy signals. This study instead makes a single, one-way, training-schedule switch gated by a probe invalid rate. Their abstracts do not describe yoked or corrupted-prefix controls.",
+            "evidence": [
+              "related_adaptive_triggers"
+            ],
+            "role": "context"
+          },
+          {
+            "claim": "Instance-level curriculum distillation orders training instances using an earlier student snapshot. This study schedules the policy that generates prefixes rather than the order of instances.",
+            "evidence": [
+              "related_curriculum"
+            ],
+            "role": "challenge"
+          },
+          {
+            "claim": "On the multimodal-transduction-L6-A8 seq-distill task, does switching from off-policy to on-policy training when the student's own probe invalid rate falls below a threshold lower val_invalid_rate compared with pure off-policy, pure on-policy and a fixed-step switch? If it does, does the benefit depend on the trigger responding to the student's state, and on the student's own prefixes?",
+            "evidence": [
+              "scope_question"
+            ],
+            "role": "challenge"
+          },
+          {
+            "claim": "Registered prediction: adaptive_tau25 is at least 1.0 point below both pure regimes and below the 8.8 hard-label baseline, and no worse than fixed_switch_1500. yoked_replay is within noise of adaptive or worse. corrupt_prefix recovers less than half of the adaptive gain over off_policy_ref.",
+            "evidence": [
+              "setup_prediction"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Registered falsification: the hypothesis fails if adaptive_tau25 does not beat the better of off_policy_ref and pure_on_policy by more than the seed standard deviation, or if both yoked_replay and corrupt_prefix match it. A trigger that fires only through the cap on every seed leaves responsiveness untested.",
+            "evidence": [
+              "setup_falsification"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "The pre-registered falsifying outcome was met. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way (see limitations). The conservative reading is that this experiment does not distinguish the switching rules.",
+            "evidence": [
+              "claim_hypothesis_not_supported"
+            ],
+            "role": "result"
+          },
+          {
+            "claim": "The adaptive-switch arm did not beat pure_on_policy on mean val_invalid_rate: pure_on_policy averaged 9.04 and the adaptive arm averaged 12.88. The pre-registered prediction that the adaptive switch would be below both pure regimes by a margin therefore fails for the on-policy endpoint. The adaptive arm had the narrower spread across seed–fold pairs.",
+            "evidence": [
+              "claim_adaptive_not_below_pure_on"
+            ],
+            "role": "result"
+          }
+        ]
+      },
+      {
+        "heading": "Related Work",
+        "points": [
+          {
+            "claim": "Sequence-level KD trains on teacher-generated outputs and is the canonical off-policy baseline. This study's reference arm is off-policy word-level distillation on teacher-sampled prefixes.",
+            "evidence": [
+              "related_seqkd"
+            ],
+            "role": "context"
+          },
+          {
+            "claim": "Imitation-learning distillation treats the teacher as an oracle on student-visited states to address exposure bias. This study designed a corrupted-prefix control to test that account. The control's corruption rate tracked its own student's rollout error, not the adaptive student's, so it yields no conclusion and the account remains untested here.",
+            "evidence": [
+              "related_imitation"
+            ],
+            "role": "comparison"
+          },
+          {
+            "claim": "GKD trains students on a mixture of fixed and self-generated sequences with a static student-data fraction. This study keeps that fraction knob but switches it once during training, conditioned on the student's probe invalid rate.",
+            "evidence": [
+              "related_gkd"
+            ],
+            "role": "comparison"
+          },
+          {
+            "claim": "DASH-OPD and DTDD switch adaptively between teacher and student within rollouts, using discrepancy signals. This study instead makes a single, one-way, training-schedule switch gated by a probe invalid rate. Their abstracts do not describe yoked or corrupted-prefix controls.",
+            "evidence": [
+              "related_adaptive_triggers"
+            ],
+            "role": "comparison"
+          },
+          {
+            "claim": "Instance-level curriculum distillation orders training instances using an earlier student snapshot. This study schedules the policy that generates prefixes rather than the order of instances.",
+            "evidence": [
+              "related_curriculum"
+            ],
+            "role": "comparison"
+          },
+          {
+            "claim": "MiniLLM changes both the divergence (reverse KL) and the sampling distribution. This study holds the forward-KL loss fixed and varies only the prefix source and its schedule.",
+            "evidence": [
+              "related_minillm"
+            ],
+            "role": "comparison"
+          },
+          {
+            "claim": "A controlled study on GSM8K argues that the state distribution supervised matters alongside the loss. This study varies only the state source, on a non-language transduction task.",
+            "evidence": [
+              "related_state_distribution"
+            ],
+            "role": "comparison"
+          },
+          {
+            "claim": "Prior work reports that student-generated outputs are costly and hard to optimise when the student is much smaller than the teacher. This study uses one fixed small student and does not vary the capacity gap.",
+            "evidence": [
+              "related_capacity"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Entropy-aware on-policy distillation reports instability of reverse-KL signals under high teacher entropy. This study's teacher models a three-mode distribution, but teacher entropy was not measured or varied.",
+            "evidence": [
+              "related_entropy"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Mask Forcing perturbs student self-rollouts in video diffusion distillation. This study's corrupted-prefix arm perturbs ground-truth discrete prefixes as a control, not as a method.",
+            "evidence": [
+              "related_mask_forcing"
+            ],
+            "role": "comparison"
+          }
+        ]
+      },
+      {
+        "heading": "Setup and Pre-Registered Protocol",
+        "points": [
+          {
+            "claim": "One pre-registered falsification protocol was run with six arms, each at full fidelity over five seed–fold pairs. Seed i was trained on the training prompts of cross-validation fold i and evaluated on that fold's val prompts, so seed and fold are confounded and no arm was evaluated on a single fold. Learning rate, temperature, forward-KL loss and step budget were the same in every arm, and the student architecture and teacher were frozen. The arms were: off_policy_ref (reference); pure_on_policy; a fixed switch to fully on-policy at a mid-run step; an adaptive arm that switches to fully on-policy once the greedy invalid rate on a training-prompt probe batch drops below threshold, with a forced-switch cap; a yoked replay that switches at the adaptive arm's firing step but trains on a different seed; and a corrupted-prefix arm that uses the same trigger but replaces post-switch prefixes with ground truth under token substitution. The trusted metric is val_invalid_rate from the frozen scorer. The analysis reports descriptive paired mean differences against off_policy_ref, with no inferential test. Probe trajectories, switch steps and on-policy batch counts are self-reported by train.py and are not verified by the scorer. The author decided to run no further experiments. This revision therefore narrows the argument: two control comparisons and one mechanism hypothesis are withdrawn as claims and moved to the limitations.",
+            "evidence": [
+              "scope_method"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Task multimodal-transduction-L6-A8: each input is L=6 symbols from an alphabet of 8. Three outputs are valid: the copy, the reversal, and the reversal incremented mod 8. A mixture of modes counts as invalid.",
+            "evidence": [
+              "setup_task"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Every possible input is shuffled once. Five folds of 500 prompts each are cut from the start of that order, the next 2000 prompts form the held-out test set, and the teacher trains on the rest. A run on one fold validates on that fold and trains on the prompts of the other four.",
+            "evidence": [
+              "setup_folds"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "The metric val_invalid_rate is the percentage of greedy student decodes on a validation fold that match none of the valid outputs. Lower is better. Each validation fold holds 500 prompts.",
+            "evidence": [
+              "setup_metric"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "The student is a frozen-architecture pre-norm causal transformer with d_model 32, 2 layers and 2 heads. The frozen teacher has d_model 96 and 2 layers, trained for 8000 steps on inputs disjoint from the fold pool and the test set.",
+            "evidence": [
+              "setup_models"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "The teacher is trained once with a fixed seed for 8000 steps of AdamW at lr 1e-3 and batch 128. Each training target is one valid output chosen uniformly at random from the three modes, and the loss is cross-entropy over output positions.",
+            "evidence": [
+              "setup_teacher_training"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Every arm trains for 3000 steps with batch 64 using AdamW at lr 0.003. The loss is forward KL between teacher and student next-token distributions at temperature 1.0 over output positions.",
+            "evidence": [
+              "setup_training"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Training prefixes are sampled, not decoded greedily: each batch draws its output sequences from either the teacher or the student at sampling temperature 1.0, and on_policy_frac is the probability that a batch uses the student.",
+            "evidence": [
+              "setup_prefix_sampling"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "The probe batch is a fixed subset of 256 training prompts, drawn once per run from a generator seeded with 10000 plus the run seed. The probe and the evaluation decode greedily.",
+            "evidence": [
+              "setup_probe"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "The off_policy_ref arm runs the unmodified script with on_policy_frac 0, so the teacher samples every training prefix.",
+            "evidence": [
+              "setup_arm_offpolicy"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "The pure_on_policy arm sets on_policy_frac to 1 throughout, so the student samples every prefix and the teacher labels it.",
+            "evidence": [
+              "setup_arm_pureon"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "The fixed_switch_1500 arm uses on_policy_frac 0 before step 1500 and 1.0 afterwards. A probe runs every 100 steps for logging only.",
+            "evidence": [
+              "setup_arm_fixed"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "In the adaptive_tau25 arm, a probe greedily decodes 256 training prompts every 100 steps. When the probe invalid rate falls below 25%, on_policy_frac switches from 0 to 1.0. The switch is forced at step 1500 if the trigger has not fired.",
+            "evidence": [
+              "setup_arm_adaptive"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "The yoked_replay arm first replays the adaptive run for the seed to find its firing step. It then trains a fresh student from training seed seed+1000 and switches to on_policy_frac 1.0 at exactly that step, ignoring the probe.",
+            "evidence": [
+              "setup_arm_yoked"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "The corrupt_prefix arm uses the adaptive trigger and cap. After the switch, it samples student rollouts to measure per-token error p, then trains on ground-truth outputs (mode chosen uniformly) with each symbol substituted at rate p.",
+            "evidence": [
+              "setup_arm_corrupt"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Per-token error p is the smallest number of positions at which a sampled student rollout differs from any valid output, divided by the output length. It is computed on each post-switch batch. Corruption draws use a generator seeded with 20000 plus the run seed.",
+            "evidence": [
+              "setup_token_error"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Each arm ran five seeds (zero through four) over five cross-validation folds at full fidelity. Run records list fold indices alongside seed indices, so seed and fold vary together.",
+            "evidence": [
+              "setup_seeds_folds"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Each arm's run record lists 5 training attempts for its five seeds.",
+            "evidence": [
+              "setup_attempts"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Each full-fidelity run had a time budget of 1200 seconds.",
+            "evidence": [
+              "setup_budget"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "The frozen protocol records the software environment: Python 3.12.9, torch 2.11.0 and numpy 2.2.6.",
+            "evidence": [
+              "setup_environment"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Analysis: for each arm, per-seed paired mean differences against off_policy_ref, read descriptively beside the seed spread, with no inferential test.",
+            "evidence": [
+              "setup_analysis"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "The profile declares a val_invalid_rate of 8.8 for a hard-label training baseline. That baseline was not re-run in this protocol.",
+            "evidence": [
+              "setup_baseline"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Registered prediction: adaptive_tau25 is at least 1.0 point below both pure regimes and below the 8.8 hard-label baseline, and no worse than fixed_switch_1500. yoked_replay is within noise of adaptive or worse. corrupt_prefix recovers less than half of the adaptive gain over off_policy_ref.",
+            "evidence": [
+              "setup_prediction"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Registered falsification: the hypothesis fails if adaptive_tau25 does not beat the better of off_policy_ref and pure_on_policy by more than the seed standard deviation, or if both yoked_replay and corrupt_prefix match it. A trigger that fires only through the cap on every seed leaves responsiveness untested.",
+            "evidence": [
+              "setup_falsification"
+            ],
+            "role": "method"
+          },
+          {
+            "claim": "Attempts made outside the registered protocol, if any, are not reported. Hardware is not recorded, so the time budget is not tied to a machine. Setup details absent from the setup statements are not part of the recorded evidence.",
+            "evidence": [
+              "limit_15"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Implementation details not restated in the setup statements are fixed in the frozen scorer and the versioned training scripts, and are not described further here.",
+            "evidence": [
+              "limit_16"
+            ],
+            "role": "limitation"
+          }
+        ]
+      },
+      {
+        "heading": "Results",
+        "points": [
+          {
+            "claim": "Mean validation invalid rate (%) over five seeds, with seed SD, was:\n- off_policy_ref: 14.0 (3.234192)\n- pure_on_policy: 9.04 (8.478679)\n- fixed_switch_1500: 15.0 (3.896152)\n- adaptive_tau25: 12.88 (2.229798)\n- yoked_replay: 11.0 (8.866792)\n- corrupt_prefix: 12.76 (6.582401)",
+            "evidence": [
+              "claim_all_arms_observation"
+            ],
+            "role": "result"
+          },
+          {
+            "claim": "According to self-reported diagnostics, the adaptive trigger fired before the forced-switch cap on all five seed–fold pairs, and no switch was forced. On-policy batches occurred only after the reported switch step. The adaptive mechanism was therefore exercised in this run, rather than every switch coming from the cap.",
+            "evidence": [
+              "claim_trigger_exercised"
+            ],
+            "role": "result"
+          },
+          {
+            "claim": "The adaptive-switch arm did not beat pure_on_policy on mean val_invalid_rate: pure_on_policy averaged 9.04 and the adaptive arm averaged 12.88. The pre-registered prediction that the adaptive switch would be below both pure regimes by a margin therefore fails for the on-policy endpoint. The adaptive arm had the narrower spread across seed–fold pairs.",
+            "evidence": [
+              "claim_adaptive_not_below_pure_on"
+            ],
+            "role": "comparison"
+          },
+          {
+            "claim": "The adaptive-switch arm had a lower mean val_invalid_rate (12.88) than off_policy_ref (14.0), a paired mean difference of -1.12. The per-seed paired differences were small and mixed in sign: four of the five seed–fold pairs were within about one point of zero, and one of those four was positive. Most of the mean improvement comes from the single pair where off_policy_ref had its highest value (18.4). The improvement is small relative to the seed–fold spread and is not robust across pairs.",
+            "evidence": [
+              "claim_adaptive_vs_offpolicy"
+            ],
+            "role": "comparison"
+          },
+          {
+            "claim": "pure_on_policy had a paired mean difference of -4.96 against off_policy_ref, but the per-pair pattern was heterogeneous. On three of five seed–fold pairs it was much better than off-policy, reaching values of 4.6, 2.6 and 4.2. On one pair it was about equal. On the remaining pair it was clearly worse (23.2 against the reference's 15.8). The direction is not uniform and the spread is large, so the sign of the mean difference is not established at this sample size.",
+            "evidence": [
+              "claim_pure_on_high_variance"
+            ],
+            "role": "comparison"
+          },
+          {
+            "claim": "Correction to claim_pure_on_high_variance: the earlier wording said the mean advantage rested on a 'minority' of seeds. In fact three of five pairs were much better, one about equal and one worse. The point that the sign of the mean difference is not established is kept.",
+            "evidence": [
+              "limit_5"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "No arm's mean reached the profile's declared hard-label baseline. That baseline was not re-measured in this study, so the comparison is indicative only.",
+            "evidence": [
+              "limit_12"
+            ],
+            "role": "comparison"
+          },
+          {
+            "claim": "The fixed-step switch arm had the highest mean val_invalid_rate of all arms (15.0), a paired mean difference of 1.0 against off_policy_ref. The paired differences were mixed in sign: three of the five seed–fold pairs were worse than the reference and two were better, and the mean difference is within the seed–fold spread. The direction of the fixed-step arm relative to pure off-policy is therefore not established. The adaptive arm (12.88) had a lower mean than the fixed-step arm, which formally satisfies the prediction that adaptive is no worse than the fixed switch. This contrast confounds trigger responsiveness with switch timing: according to self-reported diagnostics, the adaptive switches fired earlier than the fixed step on every seed, so the adaptive arm spent more of training on-policy.",
+            "evidence": [
+              "claim_fixed_switch_worse"
+            ],
+            "role": "comparison"
+          }
+        ]
+      },
+      {
+        "heading": "Discussion",
+        "points": [
+          {
+            "claim": "The pre-registered falsifying outcome was met. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way (see limitations). The conservative reading is that this experiment does not distinguish the switching rules.",
+            "evidence": [
+              "claim_hypothesis_not_supported"
+            ],
+            "role": "result"
+          },
+          {
+            "claim": "The adaptive versus fixed-switch contrast is confounded with total on-policy duration.",
+            "evidence": [
+              "limit_8"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Competing explanation, untested: the pure-on-policy mean advantage could come from some seeds committing to a single consistent output mode, which greedy decoding rewards, rather than from correcting exposure bias.",
+            "evidence": [
+              "limit_14"
+            ],
+            "role": "limitation"
+          }
+        ]
+      },
+      {
+        "heading": "Limitations",
+        "points": [
+          {
+            "claim": "Evaluation scope (corrected from the previous version): seed i was trained and evaluated on cross-validation fold i, so training prompts, probe prompts and the val set all change with the seed. The spread across seeds is seed-plus-fold variation. Nothing was evaluated on a single fold. Paired differences against the reference pair on both seed and fold.",
+            "evidence": [
+              "limit_1"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Only five seed–fold pairs per arm, with no inferential test and no interval on any paired difference. Each value comes from a single evaluation on a few hundred val prompts, and the binomial evaluation noise is of the same order as the adaptive-versus-reference mean difference. 'Within noise' was never quantified.",
+            "evidence": [
+              "limit_6"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Only one adaptive setting (one probe threshold, full on-policy target) and one fixed switch step were run. The threshold sweep, partial targets, the static mixed-fraction arm and the other fixed steps were omitted.",
+            "evidence": [
+              "limit_7"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "The yoked and corrupt arms do not match the other arms in compute: the yoked arm spends replay compute and the corrupt arm discards student rollouts. No compute-matched total was recorded.",
+            "evidence": [
+              "limit_9"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Probe trajectories, switch steps, on-policy batch counts and per-token error rates are self-reported by train.py and not verified by the scorer. The probe uses training prompts, not val.",
+            "evidence": [
+              "limit_10"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Single synthetic task, single tiny fixed student, single divergence. The results do not generalise beyond this setting.",
+            "evidence": [
+              "limit_11"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Run verdicts are recorded as 'discarded' and the protocol outcome is 'unreviewed'. The author has decided not to run further experiments, so the requested reruns (cross-yoked seeds, replayed-rate corruption, mode-share diagnostics, more seeds) were not done.",
+            "evidence": [
+              "limit_13"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Withdrawn claim (claim_corrupt_recovers_gain): the corrupted-prefix control set its substitution rate from its own student's sampled rollout error, not the adaptive student's. Because that student drifted to higher rollout error than the adaptive student on every seed (self-reported student_rollout_tokerr_mean), the control did not implement the specified matched noise level. Its post-switch prefixes were also exact ground truth rather than teacher samples. Its mean paired gain is also dominated by the same outlying reference pair as the adaptive gain. It is no longer treated as a test of whether the benefit needs the student's own prefixes; that question is unanswered.",
+            "evidence": [
+              "limit_2"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Withdrawn claim (claim_yoked_matches_or_beats): the yoked replay arm trained on different seeds from the reference and adaptive arms. Its recorded per-seed differences are therefore not paired observations, and only a difference of means can be reported. That difference does not separate yoked from adaptive given the yoked arm's large spread, and the yoked students switched in different training states from their adaptive sources. Whether online responsiveness adds value beyond switch timing is untested.",
+            "evidence": [
+              "limit_3"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Withdrawn claim (claim_variance_mechanism_hypothesis): the previous version proposed that more training on student-generated or noisy prefixes yields more seed-dependent outcomes. The data contradict this premise. The adaptive and yoked arms had identical on-policy batch counts yet very different spreads, and with five values per arm the spread estimates cannot rank variance. No mode-commitment diagnostic was recorded, and no mechanism for the dispersion is claimed.",
+            "evidence": [
+              "limit_4"
+            ],
+            "role": "limitation"
+          }
+        ]
+      },
+      {
+        "heading": "Conclusion",
+        "points": [
+          {
+            "claim": "The pre-registered falsifying outcome was met. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way (see limitations). The conservative reading is that this experiment does not distinguish the switching rules.",
+            "evidence": [
+              "claim_hypothesis_not_supported"
+            ],
+            "role": "result"
+          },
+          {
+            "claim": "The adaptive-switch arm did not beat pure_on_policy on mean val_invalid_rate: pure_on_policy averaged 9.04 and the adaptive arm averaged 12.88. The pre-registered prediction that the adaptive switch would be below both pure regimes by a margin therefore fails for the on-policy endpoint. The adaptive arm had the narrower spread across seed–fold pairs.",
+            "evidence": [
+              "claim_adaptive_not_below_pure_on"
+            ],
+            "role": "result"
+          },
+          {
+            "claim": "Single synthetic task, single tiny fixed student, single divergence. The results do not generalise beyond this setting.",
+            "evidence": [
+              "limit_11"
+            ],
+            "role": "limitation"
+          },
+          {
+            "claim": "Run verdicts are recorded as 'discarded' and the protocol outcome is 'unreviewed'. The author has decided not to run further experiments, so the requested reruns (cross-yoked seeds, replayed-rate corruption, mode-share diagnostics, more seeds) were not done.",
+            "evidence": [
+              "limit_13"
+            ],
+            "role": "future_work"
+          }
+        ]
+      }
+    ]
+  },
+  "keypoints_discussion": [
+    {
+      "round": 1,
+      "artifact": {
+        "sections": [
+          {
+            "heading": "Abstract",
+            "points": [
+              {
+                "claim": "On the multimodal-transduction-L6-A8 seq-distill task, does switching from off-policy to on-policy training when the student's own probe invalid rate falls below a threshold lower val_invalid_rate compared with pure off-policy, pure on-policy and a fixed-step switch? If it does, does the benefit depend on the trigger responding to the student's state, and on the student's own prefixes?",
+                "evidence": [
+                  "scope_question"
+                ],
+                "role": "context"
+              },
+              {
+                "claim": "The pre-registered falsifying outcome was met. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way (see limitations). The conservative reading is that this experiment does not distinguish the switching rules.",
+                "evidence": [
+                  "claim_hypothesis_not_supported"
+                ],
+                "role": "result"
+              },
+              {
+                "claim": "One pre-registered falsification protocol was run with six arms, each at full fidelity over five seed–fold pairs. Seed i was trained on the training prompts of cross-validation fold i and evaluated on that fold's val prompts, so seed and fold are confounded and no arm was evaluated on a single fold. Learning rate, temperature, forward-KL loss and step budget were the same in every arm, and the student architecture and teacher were frozen. The arms were: off_policy_ref (reference); pure_on_policy; a fixed switch to fully on-policy at a mid-run step; an adaptive arm that switches to fully on-policy once the greedy invalid rate on a training-prompt probe batch drops below threshold, with a forced-switch cap; a yoked replay that switches at the adaptive arm's firing step but trains on a different seed; and a corrupted-prefix arm that uses the same trigger but replaces post-switch prefixes with ground truth under token substitution. The trusted metric is val_invalid_rate from the frozen scorer. The analysis reports descriptive paired mean differences against off_policy_ref, with no inferential test. Probe trajectories, switch steps and on-policy batch counts are self-reported by train.py and are not verified by the scorer. The author decided to run no further experiments. This revision therefore narrows the argument: two control comparisons and one mechanism hypothesis are withdrawn as claims and moved to the limitations.",
+                "evidence": [
+                  "scope_method"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "According to self-reported diagnostics, the adaptive trigger fired before the forced-switch cap on all five seed–fold pairs, and no switch was forced. On-policy batches occurred only after the reported switch step. The adaptive mechanism was therefore exercised in this run, rather than every switch coming from the cap.",
+                "evidence": [
+                  "claim_trigger_exercised"
+                ],
+                "role": "result"
+              },
+              {
+                "claim": "The adaptive-switch arm did not beat pure_on_policy on mean val_invalid_rate: pure_on_policy averaged 9.04 and the adaptive arm averaged 12.88. The pre-registered prediction that the adaptive switch would be below both pure regimes by a margin therefore fails for the on-policy endpoint. The adaptive arm had the narrower spread across seed–fold pairs.",
+                "evidence": [
+                  "claim_adaptive_not_below_pure_on"
+                ],
+                "role": "result"
+              }
+            ]
+          },
+          {
+            "heading": "Introduction",
+            "points": [
+              {
+                "claim": "Task multimodal-transduction-L6-A8: each input is L=6 symbols from an alphabet of 8. Three outputs are valid: the copy, the reversal, and the reversal incremented mod 8. A mixture of modes counts as invalid.",
+                "evidence": [
+                  "setup_task"
+                ],
+                "role": "context"
+              },
+              {
+                "claim": "GKD trains students on a mixture of fixed and self-generated sequences with a static student-data fraction. This study keeps that fraction knob but switches it once during training, conditioned on the student's probe invalid rate.",
+                "evidence": [
+                  "related_gkd"
+                ],
+                "role": "context"
+              },
+              {
+                "claim": "DASH-OPD and DTDD switch adaptively between teacher and student within rollouts, using discrepancy signals. This study instead makes a single, one-way, training-schedule switch gated by a probe invalid rate. Their abstracts do not describe yoked or corrupted-prefix controls.",
+                "evidence": [
+                  "related_adaptive_triggers"
+                ],
+                "role": "context"
+              },
+              {
+                "claim": "Instance-level curriculum distillation orders training instances using an earlier student snapshot. This study schedules the policy that generates prefixes rather than the order of instances.",
+                "evidence": [
+                  "related_curriculum"
+                ],
+                "role": "challenge"
+              },
+              {
+                "claim": "On the multimodal-transduction-L6-A8 seq-distill task, does switching from off-policy to on-policy training when the student's own probe invalid rate falls below a threshold lower val_invalid_rate compared with pure off-policy, pure on-policy and a fixed-step switch? If it does, does the benefit depend on the trigger responding to the student's state, and on the student's own prefixes?",
+                "evidence": [
+                  "scope_question"
+                ],
+                "role": "challenge"
+              },
+              {
+                "claim": "Registered prediction: adaptive_tau25 is at least 1.0 point below both pure regimes and below the 8.8 hard-label baseline, and no worse than fixed_switch_1500. yoked_replay is within noise of adaptive or worse. corrupt_prefix recovers less than half of the adaptive gain over off_policy_ref.",
+                "evidence": [
+                  "setup_prediction"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Registered falsification: the hypothesis fails if adaptive_tau25 does not beat the better of off_policy_ref and pure_on_policy by more than the seed standard deviation, or if both yoked_replay and corrupt_prefix match it. A trigger that fires only through the cap on every seed leaves responsiveness untested.",
+                "evidence": [
+                  "setup_falsification"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "The pre-registered falsifying outcome was met. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way (see limitations). The conservative reading is that this experiment does not distinguish the switching rules.",
+                "evidence": [
+                  "claim_hypothesis_not_supported"
+                ],
+                "role": "result"
+              },
+              {
+                "claim": "The adaptive-switch arm did not beat pure_on_policy on mean val_invalid_rate: pure_on_policy averaged 9.04 and the adaptive arm averaged 12.88. The pre-registered prediction that the adaptive switch would be below both pure regimes by a margin therefore fails for the on-policy endpoint. The adaptive arm had the narrower spread across seed–fold pairs.",
+                "evidence": [
+                  "claim_adaptive_not_below_pure_on"
+                ],
+                "role": "result"
+              }
+            ]
+          },
+          {
+            "heading": "Related Work",
+            "points": [
+              {
+                "claim": "Sequence-level KD trains on teacher-generated outputs and is the canonical off-policy baseline. This study's reference arm is off-policy word-level distillation on teacher-sampled prefixes.",
+                "evidence": [
+                  "related_seqkd"
+                ],
+                "role": "context"
+              },
+              {
+                "claim": "Imitation-learning distillation treats the teacher as an oracle on student-visited states to address exposure bias. This study designed a corrupted-prefix control to test that account. The control's corruption rate tracked its own student's rollout error, not the adaptive student's, so it yields no conclusion and the account remains untested here.",
+                "evidence": [
+                  "related_imitation"
+                ],
+                "role": "comparison"
+              },
+              {
+                "claim": "GKD trains students on a mixture of fixed and self-generated sequences with a static student-data fraction. This study keeps that fraction knob but switches it once during training, conditioned on the student's probe invalid rate.",
+                "evidence": [
+                  "related_gkd"
+                ],
+                "role": "comparison"
+              },
+              {
+                "claim": "DASH-OPD and DTDD switch adaptively between teacher and student within rollouts, using discrepancy signals. This study instead makes a single, one-way, training-schedule switch gated by a probe invalid rate. Their abstracts do not describe yoked or corrupted-prefix controls.",
+                "evidence": [
+                  "related_adaptive_triggers"
+                ],
+                "role": "comparison"
+              },
+              {
+                "claim": "Instance-level curriculum distillation orders training instances using an earlier student snapshot. This study schedules the policy that generates prefixes rather than the order of instances.",
+                "evidence": [
+                  "related_curriculum"
+                ],
+                "role": "comparison"
+              },
+              {
+                "claim": "MiniLLM changes both the divergence (reverse KL) and the sampling distribution. This study holds the forward-KL loss fixed and varies only the prefix source and its schedule.",
+                "evidence": [
+                  "related_minillm"
+                ],
+                "role": "comparison"
+              },
+              {
+                "claim": "A controlled study on GSM8K argues that the state distribution supervised matters alongside the loss. This study varies only the state source, on a non-language transduction task.",
+                "evidence": [
+                  "related_state_distribution"
+                ],
+                "role": "comparison"
+              },
+              {
+                "claim": "Prior work reports that student-generated outputs are costly and hard to optimise when the student is much smaller than the teacher. This study uses one fixed small student and does not vary the capacity gap.",
+                "evidence": [
+                  "related_capacity"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Entropy-aware on-policy distillation reports instability of reverse-KL signals under high teacher entropy. This study's teacher models a three-mode distribution, but teacher entropy was not measured or varied.",
+                "evidence": [
+                  "related_entropy"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Mask Forcing perturbs student self-rollouts in video diffusion distillation. This study's corrupted-prefix arm perturbs ground-truth discrete prefixes as a control, not as a method.",
+                "evidence": [
+                  "related_mask_forcing"
+                ],
+                "role": "comparison"
+              }
+            ]
+          },
+          {
+            "heading": "Setup and Pre-Registered Protocol",
+            "points": [
+              {
+                "claim": "One pre-registered falsification protocol was run with six arms, each at full fidelity over five seed–fold pairs. Seed i was trained on the training prompts of cross-validation fold i and evaluated on that fold's val prompts, so seed and fold are confounded and no arm was evaluated on a single fold. Learning rate, temperature, forward-KL loss and step budget were the same in every arm, and the student architecture and teacher were frozen. The arms were: off_policy_ref (reference); pure_on_policy; a fixed switch to fully on-policy at a mid-run step; an adaptive arm that switches to fully on-policy once the greedy invalid rate on a training-prompt probe batch drops below threshold, with a forced-switch cap; a yoked replay that switches at the adaptive arm's firing step but trains on a different seed; and a corrupted-prefix arm that uses the same trigger but replaces post-switch prefixes with ground truth under token substitution. The trusted metric is val_invalid_rate from the frozen scorer. The analysis reports descriptive paired mean differences against off_policy_ref, with no inferential test. Probe trajectories, switch steps and on-policy batch counts are self-reported by train.py and are not verified by the scorer. The author decided to run no further experiments. This revision therefore narrows the argument: two control comparisons and one mechanism hypothesis are withdrawn as claims and moved to the limitations.",
+                "evidence": [
+                  "scope_method"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Task multimodal-transduction-L6-A8: each input is L=6 symbols from an alphabet of 8. Three outputs are valid: the copy, the reversal, and the reversal incremented mod 8. A mixture of modes counts as invalid.",
+                "evidence": [
+                  "setup_task"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Every possible input is shuffled once. Five folds of 500 prompts each are cut from the start of that order, the next 2000 prompts form the held-out test set, and the teacher trains on the rest. A run on one fold validates on that fold and trains on the prompts of the other four.",
+                "evidence": [
+                  "setup_folds"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "The metric val_invalid_rate is the percentage of greedy student decodes on a validation fold that match none of the valid outputs. Lower is better. Each validation fold holds 500 prompts.",
+                "evidence": [
+                  "setup_metric"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "The student is a frozen-architecture pre-norm causal transformer with d_model 32, 2 layers and 2 heads. The frozen teacher has d_model 96 and 2 layers, trained for 8000 steps on inputs disjoint from the fold pool and the test set.",
+                "evidence": [
+                  "setup_models"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "The teacher is trained once with a fixed seed for 8000 steps of AdamW at lr 1e-3 and batch 128. Each training target is one valid output chosen uniformly at random from the three modes, and the loss is cross-entropy over output positions.",
+                "evidence": [
+                  "setup_teacher_training"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Every arm trains for 3000 steps with batch 64 using AdamW at lr 0.003. The loss is forward KL between teacher and student next-token distributions at temperature 1.0 over output positions.",
+                "evidence": [
+                  "setup_training"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Training prefixes are sampled, not decoded greedily: each batch draws its output sequences from either the teacher or the student at sampling temperature 1.0, and on_policy_frac is the probability that a batch uses the student.",
+                "evidence": [
+                  "setup_prefix_sampling"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "The probe batch is a fixed subset of 256 training prompts, drawn once per run from a generator seeded with 10000 plus the run seed. The probe and the evaluation decode greedily.",
+                "evidence": [
+                  "setup_probe"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "The off_policy_ref arm runs the unmodified script with on_policy_frac 0, so the teacher samples every training prefix.",
+                "evidence": [
+                  "setup_arm_offpolicy"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "The pure_on_policy arm sets on_policy_frac to 1 throughout, so the student samples every prefix and the teacher labels it.",
+                "evidence": [
+                  "setup_arm_pureon"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "The fixed_switch_1500 arm uses on_policy_frac 0 before step 1500 and 1.0 afterwards. A probe runs every 100 steps for logging only.",
+                "evidence": [
+                  "setup_arm_fixed"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "In the adaptive_tau25 arm, a probe greedily decodes 256 training prompts every 100 steps. When the probe invalid rate falls below 25%, on_policy_frac switches from 0 to 1.0. The switch is forced at step 1500 if the trigger has not fired.",
+                "evidence": [
+                  "setup_arm_adaptive"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "The yoked_replay arm first replays the adaptive run for the seed to find its firing step. It then trains a fresh student from training seed seed+1000 and switches to on_policy_frac 1.0 at exactly that step, ignoring the probe.",
+                "evidence": [
+                  "setup_arm_yoked"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "The corrupt_prefix arm uses the adaptive trigger and cap. After the switch, it samples student rollouts to measure per-token error p, then trains on ground-truth outputs (mode chosen uniformly) with each symbol substituted at rate p.",
+                "evidence": [
+                  "setup_arm_corrupt"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Per-token error p is the smallest number of positions at which a sampled student rollout differs from any valid output, divided by the output length. It is computed on each post-switch batch. Corruption draws use a generator seeded with 20000 plus the run seed.",
+                "evidence": [
+                  "setup_token_error"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Each arm ran five seeds (zero through four) over five cross-validation folds at full fidelity. Run records list fold indices alongside seed indices, so seed and fold vary together.",
+                "evidence": [
+                  "setup_seeds_folds"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Each arm's run record lists 5 training attempts for its five seeds.",
+                "evidence": [
+                  "setup_attempts"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Each full-fidelity run had a time budget of 1200 seconds.",
+                "evidence": [
+                  "setup_budget"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "The frozen protocol records the software environment: Python 3.12.9, torch 2.11.0 and numpy 2.2.6.",
+                "evidence": [
+                  "setup_environment"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Analysis: for each arm, per-seed paired mean differences against off_policy_ref, read descriptively beside the seed spread, with no inferential test.",
+                "evidence": [
+                  "setup_analysis"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "The profile declares a val_invalid_rate of 8.8 for a hard-label training baseline. That baseline was not re-run in this protocol.",
+                "evidence": [
+                  "setup_baseline"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Registered prediction: adaptive_tau25 is at least 1.0 point below both pure regimes and below the 8.8 hard-label baseline, and no worse than fixed_switch_1500. yoked_replay is within noise of adaptive or worse. corrupt_prefix recovers less than half of the adaptive gain over off_policy_ref.",
+                "evidence": [
+                  "setup_prediction"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Registered falsification: the hypothesis fails if adaptive_tau25 does not beat the better of off_policy_ref and pure_on_policy by more than the seed standard deviation, or if both yoked_replay and corrupt_prefix match it. A trigger that fires only through the cap on every seed leaves responsiveness untested.",
+                "evidence": [
+                  "setup_falsification"
+                ],
+                "role": "method"
+              },
+              {
+                "claim": "Attempts made outside the registered protocol, if any, are not reported. Hardware is not recorded, so the time budget is not tied to a machine. Setup details absent from the setup statements are not part of the recorded evidence.",
+                "evidence": [
+                  "limit_15"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Implementation details not restated in the setup statements are fixed in the frozen scorer and the versioned training scripts, and are not described further here.",
+                "evidence": [
+                  "limit_16"
+                ],
+                "role": "limitation"
+              }
+            ]
+          },
+          {
+            "heading": "Results",
+            "points": [
+              {
+                "claim": "Mean validation invalid rate (%) over five seeds, with seed SD, was:\n- off_policy_ref: 14.0 (3.234192)\n- pure_on_policy: 9.04 (8.478679)\n- fixed_switch_1500: 15.0 (3.896152)\n- adaptive_tau25: 12.88 (2.229798)\n- yoked_replay: 11.0 (8.866792)\n- corrupt_prefix: 12.76 (6.582401)",
+                "evidence": [
+                  "claim_all_arms_observation"
+                ],
+                "role": "result"
+              },
+              {
+                "claim": "According to self-reported diagnostics, the adaptive trigger fired before the forced-switch cap on all five seed–fold pairs, and no switch was forced. On-policy batches occurred only after the reported switch step. The adaptive mechanism was therefore exercised in this run, rather than every switch coming from the cap.",
+                "evidence": [
+                  "claim_trigger_exercised"
+                ],
+                "role": "result"
+              },
+              {
+                "claim": "The adaptive-switch arm did not beat pure_on_policy on mean val_invalid_rate: pure_on_policy averaged 9.04 and the adaptive arm averaged 12.88. The pre-registered prediction that the adaptive switch would be below both pure regimes by a margin therefore fails for the on-policy endpoint. The adaptive arm had the narrower spread across seed–fold pairs.",
+                "evidence": [
+                  "claim_adaptive_not_below_pure_on"
+                ],
+                "role": "comparison"
+              },
+              {
+                "claim": "The adaptive-switch arm had a lower mean val_invalid_rate (12.88) than off_policy_ref (14.0), a paired mean difference of -1.12. The per-seed paired differences were small and mixed in sign: four of the five seed–fold pairs were within about one point of zero, and one of those four was positive. Most of the mean improvement comes from the single pair where off_policy_ref had its highest value (18.4). The improvement is small relative to the seed–fold spread and is not robust across pairs.",
+                "evidence": [
+                  "claim_adaptive_vs_offpolicy"
+                ],
+                "role": "comparison"
+              },
+              {
+                "claim": "pure_on_policy had a paired mean difference of -4.96 against off_policy_ref, but the per-pair pattern was heterogeneous. On three of five seed–fold pairs it was much better than off-policy, reaching values of 4.6, 2.6 and 4.2. On one pair it was about equal. On the remaining pair it was clearly worse (23.2 against the reference's 15.8). The direction is not uniform and the spread is large, so the sign of the mean difference is not established at this sample size.",
+                "evidence": [
+                  "claim_pure_on_high_variance"
+                ],
+                "role": "comparison"
+              },
+              {
+                "claim": "Correction to claim_pure_on_high_variance: the earlier wording said the mean advantage rested on a 'minority' of seeds. In fact three of five pairs were much better, one about equal and one worse. The point that the sign of the mean difference is not established is kept.",
+                "evidence": [
+                  "limit_5"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "No arm's mean reached the profile's declared hard-label baseline. That baseline was not re-measured in this study, so the comparison is indicative only.",
+                "evidence": [
+                  "limit_12"
+                ],
+                "role": "comparison"
+              },
+              {
+                "claim": "The fixed-step switch arm had the highest mean val_invalid_rate of all arms (15.0), a paired mean difference of 1.0 against off_policy_ref. The paired differences were mixed in sign: three of the five seed–fold pairs were worse than the reference and two were better, and the mean difference is within the seed–fold spread. The direction of the fixed-step arm relative to pure off-policy is therefore not established. The adaptive arm (12.88) had a lower mean than the fixed-step arm, which formally satisfies the prediction that adaptive is no worse than the fixed switch. This contrast confounds trigger responsiveness with switch timing: according to self-reported diagnostics, the adaptive switches fired earlier than the fixed step on every seed, so the adaptive arm spent more of training on-policy.",
+                "evidence": [
+                  "claim_fixed_switch_worse"
+                ],
+                "role": "comparison"
+              }
+            ]
+          },
+          {
+            "heading": "Discussion",
+            "points": [
+              {
+                "claim": "The pre-registered falsifying outcome was met. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way (see limitations). The conservative reading is that this experiment does not distinguish the switching rules.",
+                "evidence": [
+                  "claim_hypothesis_not_supported"
+                ],
+                "role": "result"
+              },
+              {
+                "claim": "The adaptive versus fixed-switch contrast is confounded with total on-policy duration.",
+                "evidence": [
+                  "limit_8"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Competing explanation, untested: the pure-on-policy mean advantage could come from some seeds committing to a single consistent output mode, which greedy decoding rewards, rather than from correcting exposure bias.",
+                "evidence": [
+                  "limit_14"
+                ],
+                "role": "limitation"
+              }
+            ]
+          },
+          {
+            "heading": "Limitations",
+            "points": [
+              {
+                "claim": "Evaluation scope (corrected from the previous version): seed i was trained and evaluated on cross-validation fold i, so training prompts, probe prompts and the val set all change with the seed. The spread across seeds is seed-plus-fold variation. Nothing was evaluated on a single fold. Paired differences against the reference pair on both seed and fold.",
+                "evidence": [
+                  "limit_1"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Only five seed–fold pairs per arm, with no inferential test and no interval on any paired difference. Each value comes from a single evaluation on a few hundred val prompts, and the binomial evaluation noise is of the same order as the adaptive-versus-reference mean difference. 'Within noise' was never quantified.",
+                "evidence": [
+                  "limit_6"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Only one adaptive setting (one probe threshold, full on-policy target) and one fixed switch step were run. The threshold sweep, partial targets, the static mixed-fraction arm and the other fixed steps were omitted.",
+                "evidence": [
+                  "limit_7"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "The yoked and corrupt arms do not match the other arms in compute: the yoked arm spends replay compute and the corrupt arm discards student rollouts. No compute-matched total was recorded.",
+                "evidence": [
+                  "limit_9"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Probe trajectories, switch steps, on-policy batch counts and per-token error rates are self-reported by train.py and not verified by the scorer. The probe uses training prompts, not val.",
+                "evidence": [
+                  "limit_10"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Single synthetic task, single tiny fixed student, single divergence. The results do not generalise beyond this setting.",
+                "evidence": [
+                  "limit_11"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Run verdicts are recorded as 'discarded' and the protocol outcome is 'unreviewed'. The author has decided not to run further experiments, so the requested reruns (cross-yoked seeds, replayed-rate corruption, mode-share diagnostics, more seeds) were not done.",
+                "evidence": [
+                  "limit_13"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Withdrawn claim (claim_corrupt_recovers_gain): the corrupted-prefix control set its substitution rate from its own student's sampled rollout error, not the adaptive student's. Because that student drifted to higher rollout error than the adaptive student on every seed (self-reported student_rollout_tokerr_mean), the control did not implement the specified matched noise level. Its post-switch prefixes were also exact ground truth rather than teacher samples. Its mean paired gain is also dominated by the same outlying reference pair as the adaptive gain. It is no longer treated as a test of whether the benefit needs the student's own prefixes; that question is unanswered.",
+                "evidence": [
+                  "limit_2"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Withdrawn claim (claim_yoked_matches_or_beats): the yoked replay arm trained on different seeds from the reference and adaptive arms. Its recorded per-seed differences are therefore not paired observations, and only a difference of means can be reported. That difference does not separate yoked from adaptive given the yoked arm's large spread, and the yoked students switched in different training states from their adaptive sources. Whether online responsiveness adds value beyond switch timing is untested.",
+                "evidence": [
+                  "limit_3"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Withdrawn claim (claim_variance_mechanism_hypothesis): the previous version proposed that more training on student-generated or noisy prefixes yields more seed-dependent outcomes. The data contradict this premise. The adaptive and yoked arms had identical on-policy batch counts yet very different spreads, and with five values per arm the spread estimates cannot rank variance. No mode-commitment diagnostic was recorded, and no mechanism for the dispersion is claimed.",
+                "evidence": [
+                  "limit_4"
+                ],
+                "role": "limitation"
+              }
+            ]
+          },
+          {
+            "heading": "Conclusion",
+            "points": [
+              {
+                "claim": "The pre-registered falsifying outcome was met. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way (see limitations). The conservative reading is that this experiment does not distinguish the switching rules.",
+                "evidence": [
+                  "claim_hypothesis_not_supported"
+                ],
+                "role": "result"
+              },
+              {
+                "claim": "The adaptive-switch arm did not beat pure_on_policy on mean val_invalid_rate: pure_on_policy averaged 9.04 and the adaptive arm averaged 12.88. The pre-registered prediction that the adaptive switch would be below both pure regimes by a margin therefore fails for the on-policy endpoint. The adaptive arm had the narrower spread across seed–fold pairs.",
+                "evidence": [
+                  "claim_adaptive_not_below_pure_on"
+                ],
+                "role": "result"
+              },
+              {
+                "claim": "Single synthetic task, single tiny fixed student, single divergence. The results do not generalise beyond this setting.",
+                "evidence": [
+                  "limit_11"
+                ],
+                "role": "limitation"
+              },
+              {
+                "claim": "Run verdicts are recorded as 'discarded' and the protocol outcome is 'unreviewed'. The author has decided not to run further experiments, so the requested reruns (cross-yoked seeds, replayed-rate corruption, mode-share diagnostics, more seeds) were not done.",
+                "evidence": [
+                  "limit_13"
+                ],
+                "role": "future_work"
+              }
+            ]
+          }
+        ]
+      },
+      "reviews": [
+        {
+          "role": "Skeptic",
+          "verdict": "accept",
+          "issues": [
+            {
+              "target": "Abstract and Conclusion: claim_adaptive_not_below_pure_on (final sentence 'The adaptive arm had the narrower spread across seed–fold pairs')",
+              "issue": "The abstract and conclusion both carry the 'narrower spread' observation. A reader may take it as a selling point for the adaptive arm. limit_4 states that 'with five values per arm the spread estimates cannot rank variance', so headline placement over-weights a descriptive SD comparison the paper itself disclaims.",
+              "suggestion": "Keep claim_adaptive_not_below_pure_on in Results only, beside limit_4 or limit_6. In the abstract and conclusion, claim_hypothesis_not_supported already carries the 9.04 vs 12.88 comparison. Author: consider whether this sentence should be qualified in the approved text.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Abstract: 'pure_on_policy had the lower mean (9.04 against 12.88)'",
+              "issue": "The abstract reports pure_on_policy's lower mean without the caveat from claim_pure_on_high_variance that the sign of its difference from off_policy_ref is not established (SD 8.48, one pair at 23.2). This invites a reading that pure on-policy is the winning regime.",
+              "suggestion": "Add a short pointer to claim_pure_on_high_variance or limit_6 in the abstract, or drop claim_adaptive_not_below_pure_on from the abstract so the conservative closing sentence of claim_hypothesis_not_supported is the last word.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Discussion: limit_14 ('the pure-on-policy mean advantage could come from...')",
+              "issue": "The phrase 'mean advantage' presupposes an advantage. The Results statement claim_pure_on_high_variance says the sign is not established at this sample size.",
+              "suggestion": "Author: consider rewording limit_4 to 'the lower pure-on-policy mean'. In the plan, place limit_14 immediately after claim_pure_on_high_variance, or right after the reminder that the sign is not established.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Results: claim_all_arms_observation table (yoked_replay 11.0, corrupt_prefix 12.76)",
+              "issue": "The yoked and corrupt means are both at or below the adaptive mean, and they appear in Results with no adjacent caveat. The statements that these controls are invalid (limit_2, limit_3) appear only in the Limitations section, several sections later.",
+              "suggestion": "Place a pointer next to the table, for example by moving limit_2 and limit_3, or the related_imitation note, into Results. Then nobody reads the control means as evidence.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Whole plan: repeated statements",
+              "issue": "The plan repeats statements heavily. claim_hypothesis_not_supported appears 4 times and claim_adaptive_not_below_pure_on 4 times. scope_method, scope_question, setup_task, setup_prediction, setup_falsification, related_gkd, related_adaptive_triggers and related_curriculum each appear twice. This dilutes each section's message.",
+              "suggestion": "Use each statement once where it does its main job: the claims in Results, with abstract and conclusion placement only for the headline claim. Move prediction and falsification to Setup and the related-work contrasts to Related Work. Keep the Introduction to the task, the question and one positioning statement.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Results: limit_5; Abstract/Setup: scope_method final sentences",
+              "issue": "Revision-history wording ('Correction to claim_pure_on_high_variance', 'This revision therefore narrows the argument', 'Withdrawn claim') addresses earlier drafts, not the paper's reader. limit_5 adds no information beyond claim_pure_on_high_variance.",
+              "suggestion": "Omit limit_5. Author: consider approved variants of scope_method, limit_2, limit_3 and limit_4 without the revision framing.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Conclusion: limit_13 labelled (future_work)",
+              "issue": "limit_13 records that further runs will not be done. Labelling it future_work implies they are planned.",
+              "suggestion": "Relabel it as a limitation, or omit it from the Conclusion since it already appears in Limitations.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Abstract: ordering and length",
+              "issue": "The full scope_method paragraph sits between two results in the abstract. This makes the abstract long and hard to follow.",
+              "suggestion": "Order the abstract as question → method → falsification result → trigger-exercised. Consider leaving the full scope_method text to the Setup section only.",
+              "severity": "suggestion"
+            }
+          ]
+        },
+        {
+          "role": "Editor",
+          "verdict": "accept",
+          "issues": [
+            {
+              "target": "Abstract: order of bullets",
+              "issue": "The verdict [claim_hypothesis_not_supported] comes before the method [scope_method]. The reader meets 'falsifying outcome', 'yoked replay' and 'corrupted prefixes' before any arm is defined. [claim_adaptive_not_below_pure_on] then repeats the 9.04 vs 12.88 numbers the verdict has already given.",
+              "suggestion": "Reorder to: scope_question, then scope_method, then claim_trigger_exercised (the mechanism fired), then claim_hypothesis_not_supported. Drop claim_adaptive_not_below_pure_on from the abstract. Its only new content is the narrower spread, which can wait for Results.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Abstract: pure_on_policy framing",
+              "issue": "The abstract names pure_on_policy as 'the better pure regime' (9.04) without saying that its advantage over off-policy is not established in sign. A reader may take away that pure on-policy wins.",
+              "suggestion": "Consider adding claim_pure_on_high_variance, or at least placing it right after the verdict in Results and the Discussion. That way the 'experiment does not distinguish the switching rules' reading is visibly backed.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Introduction: duplicated statements",
+              "issue": "The Introduction restates scope_question, which is also in the Abstract. It also repeats related_gkd, related_adaptive_triggers and related_curriculum verbatim in Related Work, and setup_prediction and setup_falsification verbatim in Setup. It then repeats both headline results, which reappear in Results, Discussion and Conclusion. claim_hypothesis_not_supported appears four times in total.",
+              "suggestion": "In the Introduction, keep setup_task, one positioning statement (related_gkd), scope_question, setup_falsification and claim_hypothesis_not_supported. Move the other related-work items and setup_prediction to their own sections only. In the Discussion, do not restate claim_hypothesis_not_supported; open with limit_8 and limit_14 as the interpretation of the result. Keep the Conclusion's restatement.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Introduction: related_curriculum tagged 'challenge'",
+              "issue": "A related-work contrast about instance ordering is not the challenge or gap that motivates the question. The Introduction has no stated 'why this matters' beat before scope_question.",
+              "suggestion": "Drop related_curriculum from the Introduction, keeping it in Related Work. Let related_gkd (a static fraction versus a state-conditioned switch) serve as the motivating gap just before scope_question.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Setup: scope_method duplicated with arm-level setup",
+              "issue": "scope_method appears in full in both the Abstract and Setup, and it overlaps setup_seeds_folds, setup_analysis and the per-arm statements. setup_attempts and setup_seeds_folds also overlap.",
+              "suggestion": "In Setup, either open with scope_method as the overview and drop setup_seeds_folds and setup_attempts, or omit scope_method from Setup and rely on the detailed statements. setup_prediction and setup_falsification should appear in only one section.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Results: placement of limit_5 and fixed-switch claim",
+              "issue": "limit_5 is a revision-history correction ('the earlier wording said'). Readers of the paper have no earlier version, so placing it in Results distracts. claim_fixed_switch_worse appears after limit_12, which breaks the flow of arm-versus-arm comparisons.",
+              "suggestion": "Move limit_5 to Limitations or omit it, since claim_pure_on_high_variance already states the corrected pattern. Order Results as: all-arms table, trigger exercised, adaptive vs pure_on, pure_on vs off-policy, adaptive vs off-policy, fixed switch, then limit_12.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Author: revision-history wording in scope_method, limit_1, limit_5 and the withdrawn-claim limits",
+              "issue": "Several approved statements are worded as a response to a previous version ('This revision', 'corrected from the previous version', 'Withdrawn claim'). This reads oddly in a standalone paper.",
+              "suggestion": "The author may consider rewording these statements so they describe the current scope directly.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Conclusion: limit_13 tagged future_work",
+              "issue": "limit_13 records discarded verdicts and reruns that were not done. It is not a forward-looking statement.",
+              "suggestion": "Relabel it as a limitation. Alternatively, keep it in Limitations only and let the Conclusion end on limit_11.",
+              "severity": "suggestion"
+            }
+          ]
+        },
+        {
+          "role": "Methodologist",
+          "verdict": "accept",
+          "issues": [
+            {
+              "target": "Results: claim_all_arms_observation (table of means with 'seed SD')",
+              "issue": "The table labels its spread as 'seed SD', but each seed also changes the fold. That is only explained in scope_method and in limit_1, which sits far away in Limitations. A reader of the table alone could take the SD for pure seed variance. The table also omits that yoked_replay used different training seeds (seed+1000), which limit_3 explains.",
+              "suggestion": "Place limit_1 (or a pointer to it) directly after the table in Results. Also mention limit_3 there, so readers see that the yoked arm's row is not paired with the others.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Abstract and Introduction: repeated statements",
+              "issue": "claim_hypothesis_not_supported appears four times: Abstract, Introduction, Discussion and Conclusion. claim_adaptive_not_below_pure_on also appears four times. scope_question appears twice and scope_method twice. The full scope_method paragraph in the Abstract makes it very long and buries the result.",
+              "suggestion": "Keep scope_method only in Setup, and keep at most one of the two headline claims in the Abstract. Drop claim_adaptive_not_below_pure_on from the Introduction, since claim_hypothesis_not_supported already states the numbers.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Introduction: related_gkd, related_adaptive_triggers, related_curriculum",
+              "issue": "These three statements appear in both the Introduction and Related Work, word for word.",
+              "suggestion": "Keep them in Related Work only. If the Introduction needs a motivation hook, use one of them at most.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Conclusion: limit_13 tagged as future_work",
+              "issue": "limit_13 reports discarded verdicts and reruns that were not done. It describes a limitation of this study, not planned future work, so the tag misrepresents it.",
+              "suggestion": "Re-tag it as a limitation, or keep it only in Limitations. Its main role is to disclose that the runs were discarded and the protocol is unreviewed.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Author: limit_6 vs setup_metric",
+              "issue": "limit_6 says each value comes from 'a few hundred val prompts'. setup_metric states that each validation fold holds 500 prompts. The vague wording sits next to an exact count and weakens the binomial-noise argument.",
+              "suggestion": "Author: consider rewording limit_6 to say 500 val prompts, matching setup_metric.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Author: claim_all_arms_observation precision",
+              "issue": "The SDs are given to six decimals (e.g. 3.234192), while the means have one or two. With n=5 this suggests more precision than the data have.",
+              "suggestion": "Author: consider rounding the SDs to one or two decimals.",
+              "severity": "suggestion"
+            },
+            {
+              "target": "Discussion: limit_8 and claim_fixed_switch_worse",
+              "issue": "limit_8 repeats the confound that claim_fixed_switch_worse already states in Results.",
+              "suggestion": "Either drop limit_8 from the Discussion or move it into Limitations, to avoid saying the same thing twice.",
+              "severity": "suggestion"
+            }
+          ]
+        }
+      ],
+      "accepted": true
+    }
+  ],
+  "sections": [
+    {
+      "heading": "Abstract",
+      "body": "On the multimodal-transduction-L6-A8 seq-distill task, we asked whether switching from off-policy to on-policy training, once the student's own probe invalid rate falls below a threshold, lowers val_invalid_rate compared with pure off-policy, pure on-policy and a fixed-step switch [scope_question]. The pre-registered falsifying outcome was met: the adaptive-switch arm did not beat the better pure regime, so the experiment does not distinguish the switching rules [claim_hypothesis_not_supported]. We ran one pre-registered protocol with six arms, each over five seed–fold pairs, with the same learning rate, temperature, forward-KL loss and step budget in every arm and val_invalid_rate (lower is better) computed by a frozen scorer [scope_method]. According to self-reported diagnostics, the adaptive trigger fired before the forced-switch cap on all five seed–fold pairs, so the adaptive mechanism was exercised in this run [claim_trigger_exercised]. The adaptive arm still did not beat pure_on_policy on mean val_invalid_rate, which averaged 12.88 for the adaptive arm against 9.04 for pure_on_policy [claim_adaptive_not_below_pure_on].",
+      "warnings": []
+    },
+    {
+      "heading": "Introduction",
+      "body": "The task, multimodal-transduction-L6-A8, gives the student an input of L=6 symbols from an alphabet of 8, and three outputs are valid: the copy, the reversal, and the reversal incremented mod 8 [setup_task]. An output that mixes modes counts as invalid [setup_task].\n\nGKD trains students on a mixture of fixed and self-generated sequences with a static student-data fraction [related_gkd]. We keep that fraction knob and switch it once during training, conditioned on the student's probe invalid rate [related_gkd]. DASH-OPD and DTDD switch adaptively between teacher and student within rollouts using discrepancy signals, and their abstracts do not describe yoked or corrupted-prefix controls [related_adaptive_triggers]. Our study instead makes a single, one-way, training-schedule switch gated by a probe invalid rate [related_adaptive_triggers]. Instance-level curriculum distillation orders training instances using an earlier student snapshot, whereas we schedule the policy that generates prefixes rather than the order of instances [related_curriculum].\n\nWe ask whether, on the multimodal-transduction-L6-A8 seq-distill task, switching from off-policy to on-policy training when the student's own probe invalid rate falls below a threshold lowers val_invalid_rate compared with pure off-policy, pure on-policy and a fixed-step switch [scope_question]. If it does, we ask whether the benefit depends on the trigger responding to the student's state, and on the student's own prefixes [scope_question].\n\nThe registered prediction was that adaptive_tau25 is at least 1.0 point below both pure regimes and below the 8.8 hard-label baseline, and no worse than fixed_switch_1500 [setup_prediction]. The prediction further held that yoked_replay is within noise of adaptive or worse, and that corrupt_prefix recovers less than half of the adaptive gain over off_policy_ref [setup_prediction]. The registered falsification states that the hypothesis fails if adaptive_tau25 does not beat the better of off_policy_ref and pure_on_policy by more than the seed standard deviation, or if both yoked_replay and corrupt_prefix match it [setup_falsification]. A trigger that fires only through the cap on every seed would leave responsiveness untested [setup_falsification].\n\nThe pre-registered falsifying outcome was met: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch did not beat the better pure regime by more than the seed–fold spread [claim_hypothesis_not_supported]. The yoked-replay and corrupted-prefix controls did not implement their intended contrasts, so the conservative reading is that this experiment does not distinguish the switching rules [claim_hypothesis_not_supported]. The prediction that the adaptive switch would sit below both pure regimes by a margin therefore fails for the on-policy endpoint of val_invalid_rate [claim_adaptive_not_below_pure_on]. The adaptive arm did have the narrower spread across seed–fold pairs [claim_adaptive_not_below_pure_on].",
+      "warnings": []
+    },
+    {
+      "heading": "Related Work",
+      "body": "Sequence-level knowledge distillation [arXiv:1606.07947] trains the student on teacher-generated outputs and is the canonical off-policy baseline [related_seqkd]. Our reference arm follows this off-policy setting and applies word-level distillation on teacher-sampled prefixes [related_seqkd].\n\nImitation-learning distillation [arXiv:2009.07253] [doi:10.1007/s00521-025-11162-0] treats the teacher as an oracle on student-visited states, which addresses exposure bias [related_imitation]. We designed a corrupted-prefix control to test this exposure-bias account [related_imitation]. The control's corruption rate tracked its own student's rollout error instead of the adaptive student's, so the control yields no conclusion and the account remains untested here [related_imitation].\n\nGKD [arXiv:2306.13649] trains students on a mixture of fixed and self-generated sequences, with a static student-data fraction [related_gkd]. We keep that fraction knob and switch it once during training, conditioned on the student's probe invalid rate [related_gkd]. DASH-OPD [arXiv:2607.29078] and DTDD [arXiv:2610.19302] instead switch adaptively between teacher and student within rollouts, using discrepancy signals [related_adaptive_triggers]. Our switch is a single, one-way change in the training schedule, gated by a probe invalid rate [related_adaptive_triggers]. The abstracts of these two methods do not describe yoked or corrupted-prefix controls [related_adaptive_triggers].\n\nInstance-level curriculum distillation [arXiv:2106.10885v1] orders training instances using an earlier student snapshot [related_curriculum]. Our study schedules the policy that generates prefixes and leaves the order of instances unchanged [related_curriculum].\n\nMiniLLM [arXiv:2306.08543] changes two factors at once: the divergence, which becomes reverse KL, and the sampling distribution [related_minillm]. We hold the forward-KL loss fixed and vary only the prefix source and its schedule [related_minillm]. A controlled study on GSM8K [arXiv:2605.22731v1] argues that the state distribution under supervision matters alongside the loss [related_state_distribution]. Our study varies only the state source, and does so on a non-language transduction task [related_state_distribution].\n\nPrior work [arXiv:2409.12512] reports that student-generated outputs are costly and hard to optimise when the student is much smaller than the teacher [related_capacity]. We use one fixed small student and do not vary the capacity gap [related_capacity]. Entropy-aware on-policy distillation [arXiv:2603.07079] reports that reverse-KL signals become unstable under high teacher entropy [related_entropy]. Our teacher models a three-mode distribution, but we did not measure or vary teacher entropy [related_entropy].\n\nMask Forcing [arXiv:2609.09123] perturbs student self-rollouts in video diffusion distillation [related_mask_forcing]. Our corrupted-prefix arm perturbs ground-truth discrete prefixes and serves only as a control, with no claim as a method [related_mask_forcing].",
+      "warnings": []
+    },
+    {
+      "heading": "Setup and Pre-Registered Protocol",
+      "body": "We ran one pre-registered falsification protocol with six arms, each at full fidelity over five seed–fold pairs [scope_method]. Seed i was trained on the training prompts of cross-validation fold i and evaluated on that fold's val prompts, so seed and fold are confounded and no arm was evaluated on a single fold [scope_method]. Learning rate, temperature, forward-KL loss and step budget were the same in every arm, and the student architecture and teacher were frozen [scope_method]. The arms were off_policy_ref (the reference), pure_on_policy, a fixed switch to fully on-policy at a mid-run step, and an adaptive arm that switches to fully on-policy once the greedy invalid rate on a training-prompt probe batch drops below threshold, with a forced-switch cap [scope_method]. Two further arms completed the set: a yoked replay that switches at the adaptive arm's firing step but trains on a different seed, and a corrupted-prefix arm that uses the same trigger but replaces post-switch prefixes with ground truth under token substitution [scope_method]. The trusted metric is val_invalid_rate from the frozen scorer, and the analysis reports descriptive paired mean differences against off_policy_ref, with no inferential test [scope_method]. Probe trajectories, switch steps and on-policy batch counts are self-reported by train.py and are not verified by the scorer [scope_method]. The author decided to run no further experiments, so this revision narrows the argument: two control comparisons and one mechanism hypothesis are withdrawn as claims and moved to the limitations [scope_method].\n\nIn the task multimodal-transduction-L6-A8, each input is L=6 symbols from an alphabet of 8 [setup_task]. Three outputs are valid: the copy, the reversal, and the reversal incremented mod 8 [setup_task]. A mixture of modes counts as invalid [setup_task]. Every possible input is shuffled once, and five folds of 500 prompts each are cut from the start of that order [setup_folds]. The next 2000 prompts form the held-out test set, and the teacher trains on the rest [setup_folds]. A run on one fold validates on that fold and trains on the prompts of the other four [setup_folds]. The metric val_invalid_rate is the percentage of greedy student decodes on a validation fold that match none of the valid outputs, and lower is better [setup_metric]. Each validation fold holds 500 prompts [setup_metric].\n\nThe student is a frozen-architecture pre-norm causal transformer with d_model 32, 2 layers and 2 heads [setup_models]. The frozen teacher has d_model 96 and 2 layers, trained for 8000 steps on inputs disjoint from the fold pool and the test set [setup_models]. The teacher is trained once with a fixed seed for 8000 steps of AdamW at lr 1e-3 and batch 128 [setup_teacher_training]. Each teacher training target is one valid output chosen uniformly at random from the three modes, and the loss is cross-entropy over output positions [setup_teacher_training].\n\nEvery arm trains for 3000 steps with batch 64 using AdamW at lr 0.003 [setup_training]. The loss is forward KL between teacher and student next-token distributions at temperature 1.0 over output positions [setup_training]. Training prefixes are sampled rather than decoded greedily: each batch draws its output sequences from either the teacher or the student at sampling temperature 1.0 [setup_prefix_sampling]. The quantity on_policy_frac is the probability that a batch uses the student [setup_prefix_sampling].\n\nThe probe batch is a fixed subset of 256 training prompts, drawn once per run from a generator seeded with 10000 plus the run seed [setup_probe]. The probe and the evaluation decode greedily [setup_probe]. The off_policy_ref arm runs the unmodified script with on_policy_frac 0, so the teacher samples every training prefix [setup_arm_offpolicy]. The pure_on_policy arm sets on_policy_frac to 1 throughout, so the student samples every prefix and the teacher labels it [setup_arm_pureon]. The fixed_switch_1500 arm uses on_policy_frac 0 before step 1500 and 1.0 afterwards, with a probe every 100 steps for logging only [setup_arm_fixed].\n\nIn the adaptive_tau25 arm, a probe greedily decodes 256 training prompts every 100 steps [setup_arm_adaptive]. When the probe invalid rate falls below 25%, on_policy_frac switches from 0 to 1.0 [setup_arm_adaptive]. The switch is forced at step 1500 if the trigger has not fired [setup_arm_adaptive]. The yoked_replay arm first replays the adaptive run for the seed to find its firing step [setup_arm_yoked]. It then trains a fresh student from training seed seed+1000 and switches to on_policy_frac 1.0 at exactly that step, ignoring the probe [setup_arm_yoked].\n\nThe corrupt_prefix arm uses the adaptive trigger and cap [setup_arm_corrupt]. After the switch, it samples student rollouts to measure per-token error p, then trains on ground-truth outputs (mode chosen uniformly) with each symbol substituted at rate p [setup_arm_corrupt]. Per-token error p is the smallest number of positions at which a sampled student rollout differs from any valid output, divided by the output length [setup_token_error]. It is computed on each post-switch batch, and corruption draws use a generator seeded with 20000 plus the run seed [setup_token_error].\n\nEach arm ran five seeds (zero through four) over five cross-validation folds at full fidelity [setup_seeds_folds]. Run records list fold indices alongside seed indices, so seed and fold vary together [setup_seeds_folds]. Each arm's run record lists 5 training attempts for its five seeds [setup_attempts]. Each full-fidelity run had a time budget of 1200 seconds [setup_budget]. The frozen protocol records the software environment: Python 3.12.9, torch 2.11.0 and numpy 2.2.6 [setup_environment].\n\nThe analysis computes, for each arm, per-seed paired mean differences against off_policy_ref, read descriptively beside the seed spread, with no inferential test [setup_analysis]. The profile declares a val_invalid_rate of 8.8 for a hard-label training baseline [setup_baseline]. That baseline was not re-run in this protocol [setup_baseline].\n\nThe registered prediction was that adaptive_tau25 is at least 1.0 point below both pure regimes and below the 8.8 hard-label baseline, and no worse than fixed_switch_1500 [setup_prediction]. It further predicted that yoked_replay is within noise of adaptive or worse, and that corrupt_prefix recovers less than half of the adaptive gain over off_policy_ref [setup_prediction]. Under the registered falsification, the hypothesis fails if adaptive_tau25 does not beat the better of off_policy_ref and pure_on_policy by more than the seed standard deviation, or if both yoked_replay and corrupt_prefix match it [setup_falsification]. A trigger that fires only through the cap on every seed leaves responsiveness untested [setup_falsification].\n\nAttempts made outside the registered protocol, if any, are not reported [limit_15]. Hardware is not recorded, so the time budget is not tied to a machine [limit_15]. Setup details absent from the setup statements are not part of the recorded evidence [limit_15]. Implementation details not restated in the setup statements are fixed in the frozen scorer and the versioned training scripts, and are not described further here [limit_16].",
+      "warnings": [
+        "2 sentence(s) over 40 words (first: \"The arms were off_policy_ref (the reference), pure_on_policy…\")"
+      ]
+    },
+    {
+      "heading": "Results",
+      "body": "Mean validation invalid rate (%, lower is better) over five seeds, with seed SD in parentheses, was 14.0 (3.234192) for off_policy_ref, 9.04 (8.478679) for pure_on_policy, 15.0 (3.896152) for fixed_switch_1500, 12.88 (2.229798) for adaptive_tau25, 11.0 (8.866792) for yoked_replay and 12.76 (6.582401) for corrupt_prefix [claim_all_arms_observation].\n\nThe precondition for testing trigger responsiveness held: according to self-reported diagnostics, the adaptive trigger fired before the forced-switch cap on all five seed–fold pairs, and no switch was forced [claim_trigger_exercised]. On-policy batches occurred only after the reported switch step [claim_trigger_exercised]. The adaptive mechanism was therefore exercised in this run, rather than every switch coming from the cap [claim_trigger_exercised].\n\nThe pre-registered prediction that the adaptive switch would sit below both pure regimes by a margin fails for the on-policy endpoint, because pure_on_policy averaged 9.04 and the adaptive arm averaged 12.88 [claim_adaptive_not_below_pure_on]. The adaptive arm had the narrower spread across seed–fold pairs [claim_adaptive_not_below_pure_on].\n\nAgainst off_policy_ref, the same prediction meets only a small gain: the adaptive arm had a lower mean val_invalid_rate (12.88 against 14.0), a paired mean difference of -1.12 [claim_adaptive_vs_offpolicy]. The per-seed paired differences were small and mixed in sign, with four of the five seed–fold pairs within about one point of zero and one of those four positive [claim_adaptive_vs_offpolicy]. Most of the mean improvement comes from the single pair where off_policy_ref had its highest value (18.4) [claim_adaptive_vs_offpolicy]. The improvement is therefore small relative to the seed–fold spread and is not robust across pairs [claim_adaptive_vs_offpolicy].\n\nThe pure on-policy endpoint had a paired mean difference of -4.96 against off_policy_ref, but the per-pair pattern was heterogeneous [claim_pure_on_high_variance]. On three of five seed–fold pairs it was much better than off-policy, reaching values of 4.6, 2.6 and 4.2 [claim_pure_on_high_variance]. On one pair it was about equal, and on the remaining pair it was clearly worse (23.2 against the reference's 15.8) [claim_pure_on_high_variance]. This per-pair count corrects an earlier wording that placed the mean advantage on a 'minority' of seeds, since three of five pairs were much better, one about equal and one worse [limit_5]. Because the direction is not uniform and the spread is large, the sign of the mean difference is not established at this sample size [claim_pure_on_high_variance].\n\nThe prediction that the adaptive arm would fall below the profile's declared hard-label baseline is not met, since no arm's mean reached that baseline [limit_12]. That baseline was not re-measured in this study, so the comparison is indicative only [limit_12].\n\nFor the prediction that the adaptive arm would be no worse than the fixed switch, the reference point is weak: the fixed-step switch arm had the highest mean val_invalid_rate of all arms (15.0), a paired mean difference of 1.0 against off_policy_ref [claim_fixed_switch_worse]. Its paired differences were mixed in sign, with three of the five seed–fold pairs worse than the reference and two better, and the mean difference lies within the seed–fold spread [claim_fixed_switch_worse]. The direction of the fixed-step arm relative to pure off-policy is therefore not established [claim_fixed_switch_worse]. The adaptive arm (12.88) had a lower mean than the fixed-step arm, which formally satisfies the prediction that adaptive is no worse than the fixed switch [claim_fixed_switch_worse]. This contrast confounds trigger responsiveness with switch timing, because self-reported diagnostics show the adaptive switches fired earlier than the fixed step on every seed, so the adaptive arm spent more of training on-policy [claim_fixed_switch_worse].",
+      "warnings": [
+        "2 sentence(s) over 40 words (first: \"Mean validation invalid rate (%, lower is better) over five …\")"
+      ]
+    },
+    {
+      "heading": "Discussion",
+      "body": "The pre-registered falsifying outcome was met [claim_hypothesis_not_supported]. The adaptive-switch arm did not beat the better pure regime: pure_on_policy had the lower mean (9.04 against 12.88), so the adaptive switch was not better than the better pure regime by more than the seed–fold spread [claim_hypothesis_not_supported]. The prediction that the adaptive arm would beat both pure regimes is therefore not supported in this configuration [claim_hypothesis_not_supported]. The two controls meant to test why a trigger might help (yoked replay and corrupted prefixes) did not implement their intended contrasts and support no conclusion either way, as the limitations explain [claim_hypothesis_not_supported]. The conservative reading is that this experiment does not distinguish the switching rules [claim_hypothesis_not_supported].\n\nThe adaptive versus fixed-switch contrast is confounded with total on-policy duration [limit_8]. A competing explanation remains untested: the pure-on-policy mean advantage could come from some seeds committing to a single consistent output mode, which greedy decoding rewards, rather than from correcting exposure bias [limit_14].",
+      "warnings": []
+    },
+    {
+      "heading": "Limitations",
+      "body": "Seed i was trained and evaluated on cross-validation fold i, so training prompts, probe prompts and the val set all change with the seed [limit_1]. The spread across seeds is therefore seed-plus-fold variation, and nothing was evaluated on a single fold [limit_1]. Paired differences are paired against the reference on both seed and fold [limit_1].\n\nEach arm has only five seed–fold pairs, and we ran no inferential test and computed no interval on any paired difference [limit_6]. Each value comes from a single evaluation on a few hundred val prompts, and the binomial evaluation noise is of the same order as the adaptive-versus-reference mean difference [limit_6]. 'Within noise' was never quantified [limit_6].\n\nWe ran only one adaptive setting (one probe threshold, full on-policy target) and one fixed switch step [limit_7]. The threshold sweep, partial targets, the static mixed-fraction arm and the other fixed steps were omitted [limit_7]. The yoked and corrupt arms also do not match the other arms in compute: the yoked arm spends replay compute and the corrupt arm discards student rollouts [limit_9]. No compute-matched total was recorded [limit_9].\n\nProbe trajectories, switch steps, on-policy batch counts and per-token error rates are self-reported by train.py and are not verified by the scorer [limit_10]. The probe uses training prompts, not val [limit_10]. The study covers a single synthetic task, a single tiny fixed student and a single divergence, and the results do not generalise beyond this setting [limit_11].\n\nRun verdicts are recorded as 'discarded' and the protocol outcome as 'unreviewed' [limit_13]. The author has decided not to run further experiments, so the requested reruns (cross-yoked seeds, replayed-rate corruption, mode-share diagnostics, more seeds) were not done [limit_13].\n\nWe withdraw the claim that the corrupted-prefix control recovers the adaptive gain (claim_corrupt_recovers_gain), because that control set its substitution rate from its own student's sampled rollout error instead of the adaptive student's [limit_2]. That student drifted to higher rollout error than the adaptive student on every seed (self-reported student_rollout_tokerr_mean), so the control did not implement the specified matched noise level [limit_2]. Its post-switch prefixes were also exact ground truth rather than teacher samples, and its mean paired gain is dominated by the same outlying reference pair as the adaptive gain [limit_2]. The control is no longer treated as a test of whether the benefit needs the student's own prefixes, and that question is unanswered [limit_2].\n\nWe withdraw the claim that the yoked replay arm matches or beats the adaptive arm (claim_yoked_matches_or_beats), because the yoked arm trained on different seeds from the reference and adaptive arms [limit_3]. Its recorded per-seed differences are therefore not paired observations, and only a difference of means can be reported [limit_3]. That difference does not separate yoked from adaptive given the yoked arm's large spread, and the yoked students switched in different training states from their adaptive sources [limit_3]. Whether online responsiveness adds value beyond switch timing is untested [limit_3].\n\nWe also withdraw the variance-mechanism hypothesis (claim_variance_mechanism_hypothesis), which in the previous version proposed that more training on student-generated or noisy prefixes yields more seed-dependent outcomes [limit_4]. The data contradict this premise: the adaptive and yoked arms had identical on-policy batch counts yet very different spreads [limit_4]. With five values per arm, the spread estimates cannot rank variance [limit_4]. No mode-commitment diagnostic was recorded, and we claim no mechanism for the dispersion [limit_4].",
+      "warnings": []
+    },
+    {
+      "heading": "Conclusion",
+      "body": "We asked whether a probe-gated switch from off-policy to on-policy training lowers val_invalid_rate on this task, and the pre-registered falsifying outcome was met: the adaptive-switch arm did not beat the better pure regime, so this experiment does not distinguish the switching rules [claim_hypothesis_not_supported]. Pure_on_policy averaged 9.04 and the adaptive arm averaged 12.88 (lower is better), although the adaptive arm had the narrower spread across seed–fold pairs [claim_adaptive_not_below_pure_on].\n\nThe scope is one synthetic task with one tiny fixed student and one divergence, so the results do not generalise beyond this setting [limit_11]. The author has decided not to run further experiments, so the requested reruns (cross-yoked seeds, replayed-rate corruption, mode-share diagnostics, more seeds) were not done and remain the next steps [limit_13].",
+      "warnings": [
+        "1 sentence(s) over 40 words (first: \"We asked whether a probe-gated switch from off-policy to on-…\")"
+      ]
+    }
+  ],
+  "review": {
+    "title": "Does an Adaptive Off-to-On-Policy Switch Help Distillation? A Pre-Registered Negative Result on a Multimodal Transduction Task",
+    "mean_score": 2.2,
+    "recommendation": "reject",
+    "reviews": [
+      {
+        "persona": "harsh-but-fair",
+        "summary": "The paper reports a pre-registered six-arm experiment on a synthetic transduction task: L=6 symbols over an 8-symbol alphabet, with three valid output modes. A 2-layer d_model-32 student is distilled with forward KL from a frozen teacher. The question is whether a probe-gated, one-way switch from off-policy to on-policy prefixes (adaptive_tau25) lowers val_invalid_rate against three comparators: pure off-policy, pure on-policy and a fixed switch at step 1500. Two mechanism controls were planned, a yoked replay and a corrupted-prefix arm. With 5 seed–fold pairs per arm, the adaptive arm (12.88, SD 2.23) did not beat pure_on_policy (9.04, SD 8.48). Its -1.12 paired gain over off_policy_ref (14.0) is driven by one pair. The registered falsification is therefore met. Both controls were mis-implemented and their claims were withdrawn. Pure on-policy is strongly heterogeneous across pairs, and the sign of its advantage is not established. The authors conclude, conservatively, that the experiment does not distinguish switching rules. The write-up is unusually honest about its failures. However, the experiment yields almost no insight: the controls that would have produced the mechanistic content are void, the comparator effects are within binomial noise, and the scope is a single tiny synthetic setting.",
+        "strengths": [
+          "The protocol was pre-registered with an explicit numeric prediction (adaptive ≥1.0 point below both pure regimes and below 8.8). The falsification rule ('does not beat the better of off_policy_ref and pure_on_policy by more than the seed SD') is applied as written, not reinterpreted after the fact.",
+          "Means and SDs are reported for all six arms (Results, first paragraph). Paired differences are described at the per-pair level, for example that the adaptive gain comes mostly from the single pair where off_policy_ref was 18.4. This exposes the fragility of the mean instead of hiding it.",
+          "The precondition for testing responsiveness is checked rather than assumed: the trigger fired before the cap on all 5 pairs. The authors also flag that this evidence is self-reported by train.py.",
+          "The Limitations section explicitly withdraws three earlier claims (claim_corrupt_recovers_gain, claim_yoked_matches_or_beats, claim_variance_mechanism_hypothesis) and states concrete reasons for each. The reasons are a mismatched corruption rate, non-paired seeds, and identical on-policy batch counts with different spreads.",
+          "Several design details are stated precisely enough to re-implement the arms: the probe seed (10000+seed), the corruption seed (20000+seed), the definition of per-token error p, and the fold construction (5×500 prompts plus a 2000-prompt test set)."
+        ],
+        "weaknesses": [
+          "Self-consistency, Abstract and Conclusion. The sentence 'although the adaptive arm had the narrower spread across seed–fold pairs' (repeated in the Introduction and Results) is presented as a mitigating positive. It contradicts the Limitations, which state 'with five values per arm the spread estimates cannot rank variance'. Either drop the spread claim from the abstract and conclusion, or support it, for example with a bootstrap interval on the SD ratio or with more seeds.",
+          "Quality, Results. 'The adaptive switch did not beat the better pure regime' rests on pure_on_policy being the better pure regime. The paper itself says 'the sign of the mean difference [pure_on vs off_policy] is not established at this sample size.' The falsification holds against either reference, since -1.12 is smaller than both SDs. The text should say this explicitly instead of framing the result as 'pure_on_policy had the lower mean (9.04 against 12.88)'. Report the per-pair table (5 values × 6 arms) so readers can verify both comparisons.",
+          "Quality, Results and Limitations. No per-pair values are tabulated, yet the text cites individual values (18.4, 23.2, 15.8, 4.6, 2.6, 4.2). Sentence-level traceability requires a table of all 30 val_invalid_rate values with seed and fold indices.",
+          "Quality, Setup. The teacher's own val_invalid_rate is never reported. Without it, the reader cannot tell whether 9–15% invalid is near the teacher ceiling or far from it. The relevance of the 8.8 hard-label baseline is also unclear, and that baseline was not re-run ('That baseline was not re-measured'). Fix: report teacher invalid rate and per-mode output shares on each fold, and re-run the hard-label baseline under the same seed–fold protocol.",
+          "Quality, Limitations ('binomial evaluation noise is of the same order as the adaptive-versus-reference mean difference'). At p≈0.13 with n=500, the binomial SE is about 1.5 points, which matches the 1.12 gain. 'Within noise' was never quantified, yet the registered falsification depends on it. Report per-run binomial CIs, or a paired bootstrap over prompts. Better still, evaluate all arms on the shared 2000-prompt test set, which the setup describes but never uses.",
+          "Significance and originality, whole paper. The two controls that carried the mechanistic question, 'does the benefit depend on the trigger responding... and on the student's own prefixes', both failed by design. The yoked arm used seed+1000, so it was not paired. The corrupt arm used its own student's error rate and ground-truth rather than teacher prefixes. What remains is a single-setting comparison of known knobs with null-to-noisy outcomes, so a practitioner learns essentially nothing actionable. The authors declined reruns, which leaves the paper as an incomplete experiment rather than an informative negative result.",
+          "Quality, Results (fixed-switch paragraph). The confound is real but trivially entailed. Because the cap is at step 1500 and the trigger always fired earlier, the adaptive arm necessarily had more on-policy steps than fixed_switch_1500. The 'no worse than fixed switch' prediction was therefore uninformative as registered. Report actual switch steps per seed, and compare adaptive against a fixed switch at the median adaptive firing step.",
+          "Discussion. The one potentially insightful observation is left as untested speculation: pure_on_policy is bimodal, with three pairs at 2.6–4.6 and one at 23.2, and the authors suggest mode commitment. A per-mode output histogram at evaluation (copy/rev/rev+1 shares), which costs no training, would test this directly and turn the paper into something with a finding.",
+          "Clarity, Introduction and Setup. The registered prediction and falsification paragraphs are reproduced nearly verbatim twice (Introduction and Setup), and the related-work positioning against GKD, DASH-OPD and DTDD is duplicated in the Introduction. Several sentences are garbled, e.g. 'Against off_policy_ref, the same prediction meets only a small gain.' The drafting notes appended to the submission should be removed.",
+          "Clarity, Setup. 'Implementation details not restated in the setup statements are fixed in the frozen scorer... and are not described further here' and 'Hardware is not recorded' undercut reproducibility. The 1200 s budget is meaningless without hardware. It is also unclear whether the yoked arm used the same fold as its source seed.",
+          "Related Work. Several citations (arXiv:2607.29078, 2610.19302, 2609.09123, 2605.22731) carry identifiers that should be checked. Positioning claims based only on 'their abstracts do not describe yoked or corrupted-prefix controls' are weak grounds for novelty."
+        ],
+        "questions": [
+          "What is the teacher's val_invalid_rate on each fold? What output-mode distribution does the teacher produce under greedy decoding?",
+          "For the yoked arm, did seed i+1000 train and evaluate on fold i? If so, it is paired on fold, though not on seed. Why can the per-fold differences not be reported?",
+          "At which step did the adaptive trigger fire on each of the 5 pairs? How does the fraction of steps spent on-policy compare across adaptive, fixed and yoked?",
+          "Can you report greedy-decode mode shares for the pure_on_policy pairs? This would test whether the 23.2 pair is a mode-mixing failure and the 2.6–4.6 pairs are single-mode commitment.",
+          "Why was the 2000-prompt held-out test set not used for evaluation? It would reduce binomial noise roughly by a factor of two.",
+          "Given that both pre-registered controls are void, what in this paper would change a practitioner's choice between off-policy, on-policy and switched schedules?"
+        ],
+        "score": 2,
+        "recommendation": "reject"
+      },
+      {
+        "persona": "harsh-critical",
+        "summary": "The paper reports a pre-registered six-arm study on a synthetic multimodal transduction task (L=6 symbols, alphabet 8, three valid output modes). The arms are off-policy forward-KL distillation, pure on-policy, a fixed switch at step 1500, a probe-gated adaptive switch (tau=25%), a yoked-replay control and a corrupted-prefix control. Each arm has five confounded seed–fold pairs. The adaptive arm averaged 12.88% val_invalid_rate against 9.04% for pure on-policy and 14.0% for off-policy, so the registered falsification condition is met. Both mechanistic controls are withdrawn as mis-implemented, and no inferential statistics are reported. The paper is candid and internally mostly consistent. Its substantive content is one null result in one tiny setting, and its key secondary comparisons are uninformative by the authors' own account.",
+        "strengths": [
+          "Pre-registered prediction and falsification criteria are stated verbatim in Setup, and the Results walk through each clause (both pure regimes, the 8.8 hard-label baseline, the fixed switch) instead of cherry-picking.",
+          "The precondition check that the adaptive trigger fired before the step-1500 cap on all five pairs is reported. It rules out the degenerate case where 'adaptive' collapses to a fixed switch, though it is self-reported.",
+          "Per-pair decomposition of the paired differences gives concrete numbers: pure_on_policy is 4.6, 2.6 and 4.2 on three pairs and 23.2 vs 15.8 on one, and the adaptive gain is dominated by the single 18.4 reference pair. This honestly undercuts the mean-based reading.",
+          "Limitations are explicit and specific. Seed–fold confounding, the binomial noise scale, the withdrawn controls with concrete implementation reasons (the corruption rate tracked the wrong student; yoked runs on unpaired seeds), and self-reported diagnostics are all named.",
+          "Abstract and conclusions stay within scope: single task, single student, single divergence, no generalization claim."
+        ],
+        "weaknesses": [
+          "Significance (whole paper): the contribution reduces to 'on one 6-token synthetic task with a 2-layer d=32 student, one adaptive threshold did not beat pure on-policy over 5 noisy pairs'. A practitioner learns nothing actionable. The pure_on_policy SD of 8.48 means the non-result is also not a confident negative. Fix: run more seeds/folds or more thresholds, or argue why this specific null constrains prior methods (GKD, DASH-OPD).",
+          "Quality, Results ('so the adaptive switch did not beat the better pure regime by more than the seed–fold spread'): the falsification is met trivially because adaptive is worse on the mean, but the paper never states which SD it uses as the margin. With n=5 and binomial noise per evaluation of about ±1.5 points at 500 prompts, no difference here is resolved. Fix: report bootstrap or paired-t intervals on every paired difference and per-pair raw values in a table.",
+          "Quality, Setup ('seed and fold are confounded'): this design choice is not motivated and inflates spread. It prevents separating optimisation variance from data variance, which is exactly what the variance discussion would need. Fix: cross seeds with a fixed fold, or at least report per-pair values for all arms.",
+          "Self-consistency, Abstract vs Discussion ('the experiment does not distinguish the switching rules'): this conservative conclusion conflicts with the Results' reading that adaptive 'formally satisfies' no worse than fixed and shows a -1.12 gain vs off-policy. Fix: either drop these secondary readings or state plainly that no pairwise contrast among the switching arms is resolved.",
+          "Quality, Limitations (withdrawn yoked and corrupt claims): two of six arms (a third of compute) are acknowledged as not implementing their contrasts. The second registered falsification clause ('both yoked_replay and corrupt_prefix match it') is therefore unevaluable, yet the paper still presents the protocol as completed. Fix: rerun the controls correctly (yoked on paired seeds, corruption at the adaptive student's replayed rate), or state explicitly that the registered test is only half executed.",
+          "Quality, Results/Limitations (the 8.8 hard-label baseline): this baseline is comparable to or better than every distillation arm except pure on-policy, yet it was not re-run. If hard-label training beats most KD arms, the whole distillation framing is questionable on this task. Fix: re-run it under the same seeds and folds.",
+          "Clarity, Introduction: paragraphs on GKD/DASH-OPD/curriculum are duplicated nearly verbatim in Related Work, and the prediction/falsification text appears three times. The mention that 'their abstracts do not describe yoked or corrupted-prefix controls' is not a meaningful novelty claim. Fix: consolidate the duplicates and drop abstract-level comparisons.",
+          "Clarity, Setup (fold construction): several details needed to reproduce the key confounds are not given. The text does not say which teacher mode distribution the student converges to, how many of the 8^6=262,144 inputs the teacher trains on, or whether the teacher itself has a nonzero invalid rate. The latter matters a great deal for interpreting a 9–15% student invalid rate. Fix: report the teacher's val_invalid_rate.",
+          "Originality: the probe-gated one-way switch is a straightforward schedule on GKD's existing student-fraction knob. No new insight emerges since the mechanism tests failed. The untested mode-commitment hypothesis (Discussion) is the only interesting idea, and no diagnostic was collected for it."
+        ],
+        "questions": [
+          "What is the teacher's own val_invalid_rate and output-mode distribution? Without it, it is unclear whether 9–15% is near the achievable floor.",
+          "At what steps did the adaptive trigger fire on each pair, and how many post-switch on-policy batches did each adaptive run receive versus fixed_switch_1500?",
+          "Can you provide the per-pair val_invalid_rate table for all six arms so readers can compute their own paired intervals?",
+          "Why was seed confounded with fold rather than crossing them, given that variance attribution is central to the discussion?",
+          "Does the pure_on_policy outlier pair (23.2) correspond to collapse onto a single mode, a mode-mixing failure, or something else? Even one decoded-mode histogram would address the stated competing explanation.",
+          "Given that two controls failed and the hard-label baseline was not re-run, what is the intended takeaway for someone designing a distillation schedule?"
+        ],
+        "score": 2,
+        "recommendation": "reject"
+      },
+      {
+        "persona": "open-minded",
+        "summary": "The paper reports a pre-registered six-arm experiment on a synthetic multimodal transduction task (L=6, alphabet 8, three valid output modes). It asks whether switching from off-policy to on-policy distillation, gated by the student's probe invalid rate, lowers val_invalid_rate. The comparisons are against pure off-policy, pure on-policy and a fixed-step switch. Each arm has five seed–fold pairs. The adaptive arm averaged 12.88 against pure_on_policy at 9.04 and off_policy_ref at 14.0, so the registered falsification condition was met. The yoked-replay and corrupted-prefix controls were mis-implemented, and their claims are withdrawn. The paper frames itself as a negative result that does not distinguish the switching rules.",
+        "strengths": [
+          "Pre-registered prediction and falsification criteria are stated verbatim (Setup), and the paper reports honestly that the falsifying outcome was met rather than reframing it.",
+          "Per-pair breakdowns go beyond means. For pure_on_policy: 4.6, 2.6 and 4.2 on three pairs, about equal on one, 23.2 vs 15.8 on one. For adaptive vs reference: four of five pairs within about one point, with the gain driven by the 18.4 reference outlier. These breakdowns prevent overreading the mean differences.",
+          "The paper withdraws three earlier claims (corrupt-prefix recovery, yoked match, variance mechanism) and gives concrete reasons for each. For corrupt_prefix, the corruption rate was set from the arm's own student rather than the adaptive student. For yoked_replay, the training seeds differ, so pairing is broken.",
+          "The precondition check is stated: the trigger fired before the cap on all five pairs, so responsiveness was at least exercised. The confound between adaptive timing and on-policy duration in the fixed-switch contrast is acknowledged.",
+          "Reproduction detail is high: architectures, optimiser, learning rates, probe seeding, fold construction, corruption seeding and software versions are all given."
+        ],
+        "weaknesses": [
+          "Significance/originality: the only surviving finding is a non-result. The headline adaptive-vs-pure_on contrast (12.88 vs 9.04) has pure_on SD 8.48 over n=5, with no test or interval. So the paper cannot even claim pure on-policy is better; it only shows the adaptive arm failed to win. A practitioner learns almost nothing actionable. Fix: run more seeds (e.g. 20 or more) and report bootstrap CIs on paired differences.",
+          "Self-consistency (Abstract, last sentence; Discussion, first paragraph): 'did not beat the better pure regime by more than the seed–fold spread' is never computed against the registered criterion. The criterion is to beat the better arm by more than the seed SD, and which SD is meant is unspecified. Fix: state the threshold value used and the arithmetic.",
+          "Abstract: it opens with the result framing but omits that both mechanism controls failed to implement their contrasts. Readers reach the Limitations before learning that two of six arms are uninterpretable. Fix: state in the abstract that the yoked and corrupt controls were invalid.",
+          "Design flaw (Setup, sentence 'trains a fresh student from training seed seed+1000'): the yoked arm was unpaired by construction. This is a pre-registration design error, not an execution slip, and it undermines the central question of whether responsiveness matters. Fix: run cross-yoked seeds on the same seed and fold.",
+          "Limitations, binomial-noise sentence ('of the same order as the adaptive-versus-reference mean difference'): the claim is asserted, not shown. With 500 prompts at about 13%, the SE is about 1.5 points. Fix: report this number explicitly.",
+          "Reproducibility (Setup, 'Implementation details not restated… are fixed in the frozen scorer… and are not described further here'): this sentence and 'Setup details absent from the setup statements are not part of the recorded evidence' are boilerplate that defers to unreleased artifacts. Fix: release the code or remove these sentences.",
+          "Clarity: the Introduction largely duplicates the Related Work paragraphs (GKD, DASH-OPD/DTDD, curriculum) and the Setup's prediction and falsification text nearly verbatim. Leftover drafting notes and the 'evidence bindings' footer remain in the submission. Fix: remove the duplication and the drafting notes.",
+          "Related Work (DASH-OPD/DTDD sentence): 'Their abstracts do not describe yoked or corrupted-prefix controls' positions the paper on controls that it then reports as failed. That novelty claim no longer holds and should be cut.",
+          "Non-obvious angle not pursued: the mode-commitment explanation for pure_on's bimodal outcomes is the most interesting possibility in the data. A cheap post-hoc mode-share count on the existing checkpoints would test it, but none was done."
+        ],
+        "questions": [
+          "What numeric seed SD was used for the falsification threshold: the adaptive arm's (2.23), the better pure arm's (8.48), or a pooled value?",
+          "Do saved checkpoints exist for a post-hoc mode-share analysis of greedy decodes per arm? This would test the mode-commitment hypothesis without retraining.",
+          "At what steps did the adaptive trigger fire on each pair? How do those steps relate to the pure_on_policy outcomes on the same folds?",
+          "Why was the yoked arm assigned seed+1000 rather than the same seed? Was the intention to break the dependence on initialisation?",
+          "Is the 8.8 hard-label baseline from the same student, folds and step budget? If so, every distillation arm underperforms plain hard-label training, which is itself a notable finding worth discussing."
+        ],
+        "score": 2.5,
+        "recommendation": "reject"
+      }
+    ],
+    "weaknesses": [
+      "Self-consistency, Abstract and Conclusion. The sentence 'although the adaptive arm had the narrower spread across seed–fold pairs' (repeated in the Introduction and Results) is presented as a mitigating positive. It contradicts the Limitations, which state 'with five values per arm the spread estimates cannot rank variance'. Either drop the spread claim from the abstract and conclusion, or support it, for example with a bootstrap interval on the SD ratio or with more seeds.",
+      "Quality, Results. 'The adaptive switch did not beat the better pure regime' rests on pure_on_policy being the better pure regime. The paper itself says 'the sign of the mean difference [pure_on vs off_policy] is not established at this sample size.' The falsification holds against either reference, since -1.12 is smaller than both SDs. The text should say this explicitly instead of framing the result as 'pure_on_policy had the lower mean (9.04 against 12.88)'. Report the per-pair table (5 values × 6 arms) so readers can verify both comparisons.",
+      "Quality, Results and Limitations. No per-pair values are tabulated, yet the text cites individual values (18.4, 23.2, 15.8, 4.6, 2.6, 4.2). Sentence-level traceability requires a table of all 30 val_invalid_rate values with seed and fold indices.",
+      "Quality, Setup. The teacher's own val_invalid_rate is never reported. Without it, the reader cannot tell whether 9–15% invalid is near the teacher ceiling or far from it. The relevance of the 8.8 hard-label baseline is also unclear, and that baseline was not re-run ('That baseline was not re-measured'). Fix: report teacher invalid rate and per-mode output shares on each fold, and re-run the hard-label baseline under the same seed–fold protocol.",
+      "Quality, Limitations ('binomial evaluation noise is of the same order as the adaptive-versus-reference mean difference'). At p≈0.13 with n=500, the binomial SE is about 1.5 points, which matches the 1.12 gain. 'Within noise' was never quantified, yet the registered falsification depends on it. Report per-run binomial CIs, or a paired bootstrap over prompts. Better still, evaluate all arms on the shared 2000-prompt test set, which the setup describes but never uses.",
+      "Significance and originality, whole paper. The two controls that carried the mechanistic question, 'does the benefit depend on the trigger responding... and on the student's own prefixes', both failed by design. The yoked arm used seed+1000, so it was not paired. The corrupt arm used its own student's error rate and ground-truth rather than teacher prefixes. What remains is a single-setting comparison of known knobs with null-to-noisy outcomes, so a practitioner learns essentially nothing actionable. The authors declined reruns, which leaves the paper as an incomplete experiment rather than an informative negative result.",
+      "Quality, Results (fixed-switch paragraph). The confound is real but trivially entailed. Because the cap is at step 1500 and the trigger always fired earlier, the adaptive arm necessarily had more on-policy steps than fixed_switch_1500. The 'no worse than fixed switch' prediction was therefore uninformative as registered. Report actual switch steps per seed, and compare adaptive against a fixed switch at the median adaptive firing step.",
+      "Discussion. The one potentially insightful observation is left as untested speculation: pure_on_policy is bimodal, with three pairs at 2.6–4.6 and one at 23.2, and the authors suggest mode commitment. A per-mode output histogram at evaluation (copy/rev/rev+1 shares), which costs no training, would test this directly and turn the paper into something with a finding.",
+      "Clarity, Introduction and Setup. The registered prediction and falsification paragraphs are reproduced nearly verbatim twice (Introduction and Setup), and the related-work positioning against GKD, DASH-OPD and DTDD is duplicated in the Introduction. Several sentences are garbled, e.g. 'Against off_policy_ref, the same prediction meets only a small gain.' The drafting notes appended to the submission should be removed.",
+      "Clarity, Setup. 'Implementation details not restated in the setup statements are fixed in the frozen scorer... and are not described further here' and 'Hardware is not recorded' undercut reproducibility. The 1200 s budget is meaningless without hardware. It is also unclear whether the yoked arm used the same fold as its source seed.",
+      "Related Work. Several citations (arXiv:2607.29078, 2610.19302, 2609.09123, 2605.22731) carry identifiers that should be checked. Positioning claims based only on 'their abstracts do not describe yoked or corrupted-prefix controls' are weak grounds for novelty.",
+      "Significance (whole paper): the contribution reduces to 'on one 6-token synthetic task with a 2-layer d=32 student, one adaptive threshold did not beat pure on-policy over 5 noisy pairs'. A practitioner learns nothing actionable. The pure_on_policy SD of 8.48 means the non-result is also not a confident negative. Fix: run more seeds/folds or more thresholds, or argue why this specific null constrains prior methods (GKD, DASH-OPD).",
+      "Quality, Results ('so the adaptive switch did not beat the better pure regime by more than the seed–fold spread'): the falsification is met trivially because adaptive is worse on the mean, but the paper never states which SD it uses as the margin. With n=5 and binomial noise per evaluation of about ±1.5 points at 500 prompts, no difference here is resolved. Fix: report bootstrap or paired-t intervals on every paired difference and per-pair raw values in a table.",
+      "Quality, Setup ('seed and fold are confounded'): this design choice is not motivated and inflates spread. It prevents separating optimisation variance from data variance, which is exactly what the variance discussion would need. Fix: cross seeds with a fixed fold, or at least report per-pair values for all arms.",
+      "Self-consistency, Abstract vs Discussion ('the experiment does not distinguish the switching rules'): this conservative conclusion conflicts with the Results' reading that adaptive 'formally satisfies' no worse than fixed and shows a -1.12 gain vs off-policy. Fix: either drop these secondary readings or state plainly that no pairwise contrast among the switching arms is resolved.",
+      "Quality, Limitations (withdrawn yoked and corrupt claims): two of six arms (a third of compute) are acknowledged as not implementing their contrasts. The second registered falsification clause ('both yoked_replay and corrupt_prefix match it') is therefore unevaluable, yet the paper still presents the protocol as completed. Fix: rerun the controls correctly (yoked on paired seeds, corruption at the adaptive student's replayed rate), or state explicitly that the registered test is only half executed.",
+      "Quality, Results/Limitations (the 8.8 hard-label baseline): this baseline is comparable to or better than every distillation arm except pure on-policy, yet it was not re-run. If hard-label training beats most KD arms, the whole distillation framing is questionable on this task. Fix: re-run it under the same seeds and folds.",
+      "Clarity, Introduction: paragraphs on GKD/DASH-OPD/curriculum are duplicated nearly verbatim in Related Work, and the prediction/falsification text appears three times. The mention that 'their abstracts do not describe yoked or corrupted-prefix controls' is not a meaningful novelty claim. Fix: consolidate the duplicates and drop abstract-level comparisons.",
+      "Clarity, Setup (fold construction): several details needed to reproduce the key confounds are not given. The text does not say which teacher mode distribution the student converges to, how many of the 8^6=262,144 inputs the teacher trains on, or whether the teacher itself has a nonzero invalid rate. The latter matters a great deal for interpreting a 9–15% student invalid rate. Fix: report the teacher's val_invalid_rate.",
+      "Originality: the probe-gated one-way switch is a straightforward schedule on GKD's existing student-fraction knob. No new insight emerges since the mechanism tests failed. The untested mode-commitment hypothesis (Discussion) is the only interesting idea, and no diagnostic was collected for it.",
+      "Significance/originality: the only surviving finding is a non-result. The headline adaptive-vs-pure_on contrast (12.88 vs 9.04) has pure_on SD 8.48 over n=5, with no test or interval. So the paper cannot even claim pure on-policy is better; it only shows the adaptive arm failed to win. A practitioner learns almost nothing actionable. Fix: run more seeds (e.g. 20 or more) and report bootstrap CIs on paired differences.",
+      "Self-consistency (Abstract, last sentence; Discussion, first paragraph): 'did not beat the better pure regime by more than the seed–fold spread' is never computed against the registered criterion. The criterion is to beat the better arm by more than the seed SD, and which SD is meant is unspecified. Fix: state the threshold value used and the arithmetic.",
+      "Abstract: it opens with the result framing but omits that both mechanism controls failed to implement their contrasts. Readers reach the Limitations before learning that two of six arms are uninterpretable. Fix: state in the abstract that the yoked and corrupt controls were invalid.",
+      "Design flaw (Setup, sentence 'trains a fresh student from training seed seed+1000'): the yoked arm was unpaired by construction. This is a pre-registration design error, not an execution slip, and it undermines the central question of whether responsiveness matters. Fix: run cross-yoked seeds on the same seed and fold.",
+      "Limitations, binomial-noise sentence ('of the same order as the adaptive-versus-reference mean difference'): the claim is asserted, not shown. With 500 prompts at about 13%, the SE is about 1.5 points. Fix: report this number explicitly.",
+      "Reproducibility (Setup, 'Implementation details not restated… are fixed in the frozen scorer… and are not described further here'): this sentence and 'Setup details absent from the setup statements are not part of the recorded evidence' are boilerplate that defers to unreleased artifacts. Fix: release the code or remove these sentences.",
+      "Clarity: the Introduction largely duplicates the Related Work paragraphs (GKD, DASH-OPD/DTDD, curriculum) and the Setup's prediction and falsification text nearly verbatim. Leftover drafting notes and the 'evidence bindings' footer remain in the submission. Fix: remove the duplication and the drafting notes.",
+      "Related Work (DASH-OPD/DTDD sentence): 'Their abstracts do not describe yoked or corrupted-prefix controls' positions the paper on controls that it then reports as failed. That novelty claim no longer holds and should be cut.",
+      "Non-obvious angle not pursued: the mode-commitment explanation for pure_on's bimodal outcomes is the most interesting possibility in the data. A cheap post-hoc mode-share count on the existing checkpoints would test it, but none was done."
+    ],
+    "strengths": [
+      "The protocol was pre-registered with an explicit numeric prediction (adaptive ≥1.0 point below both pure regimes and below 8.8). The falsification rule ('does not beat the better of off_policy_ref and pure_on_policy by more than the seed SD') is applied as written, not reinterpreted after the fact.",
+      "Means and SDs are reported for all six arms (Results, first paragraph). Paired differences are described at the per-pair level, for example that the adaptive gain comes mostly from the single pair where off_policy_ref was 18.4. This exposes the fragility of the mean instead of hiding it.",
+      "The precondition for testing responsiveness is checked rather than assumed: the trigger fired before the cap on all 5 pairs. The authors also flag that this evidence is self-reported by train.py.",
+      "The Limitations section explicitly withdraws three earlier claims (claim_corrupt_recovers_gain, claim_yoked_matches_or_beats, claim_variance_mechanism_hypothesis) and states concrete reasons for each. The reasons are a mismatched corruption rate, non-paired seeds, and identical on-policy batch counts with different spreads.",
+      "Several design details are stated precisely enough to re-implement the arms: the probe seed (10000+seed), the corruption seed (20000+seed), the definition of per-token error p, and the fold construction (5×500 prompts plus a 2000-prompt test set).",
+      "Pre-registered prediction and falsification criteria are stated verbatim in Setup, and the Results walk through each clause (both pure regimes, the 8.8 hard-label baseline, the fixed switch) instead of cherry-picking.",
+      "The precondition check that the adaptive trigger fired before the step-1500 cap on all five pairs is reported. It rules out the degenerate case where 'adaptive' collapses to a fixed switch, though it is self-reported.",
+      "Per-pair decomposition of the paired differences gives concrete numbers: pure_on_policy is 4.6, 2.6 and 4.2 on three pairs and 23.2 vs 15.8 on one, and the adaptive gain is dominated by the single 18.4 reference pair. This honestly undercuts the mean-based reading.",
+      "Limitations are explicit and specific. Seed–fold confounding, the binomial noise scale, the withdrawn controls with concrete implementation reasons (the corruption rate tracked the wrong student; yoked runs on unpaired seeds), and self-reported diagnostics are all named.",
+      "Abstract and conclusions stay within scope: single task, single student, single divergence, no generalization claim.",
+      "Pre-registered prediction and falsification criteria are stated verbatim (Setup), and the paper reports honestly that the falsifying outcome was met rather than reframing it.",
+      "Per-pair breakdowns go beyond means. For pure_on_policy: 4.6, 2.6 and 4.2 on three pairs, about equal on one, 23.2 vs 15.8 on one. For adaptive vs reference: four of five pairs within about one point, with the gain driven by the 18.4 reference outlier. These breakdowns prevent overreading the mean differences.",
+      "The paper withdraws three earlier claims (corrupt-prefix recovery, yoked match, variance mechanism) and gives concrete reasons for each. For corrupt_prefix, the corruption rate was set from the arm's own student rather than the adaptive student. For yoked_replay, the training seeds differ, so pairing is broken.",
+      "The precondition check is stated: the trigger fired before the cap on all five pairs, so responsiveness was at least exercised. The confound between adaptive timing and on-policy duration in the fixed-switch contrast is acknowledged.",
+      "Reproduction detail is high: architectures, optimiser, learning rates, probe seeding, fold construction, corruption seeding and software versions are all given."
+    ],
+    "questions": [
+      "What is the teacher's val_invalid_rate on each fold? What output-mode distribution does the teacher produce under greedy decoding?",
+      "For the yoked arm, did seed i+1000 train and evaluate on fold i? If so, it is paired on fold, though not on seed. Why can the per-fold differences not be reported?",
+      "At which step did the adaptive trigger fire on each of the 5 pairs? How does the fraction of steps spent on-policy compare across adaptive, fixed and yoked?",
+      "Can you report greedy-decode mode shares for the pure_on_policy pairs? This would test whether the 23.2 pair is a mode-mixing failure and the 2.6–4.6 pairs are single-mode commitment.",
+      "Why was the 2000-prompt held-out test set not used for evaluation? It would reduce binomial noise roughly by a factor of two.",
+      "Given that both pre-registered controls are void, what in this paper would change a practitioner's choice between off-policy, on-policy and switched schedules?",
+      "What is the teacher's own val_invalid_rate and output-mode distribution? Without it, it is unclear whether 9–15% is near the achievable floor.",
+      "At what steps did the adaptive trigger fire on each pair, and how many post-switch on-policy batches did each adaptive run receive versus fixed_switch_1500?",
+      "Can you provide the per-pair val_invalid_rate table for all six arms so readers can compute their own paired intervals?",
+      "Why was seed confounded with fold rather than crossing them, given that variance attribution is central to the discussion?",
+      "Does the pure_on_policy outlier pair (23.2) correspond to collapse onto a single mode, a mode-mixing failure, or something else? Even one decoded-mode histogram would address the stated competing explanation.",
+      "Given that two controls failed and the hard-label baseline was not re-run, what is the intended takeaway for someone designing a distillation schedule?",
+      "What numeric seed SD was used for the falsification threshold: the adaptive arm's (2.23), the better pure arm's (8.48), or a pooled value?",
+      "Do saved checkpoints exist for a post-hoc mode-share analysis of greedy decodes per arm? This would test the mode-commitment hypothesis without retraining.",
+      "At what steps did the adaptive trigger fire on each pair? How do those steps relate to the pure_on_policy outcomes on the same folds?",
+      "Why was the yoked arm assigned seed+1000 rather than the same seed? Was the intention to break the dependence on initialisation?",
+      "Is the 8.8 hard-label baseline from the same student, folds and step budget? If so, every distillation arm underperforms plain hard-label training, which is itself a notable finding worth discussing."
+    ]
+  },
+  "feedback": [
+    {
+      "stage": "outline",
+      "text": "Keep the plan from the last round. Setup cites limit_15 and limit_16 for what was not recorded; do not ask for those details. Apply the panel's suggestions: let the limitations stand as written without added examples, put the six-arm means first in Results, account for every registered prediction in Results, and explain withdrawn claims once.",
+      "ts": 1794696035.149744
+    }
+  ],
+  "release_id": "428e387c04b02e2675d835002dd934314ba29d4517988e118838f8274114682a",
+  "demo": false
+}

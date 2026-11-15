@@ -132,6 +132,19 @@ class Store:
             self._save()
             return record
 
+    def import_samples(self, first="distillation"):
+        """Open every recorded run shipped under examples/sample_runs, read-only; return the one to show."""
+        folders = sorted(p for p in (self.workspace / "examples" / "sample_runs").iterdir() if p.is_dir())
+        records = {}
+        for folder in folders:
+            try:
+                records[folder.name] = self.import_run(folder, readonly=True)
+            except (ValueError, OSError):
+                continue
+        if not records:
+            raise ValueError("This checkout ships no recorded runs")
+        return records.get(first) or next(iter(records.values()))
+
     def get(self, ident):
         with self.lock:
             if ident not in self.records or self.records[ident].get("deleted_at"):
@@ -252,7 +265,9 @@ class Store:
                                       "kind": "pilot" if envelope.get("source_kind") == "pilot" else "agenda",
                                       "path": file.with_suffix(".md").relative_to(root).as_posix()})
         release_error = ""
-        if review.get("status") in {"READY_FOR_AUTHOR", "READY_TO_WRITE"}:
+        # An archive is a record of a finished run. Its release was bound to the machine that ran
+        # it (interpreter, platform, package versions), so it is shown as recorded, not re-checked.
+        if not record["readonly"] and review.get("status") in {"READY_FOR_AUTHOR", "READY_TO_WRITE"}:
             try:
                 from scholarloop.review.session import ScientificReviewSession
                 reviewer = ScientificReviewSession(None, load_profile(self.workspace / "profiles" / record["profile"]),

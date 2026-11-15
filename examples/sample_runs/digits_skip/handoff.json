@@ -1,0 +1,224 @@
+{
+  "topic": "Pre-registered paired equivalence test: zero-parameter identity skip vs. weight-identical plain MLP on sklearn-digits",
+  "guidance": "Test this idea: At two hidden blocks on sklearn-digits, the identity skip makes no practically meaningful difference to final validation error once parameters, initial weights, data order, step count and per-arm lr are matched (H1). Any effect is confined to early-training speed, consistent with the optimization-landscape account in [arXiv:1909.04653] and the depth-scaled shallow-path account in [openalex:W3007689282], which predicts a factor near 1 at this depth. (expected: The paired mean difference (residual − plain) in final val_top1_err has a 90% CI inside [−0.5, +0.5] pp, so equivalence is declared. Both arms are near or below the 3.8% logistic baseline. At early steps (about 10–20% of the budget) the residual arm may lead by more than 0.5 pp, and that gap closes by the end of training.). Experiment plan: Architecture edit: add a boolean 'skip' flag to the block forward pass. With depth=2 and hidden=128, the parameter count is identical in both arms; assert this in code. For seeds s = 1..30, initialize the model once from seed s and deep-copy it into both arms. Use the same data-loader generator seed, SGD, and epochs=120 so step counts are equal. Keep weight_decay at 1e-4 and do not vary it, so this stays out of regularization studies. Lr selection: hold out 20% of the training split as an inner validation set. For each arm, pick lr from {0.01, 0.02, 0.05, 0.1, 0.2} by mean inner-val error over 5 tuning seeds that are disjoint from s = 1..30. Then retrain on the full training split and score on the official validation split. Robustness: run all 5 lr values for both arms over 10 seeds and report the paired gap per lr. Logging: record val_top1_err every epoch and report (i) final error, (ii) best-over-steps error, and (iii) area under the error curve. Analysis: paired TOST at α = 0.05 with margin 0.5 pp on final error (primary). Secondary: paired bootstrap CIs on best-over-steps error and AUC. Compare both arms against the 3.8 baseline. Cost is about 30×2 + 5×5×2 + 10×5×2 ≈ 210 CPU runs, each a few seconds. Mechanism: The identity skip changes the optimization trajectory: early in training the function stays near the input projection's features, and the loss landscape is better conditioned ([arXiv:1909.04653], [openalex:W3007689282]). It does not change capacity, since the parameter set is identical. At depth 2 the shallow-path downscaling factor is about 1, so the trajectory difference should mainly affect speed, not the endpoint.. Intervention: Toggle only the '+ h_l' term. Initial weights, data order, steps, weight decay and parameter tensors are held bit-identical per seed. Lr is chosen per arm on a disjoint inner split.. Minimum discriminating test: Run 5 seeds per arm at lr=0.05. Check that parameter counts are equal, that initial weights match exactly, and that both arms train to under about 6% error. Then run the full 30-seed paired TOST.. Kill criterion: Two outcomes would go against H1. (a) The paired 90% CI of final error lies entirely below −0.5 pp, meaning the residual arm is clearly better, under both per-arm-tuned lr and at least 4 of 5 shared lr values. (b) The CI straddles the margin, in which case the test is inconclusive and more seeds are needed before any claim is made. If the residual arm is better only at a single lr, the result is attributed to lr sensitivity, not the path.. Confound controls: Parameter count is identical by construction (the skip has no weights), checked by an assertion in code.; Initial weights and minibatch order are bit-identical per seed across arms.; Optimizer steps and epochs are equal.; Lr is selected per arm on an inner split disjoint from the scored validation set, plus a shared-lr robustness sweep.; Weight decay is fixed and not tuned, so no regularization confound is introduced..",
+  "lit_context": "Chosen idea: Pre-registered paired equivalence test: zero-parameter identity skip vs. weight-identical plain MLP on sklearn-digits. This is the grounded version of the author's two-arm idea. Both arms share one architecture: an input projection 64→W (W = hidden = 128), then two hidden blocks f_l(h) = ReLU(Linear_{W→W}(h)), then a 10-way head. The residual arm computes h_{l+1} = h_l + f_l(h_l). The plain arm computes h_{l+1} = f_l(h_l). The identity skip has no weights, so the two arms have exactly the same parameter tensors by construction and need no width compensation. To isolate the path, each seed gives both arms bit-identical initial weights, the same minibatch order and the same number of optimizer steps. The only difference left is the '+ h_l' term. The primary contrast is pre-registered as a TOST equivalence test on the paired difference in final val_top1_err, with margin ±0.5 pp. That makes a null decisive rather than inconclusive. The 'trains differently' confound is handled in two ways. Each arm gets its own lr, picked on an inner split carved from the training data only. As a robustness check, both arms also run at a shared lr grid. Step-resolved validation curves separate speed from final error.\nGap it attacks: Open gap 1 (parameter- and step-matched two-arm test at shallow depth, 20+ seeds with CIs), with gap 3 (fixed budget vs. convergence) folded in as a secondary readout.\nSupporting papers:\n- [arXiv:1909.04653] Towards Understanding the Importance of Shortcut Connections in Residual Networks: The only shallow-depth result in the set. In a two-layer non-overlapping conv ResNet, gradient descent with normalization and a suitable initialization provably avoids a spurious local optimum and reaches the global one in polynomial time. This implies the shortcut changes the optimization landscape, not expressivity.\n- [openalex:W3007689282] Batch Normalization Biases Deep Residual Networks Towards Shallow Paths: Shows that batch norm's benefit in deep ResNets comes from downscaling the residual branch relative to the skip, by a factor of about sqrt(depth), which biases the network toward shallow, identity-like paths early on. Proposes an initialization (SkipInit-style) that recovers trainability without BN.\n- [arXiv:1605.07648] FractalNet: Ultra-Deep Neural Networks without Residuals: Shows that deep networks without any identity/residual connections, but with self-similar multi-length paths, match ResNets on CIFAR and ImageNet. This argues that the residual form itself is not essential.\n- [arXiv:1608.02908] Residual Networks of Residual Networks: Multilevel Residual Networks: Adds level-wise shortcuts on top of ResNets (RoR) and reports improved CIFAR/SVHN error across ResNet variants.",
+  "lit_priors": [
+    "Pre-registered paired equivalence test: zero-parameter identity skip vs. weight-identical plain MLP on sklearn-digits (arXiv:1909.04653)",
+    "Pre-registered paired equivalence test: zero-parameter identity skip vs. weight-identical plain MLP on sklearn-digits (openalex:W3007689282)",
+    "Pre-registered paired equivalence test: zero-parameter identity skip vs. weight-identical plain MLP on sklearn-digits (arXiv:1605.07648)",
+    "Pre-registered paired equivalence test: zero-parameter identity skip vs. weight-identical plain MLP on sklearn-digits (arXiv:1608.02908)"
+  ],
+  "sources": [
+    "arXiv:1909.04653",
+    "openalex:W3007689282",
+    "arXiv:1605.07648",
+    "arXiv:1608.02908"
+  ],
+  "idea": {
+    "title": "Pre-registered paired equivalence test: zero-parameter identity skip vs. weight-identical plain MLP on sklearn-digits",
+    "description": "This is the grounded version of the author's two-arm idea. Both arms share one architecture: an input projection 64→W (W = hidden = 128), then two hidden blocks f_l(h) = ReLU(Linear_{W→W}(h)), then a 10-way head. The residual arm computes h_{l+1} = h_l + f_l(h_l). The plain arm computes h_{l+1} = f_l(h_l). The identity skip has no weights, so the two arms have exactly the same parameter tensors by construction and need no width compensation. To isolate the path, each seed gives both arms bit-identical initial weights, the same minibatch order and the same number of optimizer steps. The only difference left is the '+ h_l' term. The primary contrast is pre-registered as a TOST equivalence test on the paired difference in final val_top1_err, with margin ±0.5 pp. That makes a null decisive rather than inconclusive. The 'trains differently' confound is handled in two ways. Each arm gets its own lr, picked on an inner split carved from the training data only. As a robustness check, both arms also run at a shared lr grid. Step-resolved validation curves separate speed from final error.",
+    "gap": "Open gap 1 (parameter- and step-matched two-arm test at shallow depth, 20+ seeds with CIs), with gap 3 (fixed budget vs. convergence) folded in as a secondary readout.",
+    "sources": [
+      "arXiv:1909.04653",
+      "openalex:W3007689282",
+      "arXiv:1605.07648",
+      "arXiv:1608.02908"
+    ],
+    "hypothesis": {
+      "claim": "At two hidden blocks on sklearn-digits, the identity skip makes no practically meaningful difference to final validation error once parameters, initial weights, data order, step count and per-arm lr are matched (H1). Any effect is confined to early-training speed, consistent with the optimization-landscape account in [arXiv:1909.04653] and the depth-scaled shallow-path account in [openalex:W3007689282], which predicts a factor near 1 at this depth.",
+      "predicted_effect": "The paired mean difference (residual − plain) in final val_top1_err has a 90% CI inside [−0.5, +0.5] pp, so equivalence is declared. Both arms are near or below the 3.8% logistic baseline. At early steps (about 10–20% of the budget) the residual arm may lead by more than 0.5 pp, and that gap closes by the end of training."
+    },
+    "experiment_plan": "Architecture edit: add a boolean 'skip' flag to the block forward pass. With depth=2 and hidden=128, the parameter count is identical in both arms; assert this in code. For seeds s = 1..30, initialize the model once from seed s and deep-copy it into both arms. Use the same data-loader generator seed, SGD, and epochs=120 so step counts are equal. Keep weight_decay at 1e-4 and do not vary it, so this stays out of regularization studies. Lr selection: hold out 20% of the training split as an inner validation set. For each arm, pick lr from {0.01, 0.02, 0.05, 0.1, 0.2} by mean inner-val error over 5 tuning seeds that are disjoint from s = 1..30. Then retrain on the full training split and score on the official validation split. Robustness: run all 5 lr values for both arms over 10 seeds and report the paired gap per lr. Logging: record val_top1_err every epoch and report (i) final error, (ii) best-over-steps error, and (iii) area under the error curve. Analysis: paired TOST at α = 0.05 with margin 0.5 pp on final error (primary). Secondary: paired bootstrap CIs on best-over-steps error and AUC. Compare both arms against the 3.8 baseline. Cost is about 30×2 + 5×5×2 + 10×5×2 ≈ 210 CPU runs, each a few seconds.",
+    "novelty_rationale": "The reviewed papers either study deep conv nets ([arXiv:1608.02908], [arXiv:1605.07648], [openalex:W3007689282]) or stylized two-layer conv theory with no empirical capacity-matched baseline ([arXiv:1909.04653]). None runs a paired comparison with weight-identical initialization, parameters that are exactly matched by construction, a per-arm lr chosen on a disjoint split, and a pre-registered equivalence margin. I cannot rule out that such a test exists in the broader literature; the novelty queries target that.",
+    "feasibility": 5,
+    "impact": 3,
+    "novelty": {
+      "closest_paper": "openalex:W3007689282",
+      "closest_title": "Batch Normalization Biases Deep Residual Networks Towards Shallow Paths",
+      "paper_overlap": 0.12,
+      "closest_tried": null,
+      "tried_overlap": 0.0,
+      "flag": false,
+      "reason": ""
+    },
+    "tournament": {
+      "elo": 1245.8,
+      "rank": 1,
+      "wins": 3,
+      "losses": 0,
+      "draws": 1,
+      "near_duplicates": []
+    },
+    "selected": true,
+    "idea_id": "idea_b1977222a2e27c41d0442990",
+    "strategy": "mechanism",
+    "design": {
+      "mechanism": "The identity skip changes the optimization trajectory: early in training the function stays near the input projection's features, and the loss landscape is better conditioned ([arXiv:1909.04653], [openalex:W3007689282]). It does not change capacity, since the parameter set is identical. At depth 2 the shallow-path downscaling factor is about 1, so the trajectory difference should mainly affect speed, not the endpoint.",
+      "intervention": "Toggle only the '+ h_l' term. Initial weights, data order, steps, weight decay and parameter tensors are held bit-identical per seed. Lr is chosen per arm on a disjoint inner split.",
+      "assumptions": [
+        "Paired seeding (identical init and minibatch order) lowers the variance of the paired difference enough for 30 seeds to resolve a ±0.5 pp equivalence margin on a validation split of about 360 images.",
+        "120 epochs is close enough to convergence for both arms that 'final error' means something; this is checked from the curves.",
+        "A residual stream without normalization does not blow up at depth 2 with default init. Activation norms are logged to verify this."
+      ],
+      "minimal_test": "Run 5 seeds per arm at lr=0.05. Check that parameter counts are equal, that initial weights match exactly, and that both arms train to under about 6% error. Then run the full 30-seed paired TOST.",
+      "kill_criterion": "Two outcomes would go against H1. (a) The paired 90% CI of final error lies entirely below −0.5 pp, meaning the residual arm is clearly better, under both per-arm-tuned lr and at least 4 of 5 shared lr values. (b) The CI straddles the margin, in which case the test is inconclusive and more seeds are needed before any claim is made. If the residual arm is better only at a single lr, the result is attributed to lr sensitivity, not the path.",
+      "confound_controls": [
+        "Parameter count is identical by construction (the skip has no weights), checked by an assertion in code.",
+        "Initial weights and minibatch order are bit-identical per seed across arms.",
+        "Optimizer steps and epochs are equal.",
+        "Lr is selected per arm on an inner split disjoint from the scored validation set, plus a shared-lr robustness sweep.",
+        "Weight decay is fixed and not tuned, so no regularization confound is introduced."
+      ],
+      "resource_risk": "Low compute (about 210 short CPU runs). The main risk is statistical: validation-set granularity is about 0.28 pp per image, so the margin has to stay at or above 0.5 pp. Without normalization the residual stream could grow; if activations diverge, that is an implementation issue and not evidence.",
+      "novelty_queries": [
+        "paired identical initialization residual vs plain MLP equivalence test small dataset",
+        "shallow MLP identity skip connection parameter matched ablation"
+      ]
+    },
+    "novelty_review": {
+      "status": "provisional_difference",
+      "summary": "Judging only from the supplied abstracts, no retrieved paper runs a paired, weight-identical, parameter-matched identity-skip vs plain MLP comparison at shallow depth with a pre-registered equivalence margin. The overlap is mostly at the level of mechanism. FractalNet argues that residuals are not essential. The BN paper gives the shallow-path downscaling account the candidate relies on. The two-layer ResNet theory paper gives an optimization account of shortcuts. The Hourglass MLP paper uses parameter-matched MLP skip designs, but it compares skip placement, not skip versus no skip. This is a provisional difference, not verified novelty. Abstracts may omit relevant ablations, and only one targeted result was retrieved.",
+      "comparisons": [
+        {
+          "paper_id": "arXiv:1605.07648",
+          "shared_mechanism": "Both ask whether residual pass-through connections are essential to performance, versus training dynamics such as the transition from shallow to deep.",
+          "difference": "FractalNet studies ultra-deep conv nets with alternative multi-path structures on CIFAR and ImageNet. It does not appear to toggle only an identity skip in a weight-identical shallow MLP with paired seeds and an equivalence test.",
+          "supporting_excerpt": "fractal networks match the excellent performance of standard residual networks on both CIFAR and ImageNet classification tasks"
+        },
+        {
+          "paper_id": "openalex:W3007689282",
+          "shared_mechanism": "The candidate's mechanism is that the skip keeps the early function near identity, and that the downscaling factor depends on depth and is about 1 at depth 2. This comes directly from this paper.",
+          "difference": "The paper concerns batch normalization in deep residual nets and an initialization scheme. It does not compare residual and plain arms at fixed parameters in shallow MLPs.",
+          "supporting_excerpt": "batch normalization downscales the residual branch relative to the skip connection"
+        },
+        {
+          "paper_id": "arXiv:1909.04653",
+          "shared_mechanism": "Both use an optimization-landscape account: shortcut connections help gradient descent avoid bad optima, which affects the training trajectory rather than capacity.",
+          "difference": "This is a theoretical analysis of a stylized two-layer conv ResNet with special initialization and only supporting numerics. It reports no paired, capacity-matched empirical baseline or equivalence test.",
+          "supporting_excerpt": "we study a two-layer non-overlapping convolutional ResNet"
+        },
+        {
+          "paper_id": "arXiv:2510.01796",
+          "shared_mechanism": "Both use parameter-matched comparisons of skip-connection designs in MLP blocks.",
+          "difference": "This paper compares where skips are placed (wide-narrow-wide vs narrow-wide-narrow) on generative tasks. It does not compare an identity skip against no skip under identical weights, and it does not use classification error or equivalence testing.",
+          "supporting_excerpt": "maintaining computational efficiency through parameter-matched designs"
+        },
+        {
+          "paper_id": "arXiv:1608.02908",
+          "shared_mechanism": "Both concern how shortcut connections affect how easily residual networks optimize.",
+          "difference": "RoR adds extra multilevel shortcuts to deep residual conv nets to improve state-of-the-art accuracy. It does not ablate a single skip against a plain network with controls.",
+          "supporting_excerpt": "RoR adds levelwise shortcut connections upon original residual networks"
+        }
+      ],
+      "remaining_search": [
+        "Full-text check of arXiv:1909.04653 numerical experiments, to see whether they include a residual vs no-shortcut comparison with matched initialization.",
+        "Full-text check of openalex:W3007689282 empirical study, to see whether it includes shallow-depth residual vs plain ablations.",
+        "Broader retrieval on skip vs no-skip ablations in shallow MLPs or small datasets (e.g., MNIST, digits, tabular), including the original ResNet plain-net comparisons and Veit et al. on ensembles of shallow paths.",
+        "Search for equivalence testing (TOST) or paired-seed designs in architecture ablation and deep learning reproducibility literature.",
+        "Search for work on identical-initialization paired comparisons and on learning-rate tuning fairness in architecture comparisons (e.g., per-arm hyperparameter tuning studies)."
+      ],
+      "queries": [
+        "paired identical initialization residual vs plain MLP equivalence test small dataset",
+        "shallow MLP identity skip connection parameter matched ablation"
+      ],
+      "evidence_scope": "abstracts_only",
+      "papers": [
+        {
+          "title": "FractalNet: Ultra-Deep Neural Networks without Residuals",
+          "summary": "We introduce a design strategy for neural network macro-architecture based on self-similarity. Repeated application of a simple expansion rule generates deep networks whose structural layouts are precisely truncated fractals. These networks contain interacting subpaths of different lengths, but do not include any pass-through or residual connections; every internal signal is transformed by a filter and nonlinearity before being seen by subsequent layers. In experiments, fractal networks match the excellent performance of standard residual networks on both CIFAR and ImageNet classification tasks, thereby demonstrating that residual representations may not be fundamental to the success of extremely deep convolutional neural networks. Rather, the key may be the ability to transition, during training, from effectively shallow to deep. We note similarities with student-teacher behavior and develop drop-path, a natural extension of dropout, to regularize co-adaptation of subpaths in fractal architectures. Such regularization allows extraction of high-performance fixed-depth subnetworks. Additionally, fractal networks exhibit an anytime property: shallow subnetworks provide a quick answer, while deeper subnetworks, with higher latency, provide a more accurate answer.",
+          "arxiv_id": "arXiv:1605.07648",
+          "url": "http://arxiv.org/abs/1605.07648",
+          "citations": 955,
+          "code_url": null,
+          "year": 2016
+        },
+        {
+          "title": "Residual Networks of Residual Networks: Multilevel Residual Networks",
+          "summary": "A residual networks family with hundreds or even thousands of layers dominates major image recognition tasks, but building a network by simply stacking residual blocks inevitably limits its optimization ability. This paper proposes a novel residual network architecture, residual networks of residual networks (RoR), to dig the optimization ability of residual networks. RoR substitutes optimizing residual mapping of residual mapping for optimizing original residual mapping. In particular, RoR adds levelwise shortcut connections upon original residual networks to promote the learning capability of residual networks. More importantly, RoR can be applied to various kinds of residual networks (ResNets, Pre-ResNets, and WRN) and significantly boost their performance. Our experiments demonstrate the effectiveness and versatility of RoR, where it achieves the best performance in all residual-network-like structures. Our RoR-3-WRN58-4 + SD models achieve new state-of-the-art results on CIFAR-10, CIFAR-100, and SVHN, with the test errors of 3.77%, 19.73%, and 1.59%, respectively. RoR-3 models also achieve state-of-the-art results compared with ResNets on the ImageNet data set.",
+          "arxiv_id": "arXiv:1608.02908",
+          "url": "http://arxiv.org/abs/1608.02908",
+          "citations": 415,
+          "code_url": null,
+          "year": 2017
+        },
+        {
+          "title": "Batch Normalization Biases Deep Residual Networks Towards Shallow Paths",
+          "summary": "Batch normalization dramatically increases the largest trainable depth of residual networks, and this benefit has been crucial to the empirical success of deep residual networks on a wide range of benchmarks. We show that this key benefit arises because, at initialization, batch normalization downscales the residual branch relative to the skip connection, by a normalizing factor on the order of the square root of the network depth. This ensures that, early in training, the function computed by normalized residual blocks in deep networks is close to the identity function (on average). We use this insight to develop a simple initialization scheme that can train deep residual networks without normalization. We also provide a detailed empirical study of residual networks, which clarifies that, although batch normalized networks can be trained with larger learning rates, this effect is only beneficial in specific compute regimes, and has minimal benefits when the batch size is small.",
+          "arxiv_id": "openalex:W3007689282",
+          "url": "https://openalex.org/W3007689282",
+          "citations": 18,
+          "code_url": null,
+          "year": 2020
+        },
+        {
+          "title": "Towards Understanding the Importance of Shortcut Connections in Residual Networks",
+          "summary": "Residual Network (ResNet) is undoubtedly a milestone in deep learning. ResNet is equipped with shortcut connections between layers, and exhibits efficient training using simple first order algorithms. Despite of the great empirical success, the reason behind is far from being well understood. In this paper, we study a two-layer non-overlapping convolutional ResNet. Training such a network requires solving a non-convex optimization problem with a spurious local optimum. We show, however, that gradient descent combined with proper normalization, avoids being trapped by the spurious local optimum, and converges to a global optimum in polynomial time, when the weight of the first layer is initialized at 0, and that of the second layer is initialized arbitrarily in a ball. Numerical experiments are provided to support our theory.",
+          "arxiv_id": "arXiv:1909.04653",
+          "url": "http://arxiv.org/abs/1909.04653",
+          "citations": 39,
+          "code_url": null,
+          "year": 2019
+        },
+        {
+          "title": "Rethinking the shape convention of an MLP",
+          "summary": "Multi-layer perceptrons (MLPs) conventionally follow a narrow-wide-narrow design where skip connections operate at the input/output dimensions while processing occurs in expanded hidden spaces. We challenge this convention by proposing wide-narrow-wide (Hourglass) MLP blocks where skip connections operate at expanded dimensions while residual computation flows through narrow bottlenecks. This inversion leverages higher-dimensional spaces for incremental refinement while maintaining computational efficiency through parameter-matched designs. Implementing Hourglass MLPs requires an initial projection to lift input signals to expanded dimensions. We propose that this projection can remain fixed at random initialization throughout training, enabling efficient training and inference implementations. We evaluate both architectures on generative tasks over popular image datasets, characterizing performance-parameter Pareto frontiers through systematic architectural search. Results show that Hourglass architectures consistently achieve superior Pareto frontiers compared to conventional designs. As parameter budgets increase, optimal Hourglass configurations favor deeper networks with wider skip connections and narrower bottlenecks-a scaling pattern distinct from conventional MLPs. Our findings suggest reconsidering skip connection placement in modern architectures, with potential applications extending to Transformers and other residual networks.",
+          "arxiv_id": "arXiv:2510.01796",
+          "url": "http://arxiv.org/abs/2510.01796",
+          "citations": 4,
+          "code_url": null,
+          "year": 2025
+        }
+      ],
+      "retrieval_returned": 1
+    },
+    "status": "candidate",
+    "direction": "dir_0369ab623f",
+    "steer_link": "This acts directly on H1 and the author's request for a two-arm parameter-matched control. It tells the author whether the skip path itself changes final error on digits beyond a ±0.5 pp margin, or only training speed, with capacity, init, data order, steps and lr all removed as explanations."
+  },
+  "selection_decision": {
+    "action": "select",
+    "idea_ids": [
+      "idea_b1977222a2e27c41d0442990"
+    ],
+    "actor": "local-user",
+    "kind": "human",
+    "reason": "Selected after inspecting the candidate list",
+    "timestamp": 1794702303.006895,
+    "pilot_protocol_ids": [],
+    "pilot_observation_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "research_brief": {},
+  "author_direction": {
+    "steer": {
+      "interest": "I want to know whether a residual (skip) path helps a shallow MLP image classifier on a small dataset because of the path itself, or only because the variant has more parameters or trains differently.",
+      "hunches": [
+        "On a network this shallow the residual path adds little once parameter count and training steps are matched."
+      ],
+      "avoid": [
+        "Regularization studies",
+        "Pretrained encoders or external data",
+        "Pure hyperparameter sweeps with no mechanism behind them"
+      ],
+      "contribution": "A two-arm comparison with a parameter-matched control; a clean negative result is welcome.",
+      "known": [
+        "A logistic-regression baseline reaches about 3.8% error on this split"
+      ]
+    },
+    "note": "",
+    "direction": {
+      "name": "Separate the effect of a residual path from the effect of added...",
+      "thesis": "Separate the effect of a residual path from the effect of added parameters in a shallow MLP, using a parameter-matched control under identical training resources",
+      "stance": "develops",
+      "hunches": [],
+      "steer_link": "Written by the author.",
+      "gap": "",
+      "sources": [],
+      "open_question": "",
+      "first_experiment": "",
+      "risk": "",
+      "origin": "author",
+      "id": "dir_0369ab623f"
+    },
+    "steer_link": "This acts directly on H1 and the author's request for a two-arm parameter-matched control. It tells the author whether the skip path itself changes final error on digits beyond a ±0.5 pp margin, or only training speed, with capacity, init, data order, steps and lr all removed as explanations."
+  }
+}

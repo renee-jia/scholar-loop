@@ -117,7 +117,7 @@ def make_server(app, host="127.0.0.1", port=8765):
                 if parts == ["api", "import"]:
                     return self.send(201, app.store.import_run(data.get("path", ""), data.get("profile")))
                 if parts == ["api", "sample"]:
-                    return self.send(201, app.store.import_run(app.store.workspace / "examples/sample_runs/digits", readonly=True))
+                    return self.send(201, app.store.import_samples())
                 if parts == ["api", "connection"]:
                     key = data.get("api_key", "")
                     if not isinstance(key, str) or len(key) > 1024:

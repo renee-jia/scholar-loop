@@ -1,0 +1,249 @@
+{
+  "topic": "Invalid-rate-triggered off-to-on switch, with yoked-step and corrupted-prefix controls",
+  "guidance": "Test this idea: A switch triggered by the student's own invalid rate achieves lower val_invalid_rate than pure off-policy, pure on-policy, and fixed-step switches. The benefit requires student-generated prefixes: corrupted-ground-truth prefixes at matched error rate should not reproduce it. (expected: Adaptive switch (best tau) reaches val_invalid_rate at least 1.0 point below the better pure regime, averaged over 5 seeds, and below the 8.8 baseline. The yoked fixed-step run is within noise of or worse than adaptive. The corrupted-prefix control recovers less than half of the adaptive gain over pure off-policy.). Experiment plan: Use default d_model=32, n_layers=2, steps=3000, lr=0.003, temperature=1.0, and 5 seeds per arm on multimodal-transduction-L6-A8. Arms: (A) on_policy_frac=0 throughout. (B) on_policy_frac=1.0 throughout. (C) GKD-style static on_policy_frac=0.5. (D) fixed-step switches at 750, 1500 and 2250. (E) adaptive trigger with tau in {40%, 25%, 15%} on a 256-example probe batch, switching to frac in {0.5, 1.0}; set a 1500-step cap and force the switch if the trigger has not fired. (F) yoked fixed-step switch at E's firing step, with a different seed. (G) the same trigger as E, but post-switch prefixes are ground truth with random token substitution at a rate matched to the student's measured per-token error. The loss stays the default divergence across all arms, so the sampling distribution is the only factor varied. Implement this as a schedule edit plus a data-source edit for G. Report the final val_invalid_rate, the invalid-rate trajectory and the trigger step. Count total forward passes so compute can be compared across arms. Mechanism: Early student rollouts are mostly invalid, so on-policy supervision then lands on states that are irrelevant once training converges, and gives noisy gradients. Once rollouts are near-valid, the student-visited states overlap the states it will reach at test time. Teacher correction on those states then reduces compounding structural errors.. Intervention: A schedule edit raises on_policy_frac from 0 to a target value when the probe-batch invalid rate falls below tau. A data-source edit for control G substitutes corrupted ground-truth prefixes.. Minimum discriminating test: Run 3 seeds each of: pure off-policy, pure on-policy, fixed switch at 1500, and adaptive with tau=25% and frac=1.0, plus one yoked and one corrupted-prefix run per seed. That is 18 short runs.. Kill criterion: Abandon the idea if adaptive is not better than the best of the pure and fixed-step arms by more than one seed-standard-deviation, or if the yoked control matches adaptive and the corrupted-prefix control matches on-policy. In that case, report that timing and generic noise explain the effect.. Confound controls: Yoked fixed-step switch at the adaptive firing step separates online responsiveness from step location.; Corrupted ground-truth prefixes at matched error rate separate student-specific error correction from generic prefix noise.; Divergence, temperature, lr and steps are held fixed across arms, so the sampling distribution is not confounded with the loss.; Total forward passes, including rollout cost, are reported for compute-matched comparison..",
+  "lit_context": "Chosen idea: Invalid-rate-triggered off-to-on switch, with yoked-step and corrupted-prefix controls. Train the student off-policy at first (on_policy_frac=0, teacher or ground-truth prefixes). Then raise on_policy_frac to a target value (0.5 or 1.0) once the student's running free-run invalid rate, measured on a small held-out training probe batch every 100 steps, drops below a threshold tau. Two controls test why the trigger works. The first is a yoked fixed-step control: for each seed, a separate run switches at the exact step where the adaptive run fired. If the yoked run matches the adaptive run, the trigger's only value is locating a good step offline. If the adaptive run is better, the online response to the student's own state matters. The second is a discriminating negative control aimed at the exposure-bias explanation. After the same trigger, the run replaces student rollouts with ground-truth prefixes that are randomly token-corrupted, at a rate matched to the student's current per-token error rate. If this matches true on-policy, the late-phase gain comes from generic prefix noise (a robustness effect) rather than from teacher correction of the student's own errors.\nGap it attacks: Gap 6 (schedules from off- to on-policy and when to switch), with secondary relevance to gap 3 (invalid rate as the primary metric).\nSupporting papers:\n- [arXiv:2009.07253] Autoregressive Knowledge Distillation through Imitation Learning: Casts autoregressive KD as imitation learning with the teacher as oracle on student-visited states. It outperforms SeqKD on translation and summarization.\n- [arXiv:2306.13649] On-Policy Distillation of Language Models: Learning from Self-Generated Mistakes: GKD trains on a mixture of fixed and student-generated sequences with flexible divergences (FKL, RKL, generalized JSD). It shows on-policy data generally helps on summarization, translation and arithmetic reasoning. Its student-data fraction is the most direct experimental knob for on- vs off-policy.\n- [arXiv:2106.10885v1] Knowledge Distillation via Instance-level Sequence Learning\n- [doi:10.1007/s00521-025-11162-0] Mitigating exposure bias in large language model distillation: an imitation learning approach: Imitation-learning approach to mitigating exposure bias in LLM distillation.\n- [arXiv:2609.09123] Mask Forcing: Improving Autoregressive Video Diffusion Distillation via Dual-Noise Masking Rollout: Identifies RKL mode-seeking as the cause of over-saturation in autoregressive video diffusion distillation. Perturbs student self-rollouts with dual-noise masking.",
+  "lit_priors": [
+    "Invalid-rate-triggered off-to-on switch, with yoked-step and corrupted-prefix controls (arXiv:2009.07253)",
+    "Invalid-rate-triggered off-to-on switch, with yoked-step and corrupted-prefix controls (arXiv:2306.13649)",
+    "Invalid-rate-triggered off-to-on switch, with yoked-step and corrupted-prefix controls (arXiv:2106.10885v1)",
+    "Invalid-rate-triggered off-to-on switch, with yoked-step and corrupted-prefix controls (doi:10.1007/s00521-025-11162-0)",
+    "Invalid-rate-triggered off-to-on switch, with yoked-step and corrupted-prefix controls (arXiv:2609.09123)"
+  ],
+  "sources": [
+    "arXiv:2009.07253",
+    "arXiv:2306.13649",
+    "arXiv:2106.10885v1",
+    "doi:10.1007/s00521-025-11162-0",
+    "arXiv:2609.09123"
+  ],
+  "idea": {
+    "title": "Invalid-rate-triggered off-to-on switch, with yoked-step and corrupted-prefix controls",
+    "description": "Train the student off-policy at first (on_policy_frac=0, teacher or ground-truth prefixes). Then raise on_policy_frac to a target value (0.5 or 1.0) once the student's running free-run invalid rate, measured on a small held-out training probe batch every 100 steps, drops below a threshold tau. Two controls test why the trigger works. The first is a yoked fixed-step control: for each seed, a separate run switches at the exact step where the adaptive run fired. If the yoked run matches the adaptive run, the trigger's only value is locating a good step offline. If the adaptive run is better, the online response to the student's own state matters. The second is a discriminating negative control aimed at the exposure-bias explanation. After the same trigger, the run replaces student rollouts with ground-truth prefixes that are randomly token-corrupted, at a rate matched to the student's current per-token error rate. If this matches true on-policy, the late-phase gain comes from generic prefix noise (a robustness effect) rather than from teacher correction of the student's own errors.",
+    "gap": "Gap 6 (schedules from off- to on-policy and when to switch), with secondary relevance to gap 3 (invalid rate as the primary metric).",
+    "sources": [
+      "arXiv:2009.07253",
+      "arXiv:2306.13649",
+      "arXiv:2106.10885v1",
+      "doi:10.1007/s00521-025-11162-0",
+      "arXiv:2609.09123"
+    ],
+    "hypothesis": {
+      "claim": "A switch triggered by the student's own invalid rate achieves lower val_invalid_rate than pure off-policy, pure on-policy, and fixed-step switches. The benefit requires student-generated prefixes: corrupted-ground-truth prefixes at matched error rate should not reproduce it.",
+      "predicted_effect": "Adaptive switch (best tau) reaches val_invalid_rate at least 1.0 point below the better pure regime, averaged over 5 seeds, and below the 8.8 baseline. The yoked fixed-step run is within noise of or worse than adaptive. The corrupted-prefix control recovers less than half of the adaptive gain over pure off-policy."
+    },
+    "experiment_plan": "Use default d_model=32, n_layers=2, steps=3000, lr=0.003, temperature=1.0, and 5 seeds per arm on multimodal-transduction-L6-A8. Arms: (A) on_policy_frac=0 throughout. (B) on_policy_frac=1.0 throughout. (C) GKD-style static on_policy_frac=0.5. (D) fixed-step switches at 750, 1500 and 2250. (E) adaptive trigger with tau in {40%, 25%, 15%} on a 256-example probe batch, switching to frac in {0.5, 1.0}; set a 1500-step cap and force the switch if the trigger has not fired. (F) yoked fixed-step switch at E's firing step, with a different seed. (G) the same trigger as E, but post-switch prefixes are ground truth with random token substitution at a rate matched to the student's measured per-token error. The loss stays the default divergence across all arms, so the sampling distribution is the only factor varied. Implement this as a schedule edit plus a data-source edit for G. Report the final val_invalid_rate, the invalid-rate trajectory and the trigger step. Count total forward passes so compute can be compared across arms.",
+    "novelty_rationale": "In the reviewed works, mixing between fixed and student data is static (GKD λ) or follows a simple anneal (DAgger-style). Curriculum work orders instances rather than the data-generating policy. None of these papers conditions the switch on the student's own validity, separates trigger responsiveness from step location with a yoked control, or tests corrupted prefixes against student prefixes at matched error rate. Mask Forcing perturbs rollouts in video only. This is based on the reviewed set, not an exhaustive search.",
+    "feasibility": 4,
+    "impact": 4,
+    "novelty": {
+      "closest_paper": "arXiv:2409.12512",
+      "closest_title": "Exploring and enhancing the transfer of distribution in knowledge distillation for autoregressive language models",
+      "paper_overlap": 0.14,
+      "closest_tried": null,
+      "tried_overlap": 0.0,
+      "flag": false,
+      "reason": ""
+    },
+    "tournament": {
+      "elo": 1214.5,
+      "rank": 1,
+      "wins": 2,
+      "losses": 1,
+      "draws": 1,
+      "near_duplicates": []
+    },
+    "selected": true,
+    "idea_id": "idea_0e172f19d3b27e84f92b5fb9",
+    "strategy": "contradiction",
+    "design": {
+      "mechanism": "Early student rollouts are mostly invalid, so on-policy supervision then lands on states that are irrelevant once training converges, and gives noisy gradients. Once rollouts are near-valid, the student-visited states overlap the states it will reach at test time. Teacher correction on those states then reduces compounding structural errors.",
+      "intervention": "A schedule edit raises on_policy_frac from 0 to a target value when the probe-batch invalid rate falls below tau. A data-source edit for control G substitutes corrupted ground-truth prefixes.",
+      "assumptions": [
+        "The train script exposes a teacher that can score student-sampled prefixes when on_policy_frac>0.",
+        "Probe-batch invalid rate is cheap enough to compute every 100 steps and tracks val_invalid_rate.",
+        "Five seeds give seed variance small enough to resolve a gap of about 1 point."
+      ],
+      "minimal_test": "Run 3 seeds each of: pure off-policy, pure on-policy, fixed switch at 1500, and adaptive with tau=25% and frac=1.0, plus one yoked and one corrupted-prefix run per seed. That is 18 short runs.",
+      "kill_criterion": "Abandon the idea if adaptive is not better than the best of the pure and fixed-step arms by more than one seed-standard-deviation, or if the yoked control matches adaptive and the corrupted-prefix control matches on-policy. In that case, report that timing and generic noise explain the effect.",
+      "confound_controls": [
+        "Yoked fixed-step switch at the adaptive firing step separates online responsiveness from step location.",
+        "Corrupted ground-truth prefixes at matched error rate separate student-specific error correction from generic prefix noise.",
+        "Divergence, temperature, lr and steps are held fixed across arms, so the sampling distribution is not confounded with the loss.",
+        "Total forward passes, including rollout cost, are reported for compute-matched comparison."
+      ],
+      "resource_risk": "The model is tiny, so even with 5 seeds the roughly 40 runs are cheap. The main risk is the trigger never firing within 1500 steps at low tau, which the forced-switch cap handles.",
+      "novelty_queries": [
+        "adaptive switch off-policy to on-policy distillation triggered by student error rate",
+        "scheduled sampling versus DAgger noisy prefix control knowledge distillation"
+      ]
+    },
+    "novelty_review": {
+      "status": "provisional_difference",
+      "summary": "Two retrieved papers not cited in the candidate's sources, DASH-OPD (arXiv:2607.29078) and DTDD (arXiv:2610.19302), already use adaptive triggers based on the student's state to decide when the teacher intervenes in on-policy distillation. That weakens the candidate's claim that no reviewed work conditions switching on the student's own state. However, those triggers act within rollouts: per-turn executor switching or segment-level teacher takeover. They use teacher-student discrepancy signals, not a training-schedule-level switch of on_policy_frac driven by a free-run invalid rate. Their abstracts also do not describe a yoked fixed-step control or a matched-error corrupted-prefix control. GKD, the imitation-learning KD papers and Mask Forcing share the exposure-bias motivation, or the idea of perturbing rollouts, but not the adaptive global switch. The instance-level curriculum paper is only lexically related. On abstract evidence alone, the specific combination looks provisionally distinct, but the adaptive-trigger idea itself has close prior art.",
+      "comparisons": [
+        {
+          "paper_id": "arXiv:2607.29078",
+          "shared_mechanism": "Adaptive switching between teacher-driven and student-driven trajectories during on-policy distillation. The switch is triggered by a measured signal of student drift, which addresses the question of when to intervene rather than only how much.",
+          "difference": "The switching is per-turn and bidirectional within agentic rollouts, uses a log-likelihood-ratio discrepancy signal and adds hysteresis. The candidate makes a one-way, training-time schedule switch of on_policy_frac, gated by a probe-batch invalid rate. The abstract mentions no yoked or corrupted-prefix controls.",
+          "supporting_excerpt": "the first agentic OPD method to perform adaptive, bidirectional executor switching."
+        },
+        {
+          "paper_id": "arXiv:2610.19302",
+          "shared_mechanism": "Uses student-teacher divergence as a trigger for adaptive teacher intervention. The paper also compares trigger designs and intervention rates, which is close to the candidate's question about trigger choice.",
+          "difference": "The trigger causes the teacher to take over within a segment, with a recovery suffix learned by behavior cloning. The candidate does not change the loss and only switches the global prefix source once a validity threshold is reached. The abstract shows no matched-error noisy-prefix control.",
+          "supporting_excerpt": "uses segment-level student-teacher divergence to trigger teacher takeover during training."
+        },
+        {
+          "paper_id": "arXiv:2306.13649",
+          "shared_mechanism": "The student is trained on its own generated sequences, with teacher feedback, to reduce train/inference mismatch. This is the on-policy component the candidate schedules.",
+          "difference": "The abstract describes no adaptive or state-triggered schedule from off-policy to on-policy training. The candidate's static frac=0.5 arm mirrors GKD-style mixing.",
+          "supporting_excerpt": "GKD trains the student on its self-generated output sequences by leveraging feedback from the teacher on such sequences."
+        },
+        {
+          "paper_id": "arXiv:2009.07253",
+          "shared_mechanism": "Applies an imitation-learning (DAgger-like) view to autoregressive KD in order to address exposure bias. This is the same causal story the candidate's corrupted-prefix control is designed to test.",
+          "difference": "The abstract gives no detail about the mixing schedule or any validity-triggered switch. Whether it uses an anneal needs full-text checking.",
+          "supporting_excerpt": "The algorithm is designed to address the exposure bias problem."
+        },
+        {
+          "paper_id": "doi:10.1007/s00521-025-11162-0",
+          "shared_mechanism": "An imitation-learning approach to the distribution shift caused by exposure bias in LLM distillation, treating real data and teacher outputs as expert sources.",
+          "difference": "The abstract describes no trigger based on student validity and no control that separates generic prefix noise from correction of the student's own errors.",
+          "supporting_excerpt": "tailors an imitation learning-based solution to a traditional knowledge distillation framework"
+        },
+        {
+          "paper_id": "arXiv:2609.09123",
+          "shared_mechanism": "Perturbs student rollouts with injected noise or cleaner signals during distillation. This is loosely related to the candidate's corrupted-prefix arm.",
+          "difference": "The setting is video diffusion and the goal is to counter reverse-KL mode collapse. It is not used as a matched-error control against true on-policy prefixes, and it involves no adaptive switch.",
+          "supporting_excerpt": "a Dual-Noise Masking Rollout strategy that perturbs the AR student self-rollout to mitigate mode collapse induced by reverse-KL mode seeking"
+        },
+        {
+          "paper_id": "arXiv:2106.10885v1",
+          "shared_mechanism": "Uses the student's earlier state to shape later training, but only by ordering instances. The overlap is mostly lexical (curriculum/schedule).",
+          "difference": "It orders data instances for image classification KD. It does not switch the data-generating policy between teacher prefixes and student prefixes.",
+          "supporting_excerpt": "employs the student network of the early epoch as a snapshot to create a curriculum"
+        }
+      ],
+      "remaining_search": [
+        "Full text of DASH-OPD and DTDD: check whether either one includes training-phase-level schedules, fixed-timing (yoked-style) baselines or noise-prefix controls among its compared trigger designs and ablations.",
+        "Full text of arXiv:2009.07253 and the doi:10.1007/s00521-025-11162-0 paper: check their DAgger mixing schedules and whether any of them is adaptive to student performance.",
+        "Broader search: scheduled sampling with adaptive or accuracy-triggered schedules (e.g., schedules tied to model accuracy or confidence), and comparisons between scheduled sampling and noise injection or word dropout.",
+        "Search for exposure-bias studies that compare random token corruption of gold prefixes with model-generated prefixes at matched error rates.",
+        "Search for performance-gated curricula in RL and imitation learning (e.g., DAgger beta schedules conditioned on learner error), and for validity-constrained or structured-output distillation that uses invalid rate as a trigger."
+      ],
+      "queries": [
+        "adaptive switch off-policy to on-policy distillation triggered by student error rate",
+        "scheduled sampling versus DAgger noisy prefix control knowledge distillation"
+      ],
+      "evidence_scope": "abstracts_only",
+      "papers": [
+        {
+          "title": "On-Policy Distillation of Language Models: Learning from Self-Generated Mistakes",
+          "summary": "Knowledge distillation (KD) is widely used for compressing a teacher model to reduce its inference cost and memory footprint, by training a smaller student model. However, current KD methods for auto-regressive sequence models suffer from distribution mismatch between output sequences seen during training and those generated by the student during inference. To address this issue, we introduce Generalized Knowledge Distillation (GKD). Instead of solely relying on a fixed set of output sequences, GKD trains the student on its self-generated output sequences by leveraging feedback from the teacher on such sequences. Unlike supervised KD approaches, GKD also offers the flexibility to employ alternative loss functions between the student and teacher, which can be useful when the student lacks the expressivity to mimic the teacher's distribution. Furthermore, GKD facilitates the seamless integration of distillation with RL fine-tuning (RLHF). We demonstrate the efficacy of GKD for distilling auto-regressive language models on summarization, translation, and arithmetic reasoning tasks, and task-agnostic distillation for instruction-tuning.",
+          "arxiv_id": "arXiv:2306.13649",
+          "url": "http://arxiv.org/abs/2306.13649",
+          "citations": 272,
+          "code_url": null,
+          "year": 2023
+        },
+        {
+          "title": "Autoregressive Knowledge Distillation through Imitation Learning",
+          "summary": "The performance of autoregressive models on natural language generation tasks has dramatically improved due to the adoption of deep, self-attentive architectures.However, these gains have come at the cost of hindering inference speed, making state-of-the-art models cumbersome to deploy in real-world, timesensitive settings.We develop a compression technique for autoregressive models that is driven by an imitation learning perspective on knowledge distillation.The algorithm is designed to address the exposure bias problem.On prototypical language generation tasks such as translation and summarization, our method consistently outperforms other distillation algorithms, such as sequence-level knowledge distillation.Student models trained with our method attain 1.4 to 4.8 BLEU/ROUGE points higher than those trained from scratch, while increasing inference speed by up to 14 times in comparison to the teacher model. 1",
+          "arxiv_id": "arXiv:2009.07253",
+          "url": "http://arxiv.org/abs/2009.07253",
+          "citations": 70,
+          "code_url": null,
+          "year": 2020
+        },
+        {
+          "title": "Knowledge Distillation via Instance-level Sequence Learning",
+          "summary": "Recently, distillation approaches are suggested to extract general knowledge from a teacher network to guide a student network. Most of the existing methods transfer knowledge from the teacher network to the student via feeding the sequence of random mini-batches sampled uniformly from the data. Instead, we argue that the compact student network should be guided gradually using samples ordered in a meaningful sequence. Thus, it can bridge the gap of feature representation between the teacher and student network step by step. In this work, we provide a curriculum learning knowledge distillation framework via instance-level sequence learning. It employs the student network of the early epoch as a snapshot to create a curriculum for the student network's next training phase. We carry out extensive experiments on CIFAR-10, CIFAR-100, SVHN and CINIC-10 datasets. Compared with several state-of-the-art methods, our framework achieves the best performance with fewer iterations.",
+          "arxiv_id": "arXiv:2106.10885v1",
+          "url": "http://arxiv.org/abs/2106.10885v1",
+          "citations": null,
+          "code_url": null,
+          "year": 2021
+        },
+        {
+          "title": "Mask Forcing: Improving Autoregressive Video Diffusion Distillation via Dual-Noise Masking Rollout",
+          "summary": "Autoregressive (AR) video diffusion models have shown great potential in real-time video generation. Recent methods distill pretrained bidirectional video diffusion models into causal AR students through Distribution Matching Distillation (DMD), but the generated videos often suffer from over-saturation and over-smoothing issues, resulting in limited visual quality and realism. The key contributing factor is the mode-seeking behavior of the reverse KL objective in DMD, which can cause the student distribution to collapse onto only a few modes of the teacher distribution. To address this, we propose Mask Forcing, a Dual-Noise Masking Rollout strategy that perturbs the AR student self-rollout to mitigate mode collapse induced by reverse-KL mode seeking. The core idea is to inject cleaner signals into noisy rollout inputs via random masks along spatial and temporal axes during the self-rollout process of AR diffusion distillation. Such perturbations encourage the student rollouts to explore more regions of the teacher distribution, allowing DMD to provide learning signals beyond the modes already covered by the student. Moreover, the cleaner tokens act as denoising guidance for other noisier tokens, improving the intermediate rollout predictions and reducing error accumulation. Extensive experiments demonstrate that our method improves multiple AR video diffusion distillation methods with higher visual quality efficiently, without incorporating real video data or additional post-training stages.",
+          "arxiv_id": "arXiv:2609.09123",
+          "url": "https://arxiv.org/abs/2609.09123",
+          "citations": 5,
+          "code_url": null,
+          "year": 2026
+        },
+        {
+          "title": "Mitigating exposure bias in large language model distillation: an imitation learning approach",
+          "summary": "Abstract Knowledge distillation is recognized as a valuable model compression strategy that alleviates the computational burden of large language models while preserving performance. This strategy involves training a smaller model utilizing both real data and predictions from a more cumbersome model. Traditional distillation methods, however, are often compromised by exposure bias, which results from reliance on next-step prediction training loss. This bias emerges when models are tested in free-running mode, differing from their training regime and leading to a progressive drift in input distributions between testing and training phases. An analogous issue, known as ‘distributional shift’, has been effectively addressed in imitation learning through various methodologies. Therefore, this paper specifically tailors an imitation learning-based solution to a traditional knowledge distillation framework which inherently considers both real data and the teacher’s predictions as dual sources of expert demonstrations. The effectiveness of this approach is demonstrated over five different test datasets, where it outperforms traditional benchmarks across all evaluation metrics. Specifically, it achieves superior results in perplexity, multi-token generation, and G-Eval score, indicating improvements in both predictive accuracy and alignment with human judgment in text quality. These results underscore the potential of this approach to effectively address exposure bias in large language model distillation.",
+          "arxiv_id": "doi:10.1007/s00521-025-11162-0",
+          "url": "https://doi.org/10.1007/s00521-025-11162-0",
+          "citations": 33,
+          "code_url": null,
+          "year": 2025
+        },
+        {
+          "title": "DASH-OPD: Discrepancy-Aware Switching with Hysteresis for On-Policy Distillation",
+          "summary": "While on-policy distillation (OPD) reduces exposure bias by training student language models on their own rollouts, early student errors in long-horizon agentic scenarios can lead to contexts unfamiliar to the teacher. To improve trajectory quality, recent work on agentic OPD introduces teacher intervention into training rollouts by switching the executor between the student and the teacher. However, existing methods determine how much teacher intervention is needed---but not when. To address this limitation, we propose DASH-OPD (Discrepancy-Aware Switching with Hysteresis for OPD), the first agentic OPD method to perform adaptive, bidirectional executor switching. At each turn, DASH-OPD measures teacher--student discrepancy using a mean log-likelihood ratio over action tokens. High student-to-teacher ratios on student turns serve as drift signals, while low teacher-to-student ratios on teacher turns serve as recovery signals. These signals are accumulated over multiple turns to form drift and recovery evidence, respectively. DASH-OPD switches executors when either type of evidence exceeds its corresponding switching threshold, introducing hysteresis that prevents rapid switching triggered by transient discrepancy fluctuations. Across three benchmarks and two student model scales, DASH-OPD outperforms five baselines in all 14 task-performance comparisons, while requiring the fewest interaction turns in nine of ten efficiency comparisons. Code, trained models, and training logs are available at https://github.com/Lucian1115/DASH-OPD",
+          "arxiv_id": "arXiv:2607.29078",
+          "url": "https://arxiv.org/abs/2607.29078",
+          "citations": 4,
+          "code_url": null,
+          "year": 2026
+        },
+        {
+          "title": "DTDD: Divergence-Triggered Dynamic Distillation for Reliable On-Policy Supervision",
+          "summary": "On-policy distillation (OPD) provides dense token-level supervision on student rollouts, but this supervision can become unreliable when the student and teacher diverge, either because of a large initial policy gap or compounding errors in long-horizon reasoning and tool use. We introduce Divergence-Triggered Dynamic Distillation (DTDD), an adaptive OPD framework that uses segment-level student-teacher divergence to trigger teacher takeover during training. When divergence triggers an intervention during reasoning, the student prefix continues to receive standard OPD supervision. The teacher then generates a recovery suffix, which the student learns through behavior cloning, using cross-entropy on the teacher-generated tokens. We evaluate DTDD in three regimes: long-horizon reasoning, distillation from a base initialization without offline supervised fine-tuning (SFT), and multi-turn agents. We also compare alternative trigger designs and teacher-intervention rates. DTDD reduces the post-warmup peak gradient norm by $8.6\\times$ and, from a base initialization, reaches $21.3\\%$ held-out math accuracy in $2.6\\times$ fewer optimizer updates than OPD; both methods finish near $22\\%$. It improves best-observed performance by $4.8$ and $4.1$ percentage points on ALFWorld with LoRA and agentic code, respectively. Ablations show that segment-averaged triggers outperform token-spike triggers. Behavior cloning is also more effective than the tested OPD surrogate for training teacher-generated recoveries. Across 23 experimental arms, takeover tends to help when the teacher substantially outperforms the OPD-trained student, provided that the teacher can recover from student-visited states, the student can learn those recoveries, and teacher intervention is neither excessive nor insufficient.",
+          "arxiv_id": "arXiv:2610.19302",
+          "url": "https://arxiv.org/abs/2610.19302",
+          "citations": 0,
+          "code_url": null,
+          "year": 2026
+        }
+      ],
+      "retrieval_returned": 2
+    },
+    "status": "candidate",
+    "direction": "dir_591a5b4f38",
+    "steer_link": "This tests the direction's open question of whether an adaptive invalid-rate trigger beats a fixed switch step. The author would learn whether any on-policy benefit on this task comes from correcting the student's own errors or merely from noisy prefixes."
+  },
+  "selection_decision": {
+    "action": "select",
+    "idea_ids": [
+      "idea_0e172f19d3b27e84f92b5fb9"
+    ],
+    "actor": "renee",
+    "kind": "human",
+    "reason": "Its yoked and corrupted-prefix controls isolate where the gain comes from",
+    "timestamp": 1794541126.6502762,
+    "pilot_protocol_ids": [],
+    "pilot_observation_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "research_brief": {},
+  "author_direction": {
+    "steer": {
+      "interest": "I want to study on-policy versus off-policy distillation: how the two compare, and when each one works better."
+    },
+    "note": "",
+    "direction": {
+      "name": "Off-to-on data-source curriculum",
+      "thesis": "A schedule that starts off-policy, while the student's rollouts are mostly garbage, and switches to on-policy once rollouts are near-valid should beat both pure regimes. The best switch point should be tied to the student's own invalid rate rather than to a fixed step.",
+      "stance": "develops",
+      "hunches": [],
+      "steer_link": "This turns the researcher's 'when does each work better' into a within-run question. Each regime may be best at a different training phase, so the answer could be 'both, in sequence'.",
+      "gap": "Gap 6: DAgger mixing and GKD's λ are static or simply annealed. Curricula order instances, never the policy that generates the training prefixes.",
+      "sources": [
+        "arXiv:2009.07253",
+        "arXiv:2306.13649",
+        "arXiv:2106.10885v1",
+        "doi:10.1007/s00521-025-11162-0"
+      ],
+      "open_question": "Is there an optimal switch point? Does an adaptive trigger, such as switching when the student's batch invalid rate falls below a threshold, beat a fixed step?",
+      "first_experiment": "Edit the schedule so that on_policy_frac is 0 until step S and then 1. Sweep S over {0, 750, 1500, 2250, 3000} at the default size with 2 seeds, and compare val_invalid_rate against the two pure endpoints.",
+      "risk": "The curve over S is monotone, with one pure regime best throughout. This reduces to the plain comparison and yields only a minor tuning trick.",
+      "origin": "mapper",
+      "id": "dir_591a5b4f38"
+    },
+    "steer_link": "This tests the direction's open question of whether an adaptive invalid-rate trigger beats a fixed switch step. The author would learn whether any on-policy benefit on this task comes from correcting the student's own errors or merely from noisy prefixes."
+  }
+}

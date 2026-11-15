@@ -1,0 +1,76 @@
+{
+  "topic": "XGBoost-style column subsampling and L1 shrinkage transferred to neural BoW",
+  "guidance": "Test this idea: Vocabulary-column dropout plus row-wise L1 on the embedding lowers error more than standard hidden dropout plus L2. Most of the gain comes from column subsampling. (expected: Column subsampling at rate 0.2-0.4 with group-L1 at 1e-6 to 1e-5 gives val_top1_err of about 12.0-12.6, versus 13.3 for the baseline and about 12.8 for tuned hidden dropout plus L2 alone.). Experiment plan: Augmentation edit: a per-batch mask that drops a fraction p in {0.1, 0.2, 0.4} of vocabulary columns before the embedding sum. Regularization edit: group-L1 (sum of L2 norms of embedding rows) with coefficient in {0, 1e-6, 1e-5, 1e-4}. Schedule edit: lr 1e-3 with EMA decay 0.999 for 16 epochs, versus the default. Ablate each component separately, then combine. Compare against hidden dropout plus weight decay tuned with the same 12-trial budget. Use 3 seeds.",
+  "lit_context": "Chosen idea: XGBoost-style column subsampling and L1 shrinkage transferred to neural BoW. XGBoost regularizes sparse inputs with per-tree column subsampling, L1/L2 penalties on leaf weights, and shrinkage. This idea transfers each mechanism to the BoW MLP. Column subsampling becomes word-level input dropout: random vocabulary columns are zeroed per batch, with a fresh vocabulary mask per step. Leaf L1 becomes an L1 penalty on embedding rows, which sparsifies the word features. Shrinkage becomes a low-lr, many-epoch schedule with Polyak/EMA weight averaging.\nGap it attacks: Gap 2 (boosting regularizers vs dropout and weight decay on 10k-label text)\nSupporting papers:\n- [arXiv:1603.02754] XGBoost: A Scalable Tree Boosting System: Regularized boosting objective (L1/L2 on leaf weights, shrinkage, subsampling) with sparsity-aware splits suited to high-dimensional sparse inputs like BoW.",
+  "lit_priors": [
+    "XGBoost-style column subsampling and L1 shrinkage transferred to neural BoW (arXiv:1603.02754)"
+  ],
+  "sources": [
+    "arXiv:1603.02754"
+  ],
+  "idea": {
+    "title": "XGBoost-style column subsampling and L1 shrinkage transferred to neural BoW",
+    "description": "XGBoost regularizes sparse inputs with per-tree column subsampling, L1/L2 penalties on leaf weights, and shrinkage. This idea transfers each mechanism to the BoW MLP. Column subsampling becomes word-level input dropout: random vocabulary columns are zeroed per batch, with a fresh vocabulary mask per step. Leaf L1 becomes an L1 penalty on embedding rows, which sparsifies the word features. Shrinkage becomes a low-lr, many-epoch schedule with Polyak/EMA weight averaging.",
+    "gap": "Gap 2 (boosting regularizers vs dropout and weight decay on 10k-label text)",
+    "sources": [
+      "arXiv:1603.02754"
+    ],
+    "hypothesis": {
+      "claim": "Vocabulary-column dropout plus row-wise L1 on the embedding lowers error more than standard hidden dropout plus L2. Most of the gain comes from column subsampling.",
+      "predicted_effect": "Column subsampling at rate 0.2-0.4 with group-L1 at 1e-6 to 1e-5 gives val_top1_err of about 12.0-12.6, versus 13.3 for the baseline and about 12.8 for tuned hidden dropout plus L2 alone."
+    },
+    "experiment_plan": "Augmentation edit: a per-batch mask that drops a fraction p in {0.1, 0.2, 0.4} of vocabulary columns before the embedding sum. Regularization edit: group-L1 (sum of L2 norms of embedding rows) with coefficient in {0, 1e-6, 1e-5, 1e-4}. Schedule edit: lr 1e-3 with EMA decay 0.999 for 16 epochs, versus the default. Ablate each component separately, then combine. Compare against hidden dropout plus weight decay tuned with the same 12-trial budget. Use 3 seeds.",
+    "novelty_rationale": "XGBoost reports no text benchmarks, and the review identifies no work that ports its specific regularizers into a neural BoW model as an ablatable set.",
+    "feasibility": 5.0,
+    "impact": 3.0,
+    "novelty": {
+      "closest_paper": "arXiv:2611.14508v1",
+      "closest_title": "When Does the Real Wiring Win? Testing connectome structure-function claims against unmeasured physiology",
+      "paper_overlap": 0.12,
+      "closest_tried": null,
+      "tried_overlap": 0.0,
+      "flag": false,
+      "reason": ""
+    },
+    "tournament": {},
+    "selected": true,
+    "idea_id": "idea_4c4ded55c988d195eea69fe5",
+    "strategy": "human",
+    "design": {},
+    "novelty_review": {},
+    "status": "candidate"
+  },
+  "selection_decision": {
+    "action": "select",
+    "idea_ids": [
+      "idea_4c4ded55c988d195eea69fe5"
+    ],
+    "actor": "local-user",
+    "kind": "human",
+    "reason": "Selected after inspecting the candidate list",
+    "timestamp": 1794701429.605396,
+    "pilot_protocol_ids": [],
+    "pilot_observation_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "research_brief": {},
+  "author_direction": {
+    "steer": {
+      "interest": "I want to know which cheap regularizers actually help a small bag-of-embeddings text classifier when labels are scarce, and why, rather than collecting another leaderboard point.",
+      "hunches": [
+        "Word dropout helps mostly because it stops the model from leaning on a few topic-specific tokens, not because it acts like generic noise.",
+        "Part of any reported gain is early stopping in disguise: a regularized model simply peaks later within the same epoch budget."
+      ],
+      "avoid": [
+        "Pretrained encoders or external data",
+        "Pure hyperparameter sweeps with no mechanism behind them"
+      ],
+      "contribution": "A mechanism claim with a matched control; a clean negative result is welcome.",
+      "known": [
+        "A logistic-regression baseline reaches about 13.3% error on this split"
+      ]
+    },
+    "note": "The author picked this idea from an earlier idea list of this session (XGBoost-style column subsampling and L1 shrinkage); it also bears on hunch H1.",
+    "direction": null,
+    "steer_link": ""
+  }
+}

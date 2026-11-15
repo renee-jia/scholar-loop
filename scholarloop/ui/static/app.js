@@ -240,7 +240,7 @@ function renderMain() {
   const main=$("#main");
   if(!state.detail){main.innerHTML=state.tab==="overview"?home():researchPicker();return;}
   const d=state.detail;
-    const notice=d.config.mode==="demo"?`<div class="notice">Offline demo · Model responses and scores are simulated to demonstrate the workflow. They are not research evidence.</div>`:d.config.readonly?`<div class="notice">Archive · A read-only historical run. This sample does not reflect all checks in the current version.</div>`:"";
+    const notice=d.config.mode==="demo"?`<div class="notice">Offline demo · Model responses and scores are simulated to demonstrate the workflow. They are not research evidence.</div>`:d.config.readonly?`<div class="notice">Archive · A read-only recorded run. Its approval was checked on the machine that ran it and is not re-checked here.</div>`:"";
   main.innerHTML=notice+(d.warnings.length?`<div class="notice error">${d.warnings.map(esc).join("<br>")}</div>`:"")+({overview,research,ideas,experiments,review,writing,files:filesPage,tools:toolsPage}[state.tab]||overview)()+`<div class="footer-note"><span>ScholarLoop · A research loop that shows its work.</span><span>Files saved locally · No cloud deployment needed</span></div>`;
 }
 

@@ -1,0 +1,15 @@
+{
+  "interest": "I want to know whether a residual (skip) path helps a shallow MLP image classifier on a small dataset because of the path itself, or only because the variant has more parameters or trains differently.",
+  "hunches": [
+    "On a network this shallow the residual path adds little once parameter count and training steps are matched."
+  ],
+  "avoid": [
+    "Regularization studies",
+    "Pretrained encoders or external data",
+    "Pure hyperparameter sweeps with no mechanism behind them"
+  ],
+  "contribution": "A two-arm comparison with a parameter-matched control; a clean negative result is welcome.",
+  "known": [
+    "A logistic-regression baseline reaches about 3.8% error on this split"
+  ]
+}

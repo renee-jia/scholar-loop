@@ -353,3 +353,19 @@ def test_delete_archive_removes_only_its_workspace_entry(app):
     assert app.store.list_runs() == []
     assert (sample / "experiments.jsonl").read_bytes() == before
     assert app.store.import_run(sample)["readonly"] is True
+
+
+def test_every_shipped_run_opens_read_only_and_is_shown_as_recorded(app):
+    shown = app.store.import_samples()
+    assert Path(shown["path"]).name == "distillation"
+    runs = {Path(r["path"]).name: r for r in app.store.list_runs()}
+    assert {"distillation", "agnews", "digits_skip", "digits"} <= set(runs)
+    for name in ("distillation", "agnews", "digits_skip"):
+        assert runs[name]["readonly"]
+        detail = app.store.detail(runs[name]["id"])
+        assert detail["entries"] and not detail["warnings"]
+        assert detail["review"]["status"] == "READY_TO_WRITE" and not detail["review"]["release_error"]
+        assert detail["writing"]["stage"] == "reviewed" and "paper.md" in detail["writing"]["artifacts"]
+        assert "/Users/" not in app.store.artifact(runs[name]["id"], "scientific_review.json")
+        with pytest.raises(ValueError, match="read-only"):
+            app.jobs.start(runs[name]["id"], "campaign", {})
