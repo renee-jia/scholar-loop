@@ -612,15 +612,18 @@ def paper_readiness(argument: dict, dossier: dict) -> list[str]:
             gaps.append(f"arms {undescribed} of {ref} ran but no setup statement cites their run or "
                         "code version: describe what each arm changes")
         # A verdict on a prediction is unreadable without the prediction. Wording differs, so
-        # this asks only that one statement carries at least half of the registered terms.
+        # this asks only that the statements about the protocol carry, between them, at least
+        # half of the registered terms. It was once asked of a single statement, which a
+        # prediction longer than the setup word limit could never satisfy: a 93-word prediction
+        # failed three builds in a row while being stated across two statements.
         predicted = ((protocol.get("specification") or {}).get("spec") or {}).get("predicted_observation", "")
         about = [x for x in [*argument["claims"], *setup]
                  if ref in x["evidence"] or {r["id"] for r in runs} & set(x["evidence"])]
         judged = [x["id"] for x in about if _PREDICTION.search(x["text"])]
-        if predicted and judged and not any(containment(predicted, x["text"]) >= 0.5 for x in about):
+        if predicted and judged and containment(predicted, " ".join(x["text"] for x in about)) < 0.5:
             gaps.append(f"{judged} judge the prediction registered in {ref}, but no statement gives "
-                        "that prediction: state what was predicted, in a setup statement citing the "
-                        "protocol, so a reader can check the verdict")
+                        "that prediction: state what was predicted, in one or more setup statements "
+                        "citing the protocol, so a reader can check the verdict")
     return gaps
 
 

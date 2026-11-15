@@ -790,6 +790,15 @@ def test_a_verdict_on_a_prediction_needs_the_prediction_and_every_arm_needs_a_de
         {"id": "setup_arm", "text": "The treatment arm changes the sampler.", "evidence": ["c2"]},
         {"id": "setup_prediction", "text": "The protocol predicted that treat beats control.", "evidence": [ref]}]}
     assert paper_readiness(full, dossier) == []
+    # A prediction longer than one setup statement may be given across several.
+    long = "alpha difference stays inside margin while beta arm reaches lower error after gamma epochs"
+    dossier["protocols"][ref]["specification"]["spec"]["predicted_observation"] = long
+    split = {"claims": [claim], "setup": [
+        {"id": "setup_arm", "text": "The treatment arm changes the sampler.", "evidence": ["c2"]},
+        {"id": "setup_prediction_a", "text": "Predicted: the alpha difference stays inside the margin.", "evidence": [ref]},
+        {"id": "setup_prediction_b", "text": "Predicted: the beta arm reaches lower error after gamma epochs.", "evidence": [ref]}]}
+    assert paper_readiness(split, dossier) == []
+    assert len(paper_readiness({**split, "setup": split["setup"][:2]}, dossier)) == 1
 
 
 def test_a_statement_over_its_word_limit_is_sent_back_unless_it_was_carried_over_unchanged(tmp_path):
