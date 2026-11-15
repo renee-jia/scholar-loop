@@ -137,7 +137,10 @@ def load(location=None, sample: str = DEFAULT_SAMPLE) -> dict:
     if (path / "record.json").exists():
         return json.loads((path / "record.json").read_text())
     if not path.exists():
-        raise FileNotFoundError(f"no recorded run at {path}; samples: {sorted(p.name for p in SAMPLES.glob('*') if p.is_dir())}")
+        shipped = sorted(p.name for p in SAMPLES.glob("*") if p.is_dir())
+        hint = (f"samples: {shipped}" if shipped else
+                "this copy ships no sample; record one with `scholarloop capture RUN DEST` and pass DEST")
+        raise FileNotFoundError(f"no recorded run at {path}; {hint}")
     return build_record(path)
 
 

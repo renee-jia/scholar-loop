@@ -1,7 +1,12 @@
 """The recorded-run replay: no model, no training; the shipped sample must stay readable."""
 import json
 
+import pytest
+
 from scholarloop import replay
+
+pytestmark = pytest.mark.skipif(not (replay.SAMPLES / replay.DEFAULT_SAMPLE).is_dir(),
+                                reason="no recorded sample in this copy")
 
 
 def test_shipped_sample_replays_traces_and_checks():
