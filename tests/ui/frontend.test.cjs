@@ -250,3 +250,39 @@ test("a finished study is marked ready, and the recorded runs are one click away
   assert.match(h.run("callout()"),/class="callout ready"/);
   assert.match(h.run("home()"),/class="btn" data-do="sample"/);
 });
+
+test("ideas are listed one per row",()=>{
+  const h=harness();
+  h.state.detail.session.ideas=[{idea_id:"i1",title:"A",description:"d",hypothesis:{claim:"c"},experiment_plan:"p",sources:[]}];
+  assert.match(h.run("ideas()"),/class="cards idea-list"/);
+});
+
+test("a long recorded paragraph is shown one sentence per point, words unchanged",()=>{
+  const h=harness();
+  const text="All setup statements match the code, e.g. the lr of 0.003. Probe trajectories are identical. No issue remains.";
+  const html=h.run(`points(${JSON.stringify(text)})`);
+  assert.equal((html.match(/<li>/g)||[]).length,3);
+  assert.match(html,/e\.g\. the lr of 0\.003\.<\/li>/);
+  assert.equal(html.replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim(),text);
+  assert.match(h.run(`points("One sentence only.")`),/^<p>/);
+});
+
+test("artifacts are grouped by stage, each file once, only the first group unfolded until searched",()=>{
+  const h=harness();
+  const registry=Array.from({length:20},(_,i)=>({path:`registry/exp_${i}.json`,size:10}));
+  const files=[{path:"paper.md",size:1},{path:"scientific_review.md",size:1},{path:"review.md",size:1},{path:"lit_review.md",size:1},
+    {path:"reliability/claims.md",size:1},{path:"README.md",size:1},{path:"experiments.jsonl",size:1},...registry];
+  const html=h.run(`fileRows(${JSON.stringify(files)})`);
+  const titles=[...html.matchAll(/file-group-title">([^<]+)</g)].map(m=>m[1]);
+  assert.deepEqual(titles,["Paper and writing","Scientific review","Experiments","Literature and ideas","Reliability checks","Other"]);
+  assert.equal((html.match(/class="list-row"/g)||[]).length,files.length);
+  const groups=html.split("<details").slice(1);
+  assert.match(groups[0],/data-file="paper.md"/);
+  assert.match(groups[0],/data-file="review.md"/);
+  assert.match(groups[1],/data-file="scientific_review.md"/);
+  assert.match(groups[0].split("<summary>")[0],/open/);
+  assert.doesNotMatch(groups[1].split("<summary>")[0],/open/);
+  assert.doesNotMatch(groups[2].split("<summary>")[0],/open/);
+  h.state.filter="exp_1";
+  assert.match(h.run(`fileRows(${JSON.stringify(registry)})`).split("<summary>")[0],/open/);
+});

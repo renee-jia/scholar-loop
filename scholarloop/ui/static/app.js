@@ -74,6 +74,15 @@ function recorded(file, what, label) {
   return fileExists(file) ? `<div class="empty"><div class="empty-symbol">${icon("folder")}</div><h3>${esc(what)}</h3><p>This archived run did not record this stage in a structured form.</p>${artifactButton(file,label)}</div>`
     : `<div class="empty"><div class="empty-symbol">${icon("folder")}</div><h3>Nothing was recorded for this stage</h3><p>This archived run kept no record here.</p></div>`;
 }
+// A long recorded paragraph, shown one sentence per point. The words are not changed.
+function points(text) {
+  const parts=String(text??"").split(/(?<=[.!?])\s+(?=[A-Z"'(\[])/).reduce((out,part)=>{
+    const last=out[out.length-1];
+    if(last&&/(?:^|\s)(?:e\.g|i\.e|cf|vs|etc|Fig|Eq|No)\.$/.test(last))out[out.length-1]=last+" "+part; else out.push(part);
+    return out;
+  },[]).filter(Boolean);
+  return parts.length<2?`<p>${esc(text??"")}</p>`:`<ul class="points">${parts.map(part=>`<li>${esc(part)}</li>`).join("")}</ul>`;
+}
 function empty(title, text, action="", label="", symbol="leaf") {
   return `<div class="empty"><div class="empty-symbol">${icon(symbol)}</div><h3>${esc(title)}</h3><p>${esc(text)}</p>${action?button(action,label,"primary"):""}</div>`;
 }
@@ -170,7 +179,7 @@ function ideas() {
   const ideas=state.detail.session.ideas||[];
   return heading("Choose an idea worth testing","Compare hypotheses, feasibility, and experiment plans. Rankings inform your choice; you set the direction.","02 / RESEARCH IDEAS")+
     `<div class="action-row">${button("ideas","Generate candidate ideas","primary")}${button("refine_ideas","Give feedback and refine")}${button("inject","Add your own idea")}${button("decide","Manage idea decisions")}${button("pilot_plan","Plan a pilot")}</div>`+
-    (ideas.length?`<div class="cards">${ideas.map((idea,i)=>`<article class="panel idea-card"><div class="row space-between"><span class="card-number">IDEA 0${i+1}</span>${state.detail.session.selected===i+1?tag("Selected","green"):tag(idea.tournament?.rating?`Elo ${Math.round(idea.tournament.rating)}`:idea.status||"candidate","outline")}</div><h3>${esc(idea.title)}</h3><p>${esc(idea.description)}</p><p><strong>Hypothesis</strong><br>${esc(idea.hypothesis?.claim)}</p><p><strong>Experiment plan</strong><br>${esc(idea.experiment_plan)}</p><div class="card-meta"><span class="mono">${esc(idea.idea_id)}</span><br>Sources: ${esc((idea.sources||[]).join(" · "))}</div>${button("select",state.detail.session.selected===i+1?"Confirm selection again":"Select this idea",state.detail.session.selected===i+1?"soft":"",{select:i+1})}</article>`).join("")}</div>`:panel("Candidate ideas",(state.detail.config.readonly?recorded("ideas.md","The ideas and their tournament are kept as a document","Read ideas"):empty("Develop a testable hypothesis","Complete the literature review and choose directions, or submit your own idea with supporting sources."))))+
+    (ideas.length?`<div class="cards idea-list">${ideas.map((idea,i)=>`<article class="panel idea-card"><div class="row space-between"><span class="card-number">IDEA 0${i+1}</span>${state.detail.session.selected===i+1?tag("Selected","green"):tag(idea.tournament?.rating?`Elo ${Math.round(idea.tournament.rating)}`:idea.status||"candidate","outline")}</div><h3>${esc(idea.title)}</h3><p>${esc(idea.description)}</p><p><strong>Hypothesis</strong><br>${esc(idea.hypothesis?.claim)}</p><p><strong>Experiment plan</strong><br>${esc(idea.experiment_plan)}</p><div class="card-meta"><span class="mono">${esc(idea.idea_id)}</span><br>Sources: ${esc((idea.sources||[]).join(" · "))}</div>${button("select",state.detail.session.selected===i+1?"Confirm selection again":"Select this idea",state.detail.session.selected===i+1?"soft":"",{select:i+1})}</article>`).join("")}</div>`:panel("Candidate ideas",(state.detail.config.readonly?recorded("ideas.md","The ideas and their tournament are kept as a document","Read ideas"):empty("Develop a testable hypothesis","Complete the literature review and choose directions, or submit your own idea with supporting sources."))))+
     `<div class="spacer"></div>${protocols("pilot")}<div class="spacer"></div>${jobPanel()}`;
 }
 function experiments() {
@@ -192,8 +201,8 @@ function review() {
     (r.release_error?`<div class="notice error">The current approval is no longer valid: ${esc(r.release_error)}</div>`:"")+
     `<div class="action-row">${button("review",r.status?"Give feedback and review again":"Start scientific review","primary")}${ready?button("approve","Approve this version for writing","soft",{review_hash:r.hash}):""}${r.status?button("review_status","Validate review status"):""}${r.status==="NEEDS_EXPERIMENTS"?button("agenda_plan","Plan follow-up experiments","soft"):""}</div>`+
     panel("Scientific Review",r.status?`<div class="panel-body"><div class="row space-between"><h3>${esc(reviewLabels[r.status]||r.status)}</h3>${tag(r.release_error?"New review required":r.status,r.release_error?"red":r.status==="READY_TO_WRITE"?"green":"amber")}</div><p class="form-note">Approval applies only to the report you reviewed. New experiments or changes to the argument or code require a new review.</p>${fileExists("scientific_review.md")?artifactButton("scientific_review.md","Read full review"):""}${r.hash?`<p class="subtitle mono">Version ${esc(r.hash.slice(0,24))}…</p>`:""}</div>`:(state.detail.config.readonly?recorded("review.md","This run predates the scientific review; its reviewer panel report is kept as a document","Read panel report"):empty("Establish what the evidence supports","After experiments, examine the implementation, experiment design, falsifiability, and final argument.")))+
-    `<div class="spacer"></div><div class="tool-grid">${r.reports.map(report=>`<article class="panel tool-card"><div class="row space-between"><h3>${esc({implementation:"Implementation",experimental:"Experiment design",falsification:"Falsifiability",argument:"Argument and evidence"}[report.role]||report.role)}</h3>${tag(report.verdict,report.verdict==="pass"?"green":"amber")}</div><p>${esc(report.summary)}</p></article>`).join("")}</div>`+
-    (r.issues.length?`<div class="spacer"></div>`+panel("Review issues",r.issues.map(i=>`<div class="issue"><div class="row space-between"><strong>${esc(i.title||i.target||i.id)}</strong>${tag(i.status,i.status==="open"?"amber":"green")}</div><p>${esc(i.observation||i.description||"")}</p><p><strong>Required action: </strong>${esc(i.required_action||"")}</p><p><strong>Resolution criterion: </strong>${esc(i.resolution_criterion||"")}</p><small class="muted">${esc(i.role)} · ${esc(i.action)}</small></div>`).join("")):"")+
+    `<div class="spacer"></div><div class="tool-grid">${r.reports.map(report=>`<article class="panel tool-card"><div class="row space-between"><h3>${esc({implementation:"Implementation",experimental:"Experiment design",falsification:"Falsifiability",argument:"Argument and evidence"}[report.role]||report.role)}</h3>${tag(report.verdict,report.verdict==="pass"?"green":"amber")}</div>${points(report.summary)}</article>`).join("")}</div>`+
+    (r.issues.length?`<div class="spacer"></div>`+panel("Review issues",r.issues.map(i=>`<div class="issue"><div class="row space-between"><strong>${esc(i.title||i.target||i.id)}</strong>${tag(i.status,i.status==="open"?"amber":"green")}</div>${points(i.observation||i.description||"")}<p><strong>Required action: </strong>${esc(i.required_action||"")}</p><p><strong>Resolution criterion: </strong>${esc(i.resolution_criterion||"")}</p><small class="muted">${esc(i.role)} · ${esc(i.action)}</small></div>`).join("")):"")+
     `<div class="spacer"></div>${protocols()}<div class="spacer"></div>${jobPanel()}`;
 }
 function writing() {
@@ -216,8 +225,34 @@ function filesPage() {
     `<input class="file-search" id="file-search" placeholder="Search filenames, e.g. paper, review, protocol…" aria-label="Search artifacts" value="${esc(state.filter)}">`+
     panel(`<span id="file-count" aria-live="polite">${fileCount(files)}</span>`,`<div class="file-list" id="file-list">${fileRows(files)}</div>`)+`<p class="subtitle mono">${esc(state.detail.config.path)}</p>`;
 }
+// Artifacts by the stage that produced them, in the order a reader would look for them.
+const fileGroups=[
+  ["Paper and writing","The manuscript, its traced edition, the evidence map and the reviewers' reports.",
+    f=>/^(manuscripts\/|paper\d*\/)/.test(f)||/^(paper|paper_traced|evidence_map|review|outline|key_points)\.md$/.test(f)||/^(writing|approved_evidence|draft_checkpoint)\.json$/.test(f)],
+  ["Scientific review","The argument, the critics' reports and the author's release.",
+    f=>/^(scientific_review|argument_|review_history\/|experiment_requests|pending_decisions|research_iterations)/.test(f)],
+  ["Experiments","The ledger of every run, frozen protocols and the code version of each arm.",
+    f=>/^(experiments\.jsonl|registry\/|experiment_agenda\/|run\.md|process\.|calibration|handoff\.json|usage\.json)/.test(f)],
+  ["Literature and ideas","The steer, the literature review, the direction map, the ideas and their tournament.",
+    f=>/^(steer|lit_review|directions|ideas|idea_|tournament|session)/.test(f)],
+  ["Reliability checks","Fault injection, trace statistics and the claim audit for this run.",f=>/^reliability\//.test(f)],
+  ["Other","Notes, logs and everything else.",()=>true],
+];
+function fileRow(f) {
+  return `<div class="list-row"><div class="file-icon">${icon("file")}</div><div class="grow"><button class="file-name" data-file="${esc(f.path)}">${esc(f.path)}</button><small>${f.size<1024?f.size+" B":(f.size/1024).toFixed(1)+" KB"}</small></div>${artifactButton(f.path,"Read","ghost small")}</div>`;
+}
 function fileRows(files) {
-  return files.length?files.map(f=>`<div class="list-row"><div class="file-icon">${icon("file")}</div><div class="grow"><button class="file-name" data-file="${esc(f.path)}">${esc(f.path)}</button><small>${f.size<1024?f.size+" B":(f.size/1024).toFixed(1)+" KB"}</small></div>${artifactButton(f.path,"Read","ghost small")}</div>`).join(""):empty("No matching files","Research artifacts will appear here as they are generated.","","","folder");
+  if(!files.length)return empty("No matching files","Research artifacts will appear here as they are generated.","","","folder");
+  const rest=[...files];
+  let shown=0;
+  return fileGroups.map(([title,note,belongs])=>{
+    const mine=rest.filter(f=>belongs(f.path));
+    mine.forEach(f=>rest.splice(rest.indexOf(f),1));
+    if(!mine.length)return "";
+    // Only the first group starts unfolded, so every section title is in view; a search unfolds all.
+    const open=state.filter||!shown++;
+    return `<details class="file-group"${open?" open":""}><summary><span class="file-group-title">${esc(title)}</span><span class="file-group-count">${mine.length}</span><span class="file-group-note">${esc(note)}</span></summary>${mine.map(fileRow).join("")}</details>`;
+  }).join("");
 }
 function fileCount(files) {
   return `${files.length} of ${state.detail.artifacts.length} research files`;

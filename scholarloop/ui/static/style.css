@@ -325,3 +325,33 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .callout.ready .callout-icon { color: var(--done); }
 .workflow-step.done .step-circle { background: var(--done); border-color: var(--done); color: var(--paper); }
 .welcome-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* Ideas carry a description, a hypothesis and a plan: one per row, at a readable line length. */
+.cards.idea-list { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.idea-list .idea-card { padding: 24px 28px; gap: 10px; }
+.idea-list .idea-card h3 { font-size: 17px; }
+.idea-list .idea-card p, .idea-list .card-meta { max-width: 86ch; }
+.idea-list .idea-card p { font-size: 13px; line-height: 1.75; }
+.idea-list .idea-card .btn { align-self: flex-start; margin-top: 6px; }
+
+/* One sentence per point, for long recorded paragraphs. */
+.points { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.points li { margin: 0 0 6px; padding-left: 2px; }
+.points li::marker { color: var(--line-strong); }
+
+/* The four writing stages: a bold label and a bold stage name. */
+.writing-stage { font-weight: 600; color: var(--ink); }
+.writing-stage .eyebrow { font-weight: 700; color: var(--ink); }
+
+/* Artifacts grouped by the stage that produced them. */
+.file-group { margin: 0; border-bottom: 1px solid var(--line); }
+.file-group:last-child { border-bottom: 0; }
+.file-group > summary { display: flex; align-items: baseline; gap: 10px; padding: 14px 22px; background: var(--surface); color: var(--ink); font-size: 13px; list-style-position: inside; }
+.file-group[open] > summary { border-bottom: 1px solid var(--line); }
+.file-group-title { font-weight: 650; }
+.file-group-count { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 0 7px; background: var(--paper); }
+.file-group-note { font-size: 12px; color: var(--muted); }
+.file-list { max-height: none; overflow: visible; }
+.file-group > summary::-webkit-details-marker { display: none; }
+.file-group > summary::before { content: "▸"; color: var(--muted); font-size: 11px; width: 10px; }
+.file-group[open] > summary::before { content: "▾"; }
