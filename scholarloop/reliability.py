@@ -963,6 +963,7 @@ def render_semantic(report: dict) -> str:
 # CLI
 # ---------------------------------------------------------------------------------------------
 ABLATION_ARMS = ("full", "no_review", "no_guards")
+PANEL_OPEN = "Panel concerns remain unresolved"
 
 
 def run_ablation(llm, profile, paths: dict, out_dir, arm: str, *, repeats: int = 3, evidence=None) -> dict:
@@ -973,7 +974,8 @@ def run_ablation(llm, profile, paths: dict, out_dir, arm: str, *, repeats: int =
     approved statements (the writer's demo mode). `no_guards` keeps the approved statements and
     the model reviewer but accepts the first schema-valid output of the outliner, key pointer
     and drafter, without their deterministic checks. A writer that stops is recorded as not
-    completed with its reason; nothing is published for it. The final simulated reviewers are
+    completed with its reason; nothing is published for it. A stage whose panel ran out of rounds
+    is run once more, in every arm; an evidence gap is not retried. The final simulated reviewers are
     not called: they read the paper and do not change it."""
     from scholarloop.core.agent import AgentError
     from scholarloop.review.contracts import ReviewBlocked
@@ -995,11 +997,21 @@ def run_ablation(llm, profile, paths: dict, out_dir, arm: str, *, repeats: int =
         if arm == "no_guards":
             for agent in (session.outliner, session.key_pointer, session.drafter):
                 agent.postcheck = lambda output, ctx: []
-        row = {"name": name, "arm": arm, "completed": False, "stopped_at": None, "reason": ""}
+        row = {"name": name, "arm": arm, "completed": False, "stopped_at": None, "reason": "", "reruns": []}
+        stages = ("outline", "key_points", "draft")
         try:
-            for stage in ("outline", "key_points", "draft"):
+            for i, stage in enumerate(stages):
                 row["stopped_at"] = stage
-                getattr(session, stage)()
+                try:
+                    getattr(session, stage)()
+                except ReviewBlocked as exc:
+                    # The panel of the stage before ran out of rounds with a concern open. An
+                    # author would run that stage again; every arm gets one such rerun per stage.
+                    if i == 0 or PANEL_OPEN not in str(exc):
+                        raise
+                    row["reruns"].append(stages[i - 1])
+                    getattr(session, stages[i - 1])()
+                    getattr(session, stage)()
             row.update(completed=True, stopped_at=None)
         except (ReviewBlocked, AgentError) as exc:
             row["reason"] = f"{type(exc).__name__}: {exc}"[:600]

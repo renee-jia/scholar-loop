@@ -297,3 +297,37 @@ def test_ablation_writes_each_arm_and_records_a_writer_that_stops(reviewed_run, 
     assert not (out / "strict" / "full_1.md").exists()
     again = run_ablation(MockLLM(jsons=[]), profile, paths, out, "full", repeats=1, evidence=evidence)
     assert again["papers"] == full["papers"]                               # finished papers are reused
+
+
+def test_ablation_reruns_a_stage_whose_panel_ran_out_of_rounds_once(tmp_path, monkeypatch):
+    import scholarloop.writing.session as writing
+    from scholarloop.reliability import PANEL_OPEN, run_ablation
+    from scholarloop.review.contracts import ReviewBlocked
+
+    class Session:
+        open_after = 1                      # key-point passes that leave the panel unsatisfied
+
+        def __init__(self, *args, **kwargs):
+            self.calls, self.state = [], type("State", (), {"sections": [{"heading": "Results", "body": "It held."}]})()
+            self.outliner = self.key_pointer = self.drafter = type("Agent", (), {})()
+
+        def outline(self):
+            self.calls.append("outline")
+
+        def key_points(self):
+            self.calls.append("key_points")
+
+        def draft(self):
+            if self.calls.count("key_points") <= self.open_after:
+                raise ReviewBlocked(PANEL_OPEN + "; revise this stage before advancing")
+            self.calls.append("draft")
+
+    monkeypatch.setattr(writing, "WritingSession", Session)
+    paths = {"ledger": None, "registry": None, "research": None, "review_dir": None}
+    done = run_ablation(None, None, paths, tmp_path, "full", repeats=1)["papers"][0]
+    assert done["completed"] and done["reruns"] == ["key_points"]
+
+    Session.open_after = 2                  # still open after the one rerun: the writer stops
+    (tmp_path / "stuck").mkdir()
+    stuck = run_ablation(None, None, paths, tmp_path / "stuck", "full", repeats=1)["papers"][0]
+    assert not stuck["completed"] and stuck["stopped_at"] == "draft" and stuck["reruns"] == ["key_points"]
