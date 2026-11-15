@@ -500,3 +500,15 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .tool-tile-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 -22px; padding: 12px 22px; background: var(--surface); border-top: 1px solid var(--line); }
 .tool-cost { font-size: 11px; color: var(--muted); }
 .tool-shelf.live .tool-cost { color: var(--warning); font-weight: 600; }
+
+/* Results as bars, one per run. */
+.chart-track { fill: #f4f1e8; }
+.chart-bar { fill: var(--action); }
+.chart-name { font-family: var(--font-mono); }
+.chart-value { fill: var(--ink); font-weight: 600; }
+.idea-hypothesis + .idea-fold { margin-top: 18px; }
+.chart svg { width: 100%; max-width: 760px; height: auto; display: block; margin: 0 auto; }
+.chart-label.chart-name, .chart-label.chart-value { font-size: 9px; }
+/* Columns keep their own height; a short panel is not stretched to match its neighbour. */
+.grid-two { align-items: start; }
+.grid-two > .stack > .panel { flex: none; }

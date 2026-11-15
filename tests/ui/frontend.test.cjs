@@ -364,3 +364,27 @@ test("tools are shelved by whether they call the model",()=>{
   assert.deepEqual([...live.matchAll(/<h3>([^<]+)</g)].map(m=>m[1]),["baseline","compare","new_tool"]);
   assert.match(live,/Random search alone is free/);
 });
+
+test("full results are bars from zero, one per run, named without the shared protocol prefix",()=>{
+  const h=harness();
+  h.state.detail.entries=[{id:"protocol_8198ab82d8c25b04_off_policy_ref",score:14,fidelity:["full"]},{id:"protocol_8198ab82d8c25b04_pure_on_policy",score:7,fidelity:["full"]},{id:"x",score:1,fidelity:["probe"]}];
+  const html=h.run("chart()");
+  assert.equal((html.match(/class="chart-bar"/g)||[]).length,2);
+  assert.match(html,/>off_policy_ref<\/text>/);
+  assert.match(html,/class="chart-bar" x="190" y="6" width="320\.0"/);
+  assert.match(html,/class="chart-bar" x="190" y="36" width="160\.0"/);
+  assert.equal(h.run('shortId("exp_0007")'),"exp_0007");
+});
+
+test("a direction leads with its open question; an archive with no tasks shows no task history",()=>{
+  const h=harness();
+  h.state.detail.session={stage:"mapped",chosen_directions:["d2"],ideas:[]};
+  const cards=[1,2].map(n=>h.run(`directionCard({id:"d${n}",name:"N${n}",stance:"challenges",thesis:"One. Two.",open_question:"Why?",first_experiment:"Run it."},${n-1})`));
+  assert.match(cards[0],/Direction 01 · Challenges your hypothesis/);
+  assert.match(cards[0],/idea-label">Open question<\/div><p>Why\?<\/p>/);
+  assert.doesNotMatch(cards[0],/idea-card chosen/);
+  assert.match(cards[1],/idea-card chosen/);
+  assert.match(h.run("jobPanel()"),/Task history/);
+  h.state.detail.config.readonly=true;
+  assert.equal(h.run("jobPanel()"),"");
+});

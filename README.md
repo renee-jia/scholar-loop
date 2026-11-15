@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔬 Scholar Loop
+# 🔬 ScholarLoop
 
 **A research loop that shows its work.**
 
@@ -13,7 +13,7 @@ Code checks every citation, number and claim against the record before it reache
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![status](https://img.shields.io/badge/status-research%20preview-orange)](#-limits)
 
-[Quick start](#-quick-start) · [What it does](#-what-it-does) · [How it works](#-how-it-works) · [The rules](#%EF%B8%8F-rules-the-model-cannot-talk-its-way-around) · [Results](#-what-we-have-measured) · [Limits](#-limits)
+[Quick start](#-quick-start) · [The web UI](#%EF%B8%8F-the-web-ui) · [What it does](#-what-it-does) · [How it works](#-how-it-works) · [The rules](#%EF%B8%8F-rules-the-model-cannot-talk-its-way-around) · [Results](#-what-we-have-measured) · [Limits](#-limits)
 
 <br>
 
@@ -90,10 +90,10 @@ code version. Change the evidence and your approval is void.
 </td>
 <td valign="top">
 
-**🖥️ Web UI, hard budgets**
+**🖥️ A web UI, under a hard budget**
 
-Drive everything from a local web UI or the command line, under a dollar cap that is checked
-before every request.
+Run every stage from a local web UI or the command line. A dollar cap is checked before each
+model request, and the UI tells you which tools are free to run.
 
 </td>
 </tr>
@@ -111,8 +111,6 @@ Your browser opens on `http://127.0.0.1:8765`. Click **Explore a real run** to w
 [recorded runs](examples/sample_runs/), from the author's steer to the reviewed paper and the
 evidence behind each sentence. No API key, no GPU.
 
-![The ScholarLoop web UI showing the overview of a recorded run](assets/ui-workspace.jpg)
-
 | I want to… | Run | Costs |
 |---|---|---|
 | browse finished research | `python3 -m scholarloop.ui`, then **Explore a real run** | free |
@@ -122,6 +120,32 @@ evidence behind each sentence. No API key, no GPU.
 
 Every script is listed in [`examples/README.md`](examples/README.md). `pytest -q` runs the
 offline tests.
+
+## 🖥️ The web UI
+
+The UI runs on your machine only. It starts the same stage commands as the command line, keeps
+their logs, and takes each of your decisions as an explicit action. A recorded run opens
+read-only, so you can look at everything without spending anything.
+
+![The overview of a recorded run in the ScholarLoop web UI: progress through the five stages, the result of each experiment arm, recent artifacts and the run's configuration](assets/ui-workspace.jpg)
+
+<table>
+<tr>
+<td width="33%" valign="top"><img src="assets/ui-ideas.jpg" alt="The Research Ideas page: each idea leads with its hypothesis and predicted effect, beside its tournament rank and scores"><br><b>Ideas.</b> Each one leads with its hypothesis, next to its tournament standing, scores and linked sources.</td>
+<td width="33%" valign="top"><img src="assets/ui-review.jpg" alt="The Scientific Review page: the verdict, counts of reviewers passed and claims supported, and a card per reviewer"><br><b>Review.</b> The verdict and the counts behind it, then the four critics and every issue they raised.</td>
+<td width="33%" valign="top"><img src="assets/ui-writing.jpg" alt="The Writing page: the manuscript title, its length and panel score, and the four writing stages"><br><b>Writing.</b> The manuscript, its sentence-by-sentence trace and evidence map, and the four stages that built it.</td>
+</tr>
+</table>
+
+| Page | What you find there |
+|---|---|
+| Literature & Directions | your steer, the literature review, and the direction map with each direction's open question |
+| Research Ideas | the candidate ideas, their tournament, and the one you picked |
+| Experiments | every run with its stage, role and score, and one bar per fully evaluated arm |
+| Scientific Review | the verdict, each critic's summary, and the issues grouped by state and severity |
+| Writing | the manuscript and what each writing stage produced |
+| Artifacts | every file of the run, grouped by the stage that wrote it |
+| Evaluation & Tools | diagnostics and reliability checks, split into free ones and ones that call the model |
 
 ## 🧭 How it works
 

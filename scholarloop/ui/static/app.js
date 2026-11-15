@@ -87,6 +87,15 @@ function sourceChip(id) {
   const url=sourceLink(id);
   return url?`<a class="source-chip" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(id)} in a new tab">${esc(id)} ${icon("arrow")}</a>`:`<span>${esc(id)}</span>`;
 }
+// One direction, in the same shape as an idea: its open question is the point of the card.
+function directionCard(d, i) {
+  const chosen=state.detail.session.chosen_directions?.includes(d.id), n=String(i+1).padStart(2,"0");
+  const stance={develops:"Develops your hypothesis",challenges:"Challenges your hypothesis",outside:"A new perspective",author:"Your own direction"}[d.stance]||d.stance||d.origin||"";
+  return `<article class="panel idea-card${chosen?" chosen":""}"><header class="idea-head"><div class="idea-rank">${n}</div><div class="grow"><div class="idea-kicker">${esc([`Direction ${n}`,stance].filter(Boolean).join(" · "))}</div><h3>${esc(d.name)}</h3></div><div class="idea-tags">${chosen?tag("Chosen","green"):""}</div></header>`+
+    `<section class="idea-hypothesis"><div class="idea-label">Open question</div><p>${esc(d.open_question??"")}</p></section>`+
+    `<details class="idea-fold" open><summary>Thesis</summary>${points(d.thesis)}</details>`+(d.first_experiment?`<details class="idea-fold"><summary>First experiment</summary>${points(d.first_experiment)}</details>`:"")+
+    `<footer class="idea-foot"><div class="idea-sources"></div>${button("ideas","Generate ideas in this direction","",{directions:String(i+1)})}</footer></article>`;
+}
 // One idea: the hypothesis leads, scores and tournament standing sit beside the title, and the
 // longer parts fold away. The chosen idea is marked and starts unfolded.
 function ideaCard(idea, i) {
@@ -179,13 +188,16 @@ function stats() {
     ["Model cost",d.config.readonly?"—":`$${Number(d.spend.usd||0).toFixed(2)}`,d.config.readonly?"Recorded in this run's README":d.config.mode==="demo"?"No API calls · offline demo":`UI estimate · cap $${d.config.spend_cap}`,"leaf"]];
   return `<div class="stats">${values.map(([label,value,note,ico])=>`<div class="stat"><div class="stat-label">${label}${icon(ico)}</div><div class="stat-value">${esc(value)}</div><div class="stat-note">${esc(note)}</div></div>`).join("")}</div>`;
 }
+// An arm's own name, without the protocol prefix every arm of a study shares.
+const shortId=id=>String(id??"").replace(/^protocol_[0-9a-f]{8,}_/,"");
+// One bar per fully evaluated run, from zero: the runs are separate arms, not a series over time.
 function chart() {
   const entries=state.detail.entries.filter(e=>e.score!==null&&e.score!==undefined&&e.fidelity?.includes("full"));
   if(!entries.length)return empty("Awaiting full evaluation results","After the full stage completes, compare results at the same evaluation tier here.","","","flask");
-  const vals=entries.map(e=>Number(e.score)), min=Math.min(...vals), max=Math.max(...vals), pad=Math.max((max-min)*.3,.05);
-  const y=v=>125-((v-min+pad)/(max-min+2*pad))*100;
-  const x=i=>55+(entries.length===1?210:i/(entries.length-1)*460);
-  return `<div class="chart"><svg viewBox="0 0 570 155" role="img" aria-label="Full evaluation result trend">${[max+pad,(max+min)/2,min-pad].map(v=>`<line class="chart-grid" x1="45" x2="540" y1="${y(v)}" y2="${y(v)}"/><text class="chart-label" x="3" y="${y(v)+4}">${v.toFixed(2)}</text>`).join("")}<path class="chart-line" d="${vals.map((v,i)=>(i?"L":"M")+x(i)+","+y(v)).join(" ")}"/>${vals.map((v,i)=>`<circle class="chart-dot" cx="${x(i)}" cy="${y(v)}" r="4"><title>${esc(entries[i].id)}: ${v}</title></circle>`).join("")}<text class="chart-label" x="45" y="150">${esc(entries[0].id)}</text><text class="chart-label" x="455" y="150">${esc(entries.at(-1).id)}</text></svg></div><p class="chart-caption">Full tier only · Check seeds and experimental conditions before comparing results</p>`;
+  const vals=entries.map(e=>Number(e.score)), top=Math.max(...vals,0)||1, row=30, left=190, span=320;
+  const clip=text=>text.length>28?text.slice(0,27)+"…":text;
+  return `<div class="chart"><svg viewBox="0 0 570 ${entries.length*row+6}" role="img" aria-label="Full evaluation result of each run">${entries.map((e,i)=>{const w=Math.max(2,Math.max(0,vals[i])/top*span), y=i*row+6;
+    return `<g><title>${esc(e.id)}: ${vals[i]}</title><text class="chart-label chart-name" x="${left-10}" y="${y+14}" text-anchor="end">${esc(clip(shortId(e.id)))}</text><rect class="chart-track" x="${left}" y="${y}" width="${span}" height="18" rx="3"/><rect class="chart-bar" x="${left}" y="${y}" width="${w.toFixed(1)}" height="18" rx="3"/><text class="chart-label chart-value" x="${left+span+10}" y="${y+14}">${esc(vals[i])}</text></g>`;}).join("")}</svg></div><p class="chart-caption">${esc(profile()?.metric||"Score")} at the full tier, one bar per run · Check seeds and conditions before comparing</p>`;
 }
 function recentArtifacts() {
   const preferred=["paper.md","scientific_review.md","ideas.md","directions.md","lit_review.md","demo.md","experiments.jsonl"];
@@ -194,6 +206,8 @@ function recentArtifacts() {
 }
 function jobPanel() {
   const jobs=state.detail.jobs, selected=jobs.find(j=>j.id===state.job);
+  // A recorded run that never ran anything here has no task history to show.
+  if(state.detail.config.readonly&&!jobs.length)return "";
   const activity=state.detail.activity||[];
   const events=activity.length?`<details class="agent-activity"><summary>Recent model activity · ${activity.length} events</summary>${activity.map(a=>`<div class="list-row"><div class="grow"><strong>${esc(a.agent)}</strong><small>Attempt ${esc(a.attempt)} · ${timeText(a.timestamp)}</small></div>${tag(a.event==="started"?"Started":({accepted:"Validated",rejected:"Validation failed",invalid_json:"Invalid output format",exception:"Request error"}[a.status]||a.status),a.status==="accepted"?"green":a.event==="started"?"blue":"amber")}</div>`).join("")}</details>`:"";
   return panel("Task history",(jobs.length?`<div>${jobs.slice(0,6).map(j=>`<button class="list-row task-row ${j.id===state.job?"selected":""}" data-job="${j.id}">${icon(j.status==="running"?"clock":"file")}<div class="grow"><strong>${esc(j.label)}</strong><small>${timeText(j.started)}</small></div>${tag(statusLabels[j.status],statusColors[j.status])}</button>`).join("")}</div>${selected?`<div class="task-summary row space-between"><span>${esc(selected.label)} · ${statusLabels[selected.status]}</span>${selected.status==="running"?`<button class="btn small danger" data-cancel="${selected.id}">${icon("stop")} Stop task</button>`:""}</div><pre class="log" id="job-log">${esc(state.log)||"Waiting for task output…"}</pre>`:""}`:empty("No tasks yet","Start a research or experiment task to see live logs here.","","","clock"))+events);
@@ -209,7 +223,7 @@ function research() {
     (s.steer?.interest?panel("Your research intent",`<div class="panel-body"><p>${esc(s.steer.interest)}</p>${s.steer.hunches?.length?`<div class="tags">${s.steer.hunches.map(h=>tag(h)).join("")}</div>`:""}</div>`)+`<div class="spacer"></div>`:"")+
     panel("Literature review",fileExists("lit_review.md")?`<div class="list-row"><div class="file-icon">${icon("book")}</div><div class="grow"><strong>Literature review and research gaps</strong><small>Themes, paper notes, open questions, and sources</small></div>${artifactButton("lit_review.md","Read review")}</div>`:empty("Start with your question","Share your interests and hypotheses to focus the literature search on questions that matter to you."))+
     `<div class="spacer"></div><div class="section-title"><h2>Research directions ${dirs.length?tag(dirs.length+" directions"):""}</h2>${dirs.length?button("ideas","Choose directions and generate ideas","soft"):""}</div>`+
-    (dirs.length?`<div class="cards">${dirs.map((d,i)=>`<article class="panel direction-card"><div class="row space-between"><span class="card-number">DIRECTION 0${i+1}</span>${tag({develops:"Develops hypothesis",challenges:"Challenges hypothesis",outside:"New perspective",author:"Your direction"}[d.stance]||d.stance||d.origin,s.chosen_directions?.includes(d.id)?"green":"")}</div><h3>${esc(d.name)}</h3><p>${esc(d.thesis)}</p><p><strong>Open question</strong><br>${esc(d.open_question)}</p><div class="card-meta">First experiment: ${esc(d.first_experiment)}</div>${button("ideas","Generate ideas in this direction","",{directions:String(i+1)})}</article>`).join("")}</div>`:panel("Direction map",(state.detail.config.readonly?recorded("directions.md","The direction map is kept as a document","Read directions"):empty("Turn the literature into directions","The direction map identifies testable questions, low-cost first experiments, and likely failure modes."))))+
+    (dirs.length?`<div class="cards idea-list">${dirs.map(directionCard).join("")}</div>`:panel("Direction map",(state.detail.config.readonly?recorded("directions.md","The direction map is kept as a document","Read directions"):empty("Turn the literature into directions","The direction map identifies testable questions, low-cost first experiments, and likely failure modes."))))+
     `<div class="spacer"></div>${jobPanel()}`;
 }
 function ideas() {
@@ -223,8 +237,8 @@ function experiments() {
   const d=state.detail;
   return heading("Put ideas to the test","From small-scale screening to full evaluation, every run is recorded.","03 / EXPERIMENTS")+
     `<div class="action-row">${button(d.config.mode==="demo"?"demo":"campaign",busy()?"Experiments running":d.config.mode==="demo"?"Run offline demo":"Start / resume experiments","primary")}${button("iterate","Assess next research steps")}${button("review","Submit for scientific review")}</div>`+
-    stats()+panel("Full evaluation trend",chart())+`<div class="spacer"></div>`+
-    panel("Experiment records",d.entries.length?`<div class="table-wrap"><table><thead><tr><th>Experiment ID</th><th>Stage</th><th>Role / purpose</th><th>${esc(profile()?.metric||"Metric")}</th><th>Result</th><th>Hypothesis</th></tr></thead><tbody>${d.entries.slice().reverse().map(e=>`<tr><td class="mono">${esc(e.id)}</td><td>${tag(e.fidelity?.join(" / ")||"—","outline")}</td><td>${esc(e.role||e.purpose||"exploration")}</td><td class="score">${e.score===null||e.score===undefined?"—":esc(e.score)}</td><td>${tag({kept:"Kept",discarded:"Discarded",killed:"Failed",pending:"Pending"}[e.verdict]||e.verdict,e.verdict==="kept"?"green":e.verdict==="killed"?"red":"")}</td><td class="long" title="${esc(e.hypothesis?.claim)}">${esc(e.hypothesis?.claim)}</td></tr>`).join("")}</tbody></table></div>`:empty("No experiments yet","Select a research idea, then set the rounds, parallel workers, and cumulative training budget."),fileExists("experiments.jsonl")?artifactButton("experiments.jsonl","Raw records"):"")+
+    stats()+panel("Full evaluation results",chart())+`<div class="spacer"></div>`+
+    panel("Experiment records",d.entries.length?`<div class="table-wrap"><table><thead><tr><th>Experiment ID</th><th>Stage</th><th>Role / purpose</th><th>${esc(profile()?.metric||"Metric")}</th><th>Result</th><th>Hypothesis</th></tr></thead><tbody>${d.entries.slice().reverse().map(e=>`<tr><td class="mono" title="${esc(e.id)}">${esc(shortId(e.id))}</td><td>${tag(e.fidelity?.join(" / ")||"—","outline")}</td><td>${esc(e.role||e.purpose||"exploration")}</td><td class="score">${e.score===null||e.score===undefined?"—":esc(e.score)}</td><td>${tag({kept:"Kept",discarded:"Discarded",killed:"Failed",pending:"Pending"}[e.verdict]||e.verdict,e.verdict==="kept"?"green":e.verdict==="killed"?"red":"")}</td><td class="long" title="${esc(e.hypothesis?.claim)}">${esc(e.hypothesis?.claim)}</td></tr>`).join("")}</tbody></table></div>`:empty("No experiments yet","Select a research idea, then set the rounds, parallel workers, and cumulative training budget."),fileExists("experiments.jsonl")?artifactButton("experiments.jsonl","Raw records"):"")+
     `<div class="spacer"></div>${fileExists("research_iterations.json")?panel("Research iteration recommendations",`<div class="list-row"><div class="grow"><strong>Competing explanations, distinguishing experiments, and remaining uncertainty</strong><small>Recommendations need scientific review before becoming a frozen experiment protocol.</small></div>${artifactButton("research_iterations.json","View recommendations")}</div>`)+`<div class="spacer"></div>`:""}${jobPanel()}`;
 }
 function protocols(kind="agenda") {
