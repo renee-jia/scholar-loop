@@ -314,12 +314,12 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .welcome-art .orbit-card { fill: var(--paper); stroke: var(--line-strong); }
 .welcome-art .orbit-symbol { stroke: var(--muted); }
 
-/* A finished study or a recorded run: there is something to read, nothing left to do. */
-.callout.ready { background: #e7f1df; border-color: #bcd3a8; }
-.callout.ready .callout-icon { color: var(--success); }
+/* Slate blue for primary actions; a finished study or a recorded run is marked in its pale tint. */
+.btn.primary { color: #fffefa; background: #3f566b; border-color: #3f566b; }
+.btn.primary:hover { background: #364b5e; border-color: #364b5e; }
+.new-button .icon { color: #c9d8e4; }
+.callout.ready { background: #eaf0f4; border-color: #c3d2de; }
+.callout.ready .callout-icon { color: #3f566b; }
 .welcome-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-
-/* Primary actions in the same light green as a finished study. */
-.btn.primary { color: #2f4527; background: #dcebd0; border-color: #b9d1a6; }
-.btn.primary:hover { background: #cfe2c0; border-color: #a7c391; }
-.new-button .icon { color: #4f6b3f; }
+/* Completed steps of the progress line. */
+.workflow-step.done .step-circle { background: #3d5a40; border-color: #3d5a40; color: #fffefa; }

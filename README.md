@@ -111,7 +111,7 @@ Your browser opens on `http://127.0.0.1:8765`. Click **Explore a real run** to w
 [recorded runs](examples/sample_runs/), from the author's steer to the reviewed paper and the
 evidence behind each sentence. No API key, no GPU.
 
-![The ScholarLoop web UI on a recorded run, at the scientific review](assets/ui-workspace.jpg)
+![The ScholarLoop web UI showing the overview of a recorded run](assets/ui-workspace.jpg)
 
 | I want to… | Run | Costs |
 |---|---|---|
