@@ -25,8 +25,9 @@ DOMAIN_LABELS = {
     "digits-mlp": "Handwritten digit classification (small MLP)",
     "seq-distill": "Sequence-model distillation (small transformer student)",
     "image-classification": "Image classification (simulated scores, offline demo)",
-    "cheater": "Test profile whose training code tries to cheat the scorer",
 }
+# The guard tests' profile: its training code tries to cheat the scorer. Not a research domain.
+HIDDEN_DOMAINS = {"cheater"}
 
 
 def read_json(path, default=None):
@@ -58,6 +59,8 @@ class Store:
         for path in sorted((self.workspace / "profiles").glob("*.yaml")):
             try:
                 p = load_profile(path)
+                if p.name in HIDDEN_DOMAINS:
+                    continue
                 profiles.append({"id": path.name, "name": DOMAIN_LABELS.get(p.name, p.name), "metric": p.metric.name,
                                  "direction": p.metric.direction, "baseline": p.best_baseline(),
                                  "datasets": list(p.datasets), "knobs": p.knobs})

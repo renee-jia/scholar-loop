@@ -369,3 +369,10 @@ def test_every_shipped_run_opens_read_only_and_is_shown_as_recorded(app):
         assert "/Users/" not in app.store.artifact(runs[name]["id"], "scientific_review.json")
         with pytest.raises(ValueError, match="read-only"):
             app.jobs.start(runs[name]["id"], "campaign", {})
+
+
+def test_the_guard_test_profile_is_not_offered_as_a_research_domain(app):
+    offered = {p["id"] for p in app.store.profiles()}
+    assert "digits-mlp.yaml" in offered and "cheater.yaml" not in offered
+    with pytest.raises(ValueError, match="Unknown domain"):
+        app.store.create({"title": "t", "profile": "cheater.yaml"})
