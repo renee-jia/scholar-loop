@@ -14,7 +14,7 @@ approved argument says the protocol neither supports nor falsifies the predictio
 Scientific review took seven rounds and two author approvals. The simulated reviewers gave the
 paper 2.7 out of 10. Model spend through the reviewed paper: $25.66.
 
-The older capture in [`../digits`](../digits/) is a different, earlier run on the same engine.
+The older capture in [`../digits_early`](../digits_early/) is a different, earlier run on the same engine.
 
 Open it in the web UI: start `python3 -m scholarloop.ui` from the repository root and click
 **Explore a real run**. The run is read-only there.
