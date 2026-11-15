@@ -314,12 +314,14 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .welcome-art .orbit-card { fill: var(--paper); stroke: var(--line-strong); }
 .welcome-art .orbit-symbol { stroke: var(--muted); }
 
-/* Slate blue for primary actions; a finished study or a recorded run is marked in its pale tint. */
-.btn.primary { color: #fffefa; background: #3f566b; border-color: #3f566b; }
-.btn.primary:hover { background: #364b5e; border-color: #364b5e; }
-.new-button .icon { color: #c9d8e4; }
-.callout.ready { background: #eaf0f4; border-color: #c3d2de; }
-.callout.ready .callout-icon { color: #3f566b; }
+/* Warm charcoal for primary actions, softer than the ink black. A finished study or a recorded
+   run sits on the neutral surface. Deep green appears only where something is done: the
+   completed steps of the progress line and the mark on a finished study. */
+:root { --action: #4f483e; --action-hover: #433d34; --done: #3d5a40; }
+.btn.primary { color: var(--paper); background: var(--action); border-color: var(--action); }
+.btn.primary:hover { background: var(--action-hover); border-color: var(--action-hover); }
+.new-button .icon { color: #e8b59e; }
+.callout.ready { background: var(--surface); border-color: #d6d0c3; }
+.callout.ready .callout-icon { color: var(--done); }
+.workflow-step.done .step-circle { background: var(--done); border-color: var(--done); color: var(--paper); }
 .welcome-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-/* Completed steps of the progress line. */
-.workflow-step.done .step-circle { background: #3d5a40; border-color: #3d5a40; color: #fffefa; }
