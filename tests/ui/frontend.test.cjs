@@ -254,7 +254,10 @@ test("a finished study is marked ready, and the recorded runs are one click away
 test("ideas are listed one per row",()=>{
   const h=harness();
   h.state.detail.session.ideas=[{idea_id:"i1",title:"A",description:"d",hypothesis:{claim:"c"},experiment_plan:"p",sources:[]}];
-  assert.match(h.run("ideas()"),/class="cards idea-list"/);
+  h.state.detail.session.ideas[0].experiment_plan="Train five seeds. Compare both arms.";
+  const html=h.run("ideas()");
+  assert.match(html,/class="cards idea-list"/);
+  assert.match(html,/Experiment plan<\/h4><ul class="points"><li>Train five seeds\.<\/li><li>Compare both arms\.<\/li>/);
 });
 
 test("a long recorded paragraph is shown one sentence per point, words unchanged",()=>{
