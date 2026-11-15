@@ -1,0 +1,15 @@
+{
+  "exp_id": "exp_0004",
+  "status": "ok",
+  "measurements": {
+    "val_top1_err.verify": {
+      "value": 3.592,
+      "seeds": [
+        3.4722,
+        3.8194,
+        3.4843
+      ],
+      "std": 0.1971
+    }
+  }
+}

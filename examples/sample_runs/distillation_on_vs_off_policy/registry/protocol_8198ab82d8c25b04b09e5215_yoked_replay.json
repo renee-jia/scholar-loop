@@ -1,0 +1,17 @@
+{
+  "exp_id": "protocol_8198ab82d8c25b04b09e5215_yoked_replay",
+  "status": "ok",
+  "measurements": {
+    "val_invalid_rate.full": {
+      "value": 11.0,
+      "seeds": [
+        4.2,
+        7.8,
+        24.0,
+        3.0,
+        16.0
+      ],
+      "std": 8.8668
+    }
+  }
+}

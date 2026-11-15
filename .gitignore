@@ -16,6 +16,8 @@ venv/
 ledger.jsonl
 registry/
 runs/
+# ...except in the recorded runs shipped as examples, where the registry is the evidence
+!examples/sample_runs/*/registry/
 
 # Local tooling / editor config
 .claude/

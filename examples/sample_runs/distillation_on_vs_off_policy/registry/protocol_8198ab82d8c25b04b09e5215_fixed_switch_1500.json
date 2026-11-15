@@ -1,0 +1,17 @@
+{
+  "exp_id": "protocol_8198ab82d8c25b04b09e5215_fixed_switch_1500",
+  "status": "ok",
+  "measurements": {
+    "val_invalid_rate.full": {
+      "value": 15.0,
+      "seeds": [
+        19.6,
+        11.8,
+        10.2,
+        16.2,
+        17.2
+      ],
+      "std": 3.8962
+    }
+  }
+}

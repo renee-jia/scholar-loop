@@ -1,0 +1,17 @@
+{
+  "exp_id": "protocol_8198ab82d8c25b04b09e5215_pure_on_policy",
+  "status": "ok",
+  "measurements": {
+    "val_invalid_rate.full": {
+      "value": 9.04,
+      "seeds": [
+        23.2,
+        10.6,
+        4.6,
+        2.6,
+        4.2
+      ],
+      "std": 8.4787
+    }
+  }
+}

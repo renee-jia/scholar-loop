@@ -1,0 +1,113 @@
+{
+  "protocol_id": "8198ab82d8c25b04b09e52158075ce48f69b4306524857080af1a75da198b2b6",
+  "metric": "val_invalid_rate",
+  "comparisons": [
+    {
+      "condition": "pure_on_policy",
+      "reference_run": "protocol_8198ab82d8c25b04b09e5215_off_policy_ref",
+      "treatment_run": "protocol_8198ab82d8c25b04b09e5215_pure_on_policy",
+      "status": "complete",
+      "seed_ids": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "deltas": [
+        7.399999999999999,
+        -0.40000000000000036,
+        -6.200000000000001,
+        -15.799999999999999,
+        -9.8
+      ],
+      "mean_difference": -4.960000000000001
+    },
+    {
+      "condition": "fixed_switch_1500",
+      "reference_run": "protocol_8198ab82d8c25b04b09e5215_off_policy_ref",
+      "treatment_run": "protocol_8198ab82d8c25b04b09e5215_fixed_switch_1500",
+      "status": "complete",
+      "seed_ids": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "deltas": [
+        3.8000000000000007,
+        0.8000000000000007,
+        -0.6000000000000014,
+        -2.1999999999999993,
+        3.1999999999999993
+      ],
+      "mean_difference": 1.0
+    },
+    {
+      "condition": "adaptive_tau25",
+      "reference_run": "protocol_8198ab82d8c25b04b09e5215_off_policy_ref",
+      "treatment_run": "protocol_8198ab82d8c25b04b09e5215_adaptive_tau25",
+      "status": "complete",
+      "seed_ids": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "deltas": [
+        -0.20000000000000107,
+        -0.8000000000000007,
+        0.1999999999999993,
+        -4.399999999999999,
+        -0.40000000000000036
+      ],
+      "mean_difference": -1.1200000000000003
+    },
+    {
+      "condition": "yoked_replay",
+      "reference_run": "protocol_8198ab82d8c25b04b09e5215_off_policy_ref",
+      "treatment_run": "protocol_8198ab82d8c25b04b09e5215_yoked_replay",
+      "status": "complete",
+      "seed_ids": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "deltas": [
+        -11.600000000000001,
+        -3.2,
+        13.2,
+        -15.399999999999999,
+        2.0
+      ],
+      "mean_difference": -3.0
+    },
+    {
+      "condition": "corrupt_prefix",
+      "reference_run": "protocol_8198ab82d8c25b04b09e5215_off_policy_ref",
+      "treatment_run": "protocol_8198ab82d8c25b04b09e5215_corrupt_prefix",
+      "status": "complete",
+      "seed_ids": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "deltas": [
+        4.599999999999998,
+        5.399999999999999,
+        3.1999999999999993,
+        -15.2,
+        -4.199999999999999
+      ],
+      "mean_difference": -1.2400000000000007
+    }
+  ],
+  "scientific_outcome": "unreviewed",
+  "caveat": "Descriptive paired differences only; incomplete pairs produce no aggregate. Seed/fold observations may be dependent. This analysis does not resolve review issues."
+}

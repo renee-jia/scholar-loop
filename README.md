@@ -341,25 +341,31 @@ no listed price is refused.
 
 ```text
 scholarloop/
-├── core/            agent harness, model clients, profiles, ledger, registry, budgets
-├── ideation/        retrieval, literature review, steer and direction map, ideator, tournament, meta-review
-├── experiment/      orchestrator, runner, reasoner, debate, advisor, reflector, governor,
-│                    experiment agenda, research cycle, comparisons
-├── review/          evidence dossier, critics, issue history, author release
-├── writing/         staged writing session, one-shot fallback, writing guides
-├── reliability.py   fault injection, attempt-log analysis, single-call baseline
-└── evaluation.py    read-only run diagnostics
-engines/             prepare.py (frozen) + train.py (editable) per domain
-profiles/            domain profiles
-examples/            demos, the live flow, the case-study script, a captured run
-assets/              the workflow diagram and the script that draws it
-tests/               mirrors the package and runs offline
+├── core/              agent harness, model clients, profiles, ledger, registry, budgets
+├── ideation/          retrieval, literature review, steer and direction map, ideator, tournament, meta-review
+├── experiment/        orchestrator, runner, reasoner, debate, advisor, reflector, governor,
+│                      experiment agenda, research cycle, comparisons
+├── review/            evidence dossier, critics, issue history, author release
+├── writing/           staged writing session, one-shot fallback, writing guides
+├── ui/                the local web UI: server, job runner, run store, static front end
+├── reliability.py     fault injection, attempt-log analysis, single-call baseline, claim audit, ablation
+├── fidelity_study.py  does a campaign test the idea it was handed, with and without enforcement
+├── human_eval.py      builds the blinded rater packet for the claim audit and scores the returns
+├── replay.py          replays, traces and checks a recorded run
+└── evaluation.py      read-only run diagnostics
+engines/               prepare.py (frozen) + train.py (editable) per domain
+profiles/              domain profiles
+examples/              runnable scripts, each listed in examples/README.md
+└── sample_runs/       four recorded runs with their records; browse them in the web UI
+assets/                the workflow diagram, the script that draws it, a UI screenshot
+tests/                 mirrors the package and runs offline; tests/ui also has the front-end tests
 ```
 
-Command-line entry points, each with `--help`: `python -m scholarloop.ideation`, `.review`,
-`.writing`, `.reliability`, `.evaluation`, `.experiment.agenda`, `.experiment.research_cycle`,
-`.experiment.suite`, `.experiment.decision_bench`, `.experiment.decision_policy`,
-`.ideation.pilot`.
+Command-line entry points, each with `--help`: `python -m scholarloop.ui` (also installed as
+`scholarloop-ui`), `python -m scholarloop.ideation`, `.review`, `.writing`, `.reliability`,
+`.evaluation`, `.fidelity_study`, `.human_eval`, `.experiment.agenda`,
+`.experiment.research_cycle`, `.experiment.suite`, `.experiment.decision_bench`,
+`.experiment.decision_policy`, `.ideation.pilot`.
 
 ## 📌 Limits
 

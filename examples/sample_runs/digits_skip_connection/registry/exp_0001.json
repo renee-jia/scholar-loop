@@ -1,0 +1,13 @@
+{
+  "exp_id": "exp_0001",
+  "status": "ok",
+  "measurements": {
+    "val_top1_err.smoke": {
+      "value": 3.4722,
+      "seeds": [
+        3.4722
+      ],
+      "std": 0.0
+    }
+  }
+}

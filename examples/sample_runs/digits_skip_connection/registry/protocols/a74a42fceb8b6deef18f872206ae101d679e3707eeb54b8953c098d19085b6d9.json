@@ -1,0 +1,452 @@
+{
+  "schema_version": 1,
+  "source_kind": "idea_study",
+  "source_handoff_hash": "fbd2609eacd58a0bd86017403969ea820bf1159cedba8b79b0969fdbdcfe0b67",
+  "source_input_hash": "db8f85f85da5a1bbe5eaeef21a93264c4e308f23f3e36a301b4488abaa277b54",
+  "idea": {
+    "title": "Pre-registered paired equivalence test: zero-parameter identity skip vs. weight-identical plain MLP on sklearn-digits",
+    "description": "This is the grounded version of the author's two-arm idea. Both arms share one architecture: an input projection 64→W (W = hidden = 128), then two hidden blocks f_l(h) = ReLU(Linear_{W→W}(h)), then a 10-way head. The residual arm computes h_{l+1} = h_l + f_l(h_l). The plain arm computes h_{l+1} = f_l(h_l). The identity skip has no weights, so the two arms have exactly the same parameter tensors by construction and need no width compensation. To isolate the path, each seed gives both arms bit-identical initial weights, the same minibatch order and the same number of optimizer steps. The only difference left is the '+ h_l' term. The primary contrast is pre-registered as a TOST equivalence test on the paired difference in final val_top1_err, with margin ±0.5 pp. That makes a null decisive rather than inconclusive. The 'trains differently' confound is handled in two ways. Each arm gets its own lr, picked on an inner split carved from the training data only. As a robustness check, both arms also run at a shared lr grid. Step-resolved validation curves separate speed from final error.",
+    "gap": "Open gap 1 (parameter- and step-matched two-arm test at shallow depth, 20+ seeds with CIs), with gap 3 (fixed budget vs. convergence) folded in as a secondary readout.",
+    "sources": [
+      "arXiv:1909.04653",
+      "openalex:W3007689282",
+      "arXiv:1605.07648",
+      "arXiv:1608.02908"
+    ],
+    "hypothesis": {
+      "claim": "At two hidden blocks on sklearn-digits, the identity skip makes no practically meaningful difference to final validation error once parameters, initial weights, data order, step count and per-arm lr are matched (H1). Any effect is confined to early-training speed, consistent with the optimization-landscape account in [arXiv:1909.04653] and the depth-scaled shallow-path account in [openalex:W3007689282], which predicts a factor near 1 at this depth.",
+      "predicted_effect": "The paired mean difference (residual − plain) in final val_top1_err has a 90% CI inside [−0.5, +0.5] pp, so equivalence is declared. Both arms are near or below the 3.8% logistic baseline. At early steps (about 10–20% of the budget) the residual arm may lead by more than 0.5 pp, and that gap closes by the end of training."
+    },
+    "experiment_plan": "Architecture edit: add a boolean 'skip' flag to the block forward pass. With depth=2 and hidden=128, the parameter count is identical in both arms; assert this in code. For seeds s = 1..30, initialize the model once from seed s and deep-copy it into both arms. Use the same data-loader generator seed, SGD, and epochs=120 so step counts are equal. Keep weight_decay at 1e-4 and do not vary it, so this stays out of regularization studies. Lr selection: hold out 20% of the training split as an inner validation set. For each arm, pick lr from {0.01, 0.02, 0.05, 0.1, 0.2} by mean inner-val error over 5 tuning seeds that are disjoint from s = 1..30. Then retrain on the full training split and score on the official validation split. Robustness: run all 5 lr values for both arms over 10 seeds and report the paired gap per lr. Logging: record val_top1_err every epoch and report (i) final error, (ii) best-over-steps error, and (iii) area under the error curve. Analysis: paired TOST at α = 0.05 with margin 0.5 pp on final error (primary). Secondary: paired bootstrap CIs on best-over-steps error and AUC. Compare both arms against the 3.8 baseline. Cost is about 30×2 + 5×5×2 + 10×5×2 ≈ 210 CPU runs, each a few seconds.",
+    "novelty_rationale": "The reviewed papers either study deep conv nets ([arXiv:1608.02908], [arXiv:1605.07648], [openalex:W3007689282]) or stylized two-layer conv theory with no empirical capacity-matched baseline ([arXiv:1909.04653]). None runs a paired comparison with weight-identical initialization, parameters that are exactly matched by construction, a per-arm lr chosen on a disjoint split, and a pre-registered equivalence margin. I cannot rule out that such a test exists in the broader literature; the novelty queries target that.",
+    "feasibility": 5,
+    "impact": 3,
+    "novelty": {
+      "closest_paper": "openalex:W3007689282",
+      "closest_title": "Batch Normalization Biases Deep Residual Networks Towards Shallow Paths",
+      "paper_overlap": 0.12,
+      "closest_tried": null,
+      "tried_overlap": 0.0,
+      "flag": false,
+      "reason": ""
+    },
+    "tournament": {
+      "elo": 1245.8,
+      "rank": 1,
+      "wins": 3,
+      "losses": 0,
+      "draws": 1,
+      "near_duplicates": []
+    },
+    "selected": true,
+    "idea_id": "idea_b1977222a2e27c41d0442990",
+    "strategy": "mechanism",
+    "design": {
+      "mechanism": "The identity skip changes the optimization trajectory: early in training the function stays near the input projection's features, and the loss landscape is better conditioned ([arXiv:1909.04653], [openalex:W3007689282]). It does not change capacity, since the parameter set is identical. At depth 2 the shallow-path downscaling factor is about 1, so the trajectory difference should mainly affect speed, not the endpoint.",
+      "intervention": "Toggle only the '+ h_l' term. Initial weights, data order, steps, weight decay and parameter tensors are held bit-identical per seed. Lr is chosen per arm on a disjoint inner split.",
+      "assumptions": [
+        "Paired seeding (identical init and minibatch order) lowers the variance of the paired difference enough for 30 seeds to resolve a ±0.5 pp equivalence margin on a validation split of about 360 images.",
+        "120 epochs is close enough to convergence for both arms that 'final error' means something; this is checked from the curves.",
+        "A residual stream without normalization does not blow up at depth 2 with default init. Activation norms are logged to verify this."
+      ],
+      "minimal_test": "Run 5 seeds per arm at lr=0.05. Check that parameter counts are equal, that initial weights match exactly, and that both arms train to under about 6% error. Then run the full 30-seed paired TOST.",
+      "kill_criterion": "Two outcomes would go against H1. (a) The paired 90% CI of final error lies entirely below −0.5 pp, meaning the residual arm is clearly better, under both per-arm-tuned lr and at least 4 of 5 shared lr values. (b) The CI straddles the margin, in which case the test is inconclusive and more seeds are needed before any claim is made. If the residual arm is better only at a single lr, the result is attributed to lr sensitivity, not the path.",
+      "confound_controls": [
+        "Parameter count is identical by construction (the skip has no weights), checked by an assertion in code.",
+        "Initial weights and minibatch order are bit-identical per seed across arms.",
+        "Optimizer steps and epochs are equal.",
+        "Lr is selected per arm on an inner split disjoint from the scored validation set, plus a shared-lr robustness sweep.",
+        "Weight decay is fixed and not tuned, so no regularization confound is introduced."
+      ],
+      "resource_risk": "Low compute (about 210 short CPU runs). The main risk is statistical: validation-set granularity is about 0.28 pp per image, so the margin has to stay at or above 0.5 pp. Without normalization the residual stream could grow; if activations diverge, that is an implementation issue and not evidence.",
+      "novelty_queries": [
+        "paired identical initialization residual vs plain MLP equivalence test small dataset",
+        "shallow MLP identity skip connection parameter matched ablation"
+      ]
+    },
+    "novelty_review": {
+      "status": "provisional_difference",
+      "summary": "Judging only from the supplied abstracts, no retrieved paper runs a paired, weight-identical, parameter-matched identity-skip vs plain MLP comparison at shallow depth with a pre-registered equivalence margin. The overlap is mostly at the level of mechanism. FractalNet argues that residuals are not essential. The BN paper gives the shallow-path downscaling account the candidate relies on. The two-layer ResNet theory paper gives an optimization account of shortcuts. The Hourglass MLP paper uses parameter-matched MLP skip designs, but it compares skip placement, not skip versus no skip. This is a provisional difference, not verified novelty. Abstracts may omit relevant ablations, and only one targeted result was retrieved.",
+      "comparisons": [
+        {
+          "paper_id": "arXiv:1605.07648",
+          "shared_mechanism": "Both ask whether residual pass-through connections are essential to performance, versus training dynamics such as the transition from shallow to deep.",
+          "difference": "FractalNet studies ultra-deep conv nets with alternative multi-path structures on CIFAR and ImageNet. It does not appear to toggle only an identity skip in a weight-identical shallow MLP with paired seeds and an equivalence test.",
+          "supporting_excerpt": "fractal networks match the excellent performance of standard residual networks on both CIFAR and ImageNet classification tasks"
+        },
+        {
+          "paper_id": "openalex:W3007689282",
+          "shared_mechanism": "The candidate's mechanism is that the skip keeps the early function near identity, and that the downscaling factor depends on depth and is about 1 at depth 2. This comes directly from this paper.",
+          "difference": "The paper concerns batch normalization in deep residual nets and an initialization scheme. It does not compare residual and plain arms at fixed parameters in shallow MLPs.",
+          "supporting_excerpt": "batch normalization downscales the residual branch relative to the skip connection"
+        },
+        {
+          "paper_id": "arXiv:1909.04653",
+          "shared_mechanism": "Both use an optimization-landscape account: shortcut connections help gradient descent avoid bad optima, which affects the training trajectory rather than capacity.",
+          "difference": "This is a theoretical analysis of a stylized two-layer conv ResNet with special initialization and only supporting numerics. It reports no paired, capacity-matched empirical baseline or equivalence test.",
+          "supporting_excerpt": "we study a two-layer non-overlapping convolutional ResNet"
+        },
+        {
+          "paper_id": "arXiv:2510.01796",
+          "shared_mechanism": "Both use parameter-matched comparisons of skip-connection designs in MLP blocks.",
+          "difference": "This paper compares where skips are placed (wide-narrow-wide vs narrow-wide-narrow) on generative tasks. It does not compare an identity skip against no skip under identical weights, and it does not use classification error or equivalence testing.",
+          "supporting_excerpt": "maintaining computational efficiency through parameter-matched designs"
+        },
+        {
+          "paper_id": "arXiv:1608.02908",
+          "shared_mechanism": "Both concern how shortcut connections affect how easily residual networks optimize.",
+          "difference": "RoR adds extra multilevel shortcuts to deep residual conv nets to improve state-of-the-art accuracy. It does not ablate a single skip against a plain network with controls.",
+          "supporting_excerpt": "RoR adds levelwise shortcut connections upon original residual networks"
+        }
+      ],
+      "remaining_search": [
+        "Full-text check of arXiv:1909.04653 numerical experiments, to see whether they include a residual vs no-shortcut comparison with matched initialization.",
+        "Full-text check of openalex:W3007689282 empirical study, to see whether it includes shallow-depth residual vs plain ablations.",
+        "Broader retrieval on skip vs no-skip ablations in shallow MLPs or small datasets (e.g., MNIST, digits, tabular), including the original ResNet plain-net comparisons and Veit et al. on ensembles of shallow paths.",
+        "Search for equivalence testing (TOST) or paired-seed designs in architecture ablation and deep learning reproducibility literature.",
+        "Search for work on identical-initialization paired comparisons and on learning-rate tuning fairness in architecture comparisons (e.g., per-arm hyperparameter tuning studies)."
+      ],
+      "queries": [
+        "paired identical initialization residual vs plain MLP equivalence test small dataset",
+        "shallow MLP identity skip connection parameter matched ablation"
+      ],
+      "evidence_scope": "abstracts_only",
+      "papers": [
+        {
+          "title": "FractalNet: Ultra-Deep Neural Networks without Residuals",
+          "summary": "We introduce a design strategy for neural network macro-architecture based on self-similarity. Repeated application of a simple expansion rule generates deep networks whose structural layouts are precisely truncated fractals. These networks contain interacting subpaths of different lengths, but do not include any pass-through or residual connections; every internal signal is transformed by a filter and nonlinearity before being seen by subsequent layers. In experiments, fractal networks match the excellent performance of standard residual networks on both CIFAR and ImageNet classification tasks, thereby demonstrating that residual representations may not be fundamental to the success of extremely deep convolutional neural networks. Rather, the key may be the ability to transition, during training, from effectively shallow to deep. We note similarities with student-teacher behavior and develop drop-path, a natural extension of dropout, to regularize co-adaptation of subpaths in fractal architectures. Such regularization allows extraction of high-performance fixed-depth subnetworks. Additionally, fractal networks exhibit an anytime property: shallow subnetworks provide a quick answer, while deeper subnetworks, with higher latency, provide a more accurate answer.",
+          "arxiv_id": "arXiv:1605.07648",
+          "url": "http://arxiv.org/abs/1605.07648",
+          "citations": 955,
+          "code_url": null,
+          "year": 2016
+        },
+        {
+          "title": "Residual Networks of Residual Networks: Multilevel Residual Networks",
+          "summary": "A residual networks family with hundreds or even thousands of layers dominates major image recognition tasks, but building a network by simply stacking residual blocks inevitably limits its optimization ability. This paper proposes a novel residual network architecture, residual networks of residual networks (RoR), to dig the optimization ability of residual networks. RoR substitutes optimizing residual mapping of residual mapping for optimizing original residual mapping. In particular, RoR adds levelwise shortcut connections upon original residual networks to promote the learning capability of residual networks. More importantly, RoR can be applied to various kinds of residual networks (ResNets, Pre-ResNets, and WRN) and significantly boost their performance. Our experiments demonstrate the effectiveness and versatility of RoR, where it achieves the best performance in all residual-network-like structures. Our RoR-3-WRN58-4 + SD models achieve new state-of-the-art results on CIFAR-10, CIFAR-100, and SVHN, with the test errors of 3.77%, 19.73%, and 1.59%, respectively. RoR-3 models also achieve state-of-the-art results compared with ResNets on the ImageNet data set.",
+          "arxiv_id": "arXiv:1608.02908",
+          "url": "http://arxiv.org/abs/1608.02908",
+          "citations": 415,
+          "code_url": null,
+          "year": 2017
+        },
+        {
+          "title": "Batch Normalization Biases Deep Residual Networks Towards Shallow Paths",
+          "summary": "Batch normalization dramatically increases the largest trainable depth of residual networks, and this benefit has been crucial to the empirical success of deep residual networks on a wide range of benchmarks. We show that this key benefit arises because, at initialization, batch normalization downscales the residual branch relative to the skip connection, by a normalizing factor on the order of the square root of the network depth. This ensures that, early in training, the function computed by normalized residual blocks in deep networks is close to the identity function (on average). We use this insight to develop a simple initialization scheme that can train deep residual networks without normalization. We also provide a detailed empirical study of residual networks, which clarifies that, although batch normalized networks can be trained with larger learning rates, this effect is only beneficial in specific compute regimes, and has minimal benefits when the batch size is small.",
+          "arxiv_id": "openalex:W3007689282",
+          "url": "https://openalex.org/W3007689282",
+          "citations": 18,
+          "code_url": null,
+          "year": 2020
+        },
+        {
+          "title": "Towards Understanding the Importance of Shortcut Connections in Residual Networks",
+          "summary": "Residual Network (ResNet) is undoubtedly a milestone in deep learning. ResNet is equipped with shortcut connections between layers, and exhibits efficient training using simple first order algorithms. Despite of the great empirical success, the reason behind is far from being well understood. In this paper, we study a two-layer non-overlapping convolutional ResNet. Training such a network requires solving a non-convex optimization problem with a spurious local optimum. We show, however, that gradient descent combined with proper normalization, avoids being trapped by the spurious local optimum, and converges to a global optimum in polynomial time, when the weight of the first layer is initialized at 0, and that of the second layer is initialized arbitrarily in a ball. Numerical experiments are provided to support our theory.",
+          "arxiv_id": "arXiv:1909.04653",
+          "url": "http://arxiv.org/abs/1909.04653",
+          "citations": 39,
+          "code_url": null,
+          "year": 2019
+        },
+        {
+          "title": "Rethinking the shape convention of an MLP",
+          "summary": "Multi-layer perceptrons (MLPs) conventionally follow a narrow-wide-narrow design where skip connections operate at the input/output dimensions while processing occurs in expanded hidden spaces. We challenge this convention by proposing wide-narrow-wide (Hourglass) MLP blocks where skip connections operate at expanded dimensions while residual computation flows through narrow bottlenecks. This inversion leverages higher-dimensional spaces for incremental refinement while maintaining computational efficiency through parameter-matched designs. Implementing Hourglass MLPs requires an initial projection to lift input signals to expanded dimensions. We propose that this projection can remain fixed at random initialization throughout training, enabling efficient training and inference implementations. We evaluate both architectures on generative tasks over popular image datasets, characterizing performance-parameter Pareto frontiers through systematic architectural search. Results show that Hourglass architectures consistently achieve superior Pareto frontiers compared to conventional designs. As parameter budgets increase, optimal Hourglass configurations favor deeper networks with wider skip connections and narrower bottlenecks-a scaling pattern distinct from conventional MLPs. Our findings suggest reconsidering skip connection placement in modern architectures, with potential applications extending to Transformers and other residual networks.",
+          "arxiv_id": "arXiv:2510.01796",
+          "url": "http://arxiv.org/abs/2510.01796",
+          "citations": 4,
+          "code_url": null,
+          "year": 2025
+        }
+      ],
+      "retrieval_returned": 1
+    },
+    "status": "candidate",
+    "direction": "dir_0369ab623f",
+    "steer_link": "This acts directly on H1 and the author's request for a two-arm parameter-matched control. It tells the author whether the skip path itself changes final error on digits beyond a ±0.5 pp margin, or only training speed, with capacity, init, data order, steps and lr all removed as explanations."
+  },
+  "spec": {
+    "purpose": "falsification",
+    "hypothesis": "H1: in a 2-block, width-128 MLP on sklearn-digits, the zero-parameter identity skip (h_{l+1} = h_l + ReLU(W_l h_l + b_l)) makes no practically meaningful difference to final val_top1_err. The comparison is against the weight-identical plain MLP (h_{l+1} = ReLU(W_l h_l + b_l)) with matched parameter tensors, initial weights, minibatch order, optimizer step count and shared lr. Any difference is limited to optimisation speed.",
+    "predicted_observation": "At lr=0.05, the paired mean difference (resid_lr005 - plain_lr005) in final val_top1_err has magnitude under 0.5 pp, and its 90% interval lies inside [-0.5, +0.5] pp. The same holds for the lr=0.02 pair. Both arms reach roughly 2-4% error, comparable to the 3.8% logistic baseline. The DIAG training-loss logs may show the residual arm lower at early epochs, with the gap closing by epoch 119. The DIAG lines show: identical init_sha256 and data_order_sha256 across paired arms; equal n_params and total_steps; skip_path_active=1 from step 0 in the residual arms only; export max_abs_diff < 1e-3.",
+    "falsification_outcome": "H1 is falsified if the paired 90% interval of (resid - plain) final error lies entirely outside [-0.5, +0.5] pp at both lr=0.05 and lr=0.02, i.e. a consistent effect of the path larger than the margin. A clear effect at only one of the two lr values is attributed to lr sensitivity, not to the path. An interval that straddles a margin boundary is inconclusive, not support. The run is void as evidence if any of the following occurs: init or data-order hashes differ within a seed pair; the export equivalence check fails; any arm diverges (non-finite loss or exploding act_norms).",
+    "conditions": [
+      {
+        "name": "reference",
+        "description": "Unmodified default recipe: the profile default train.py with no edits and no overrides. Anchors the runner's paired analysis; it is not part of the skip-vs-plain contrast.",
+        "config": [],
+        "edits": []
+      },
+      {
+        "name": "plain_lr005",
+        "description": "Plain arm at lr=0.05. Input projection 64->128 + ReLU, then two blocks h=ReLU(W h+b), then a 10-way head. Equivalent to build_model(depth=3, hidden=128). Minibatch SGD (batch 64, momentum 0.9, wd 1e-4), 120 epochs, seeded init and seeded minibatch order. SKIP=False.",
+        "config": [
+          {
+            "name": "lr",
+            "value": 0.05
+          },
+          {
+            "name": "hidden",
+            "value": 128
+          },
+          {
+            "name": "depth",
+            "value": 3
+          },
+          {
+            "name": "weight_decay",
+            "value": 0.0001
+          },
+          {
+            "name": "epochs",
+            "value": 120
+          }
+        ],
+        "edits": [
+          {
+            "path": "engines/torch_vision/train.py",
+            "content": "# Paired skip-vs-plain arm for digits-mlp. SKIP toggles only the '+ h' term; everything else is identical across arms.\nfrom __future__ import annotations\n\nimport hashlib\nimport json\nimport os\nimport sys\n\nimport numpy as np\nimport torch\nimport torch.nn as nn\n\nfrom engines.torch_vision import prepare\n\nSKIP = False\nBATCH = 64\nHPARAMS = {'lr': 0.05, 'hidden': 128, 'depth': 3, 'weight_decay': 1e-4, 'epochs': 120}\n\n\ndef effective_hparams():\n    return {**HPARAMS, **json.loads(os.environ.get('SCHOLARLOOP_CONFIG', '{}'))}\n\n\ndef diag(msg):\n    print('DIAG ' + msg, file=sys.stderr, flush=True)\n\n\ndef linears(model):\n    return [m for m in model if isinstance(m, nn.Linear)]\n\n\ndef forward(model, x, skip, norms=None):\n    lins = linears(model)\n    h = torch.relu(lins[0](x))\n    for lin in lins[1:-1]:\n        f = torch.relu(lin(h))\n        h = h + f if skip else f\n        if norms is not None:\n            norms.append(float(h.norm(dim=1).mean()))\n    return lins[-1](h)\n\n\ndef train_model(seed, h):\n    torch.manual_seed(seed)\n    np.random.seed(seed)\n    x_tr, y_tr = prepare.load_train()\n    W = int(h['hidden'])\n    depth = int(h['depth'])\n    model = prepare.build_model({'depth': depth, 'hidden': W})\n    n_params = sum(p.numel() for p in model.parameters())\n    expected = (64 * W + W) + (depth - 1) * (W * W + W) + (W * 10 + 10)\n    assert n_params == expected, (n_params, expected)\n    hsh = hashlib.sha256()\n    for k, v in model.state_dict().items():\n        hsh.update(k.encode())\n        hsh.update(v.detach().numpy().tobytes())\n    diag(f'skip={int(SKIP)} seed={seed} n_params={n_params} init_sha256={hsh.hexdigest()[:16]}')\n    opt = torch.optim.SGD(model.parameters(), lr=float(h['lr']), momentum=0.9,\n                          weight_decay=float(h['weight_decay']))\n    loss_fn = nn.CrossEntropyLoss()\n    xt, yt = torch.from_numpy(x_tr), torch.from_numpy(y_tr)\n    gen = torch.Generator().manual_seed(1000003 + seed)\n    n = xt.shape[0]\n    step = 0\n    order_hash = hashlib.sha256()\n    epochs = int(h['epochs'])\n    model.train()\n    for ep in range(epochs):\n        perm = torch.randperm(n, generator=gen)\n        order_hash.update(perm.numpy().tobytes())\n        for i in range(0, n, BATCH):\n            idx = perm[i:i + BATCH]\n            opt.zero_grad()\n            loss = loss_fn(forward(model, xt[idx], SKIP), yt[idx])\n            if step == 0:\n                diag(f'skip_path_active={int(SKIP)} fired_at_step=0')\n            loss.backward()\n            opt.step()\n            step += 1\n        if ep % 10 == 0 or ep == epochs - 1:\n            with torch.no_grad():\n                norms = []\n                out = forward(model, xt, SKIP, norms)\n                tl = float(loss_fn(out, yt))\n                te = float((out.argmax(1) != yt).float().mean() * 100.0)\n            diag(f'epoch={ep} step={step} train_loss={tl:.5f} train_err={te:.3f} act_norms={[round(v, 3) for v in norms]}')\n            if not np.isfinite(tl):\n                diag(f'nonfinite_loss step={step}')\n    diag(f'total_steps={step} data_order_sha256={order_hash.hexdigest()[:16]}')\n    return model\n\n\ndef export(model, h):\n    W = int(h['hidden'])\n    depth = int(h['depth'])\n    if not SKIP:\n        return {**h, 'depth': depth, 'hidden': W}, dict(model.state_dict())\n    # Exact re-expression of the residual net inside the frozen Linear/ReLU stack at width 2W.\n    # The stream is carried as [h; f]; valid because h >= 0 (sums of ReLU outputs), so ReLU(h) = h.\n    tgt = prepare.build_model({'depth': depth, 'hidden': 2 * W})\n    src, dst = linears(model), linears(tgt)\n    eye = torch.eye(W)\n    with torch.no_grad():\n        for m in dst:\n            m.weight.zero_()\n            m.bias.zero_()\n        dst[0].weight[:W] = src[0].weight\n        dst[0].bias[:W] = src[0].bias\n        for s, d in zip(src[1:-1], dst[1:-1]):\n            d.weight[:W, :W] = eye\n            d.weight[:W, W:] = eye\n            d.weight[W:, :W] = s.weight\n            d.weight[W:, W:] = s.weight\n            d.bias[W:] = s.bias\n        dst[-1].weight[:, :W] = src[-1].weight\n        dst[-1].weight[:, W:] = src[-1].weight\n        dst[-1].bias.copy_(src[-1].bias)\n        x_tr, _ = prepare.load_train()\n        xt = torch.from_numpy(x_tr)\n        model.eval()\n        tgt.eval()\n        a = forward(model, xt, True)\n        b = tgt(xt)\n        md = float((a - b).abs().max())\n        agree = float((a.argmax(1) == b.argmax(1)).float().mean())\n    diag(f'export_equivalence max_abs_diff={md:.2e} argmax_agree={agree:.6f}')\n    assert md < 1e-3, md\n    return {**h, 'depth': depth, 'hidden': 2 * W}, dict(tgt.state_dict())\n\n\ndef main():\n    seed = int(os.environ.get('SCHOLARLOOP_SEED', '0'))\n    h = effective_hparams()\n    model = train_model(seed, h)\n    cfg, sd = export(model, h)\n    torch.save({'config': cfg, 'state_dict': sd}, os.environ['SCHOLARLOOP_ARTIFACT'])\n\n\nif __name__ == '__main__':\n    main()\n"
+          }
+        ]
+      },
+      {
+        "name": "resid_lr005",
+        "description": "Residual arm at lr=0.05. Same script as plain_lr005 except SKIP=True, so h_{l+1} = h_l + ReLU(W_l h_l + b_l). The weights are exported as an exactly equivalent width-256 Linear/ReLU stack so the frozen scorer can score them; equivalence is checked in-script.",
+        "config": [
+          {
+            "name": "lr",
+            "value": 0.05
+          },
+          {
+            "name": "hidden",
+            "value": 128
+          },
+          {
+            "name": "depth",
+            "value": 3
+          },
+          {
+            "name": "weight_decay",
+            "value": 0.0001
+          },
+          {
+            "name": "epochs",
+            "value": 120
+          }
+        ],
+        "edits": [
+          {
+            "path": "engines/torch_vision/train.py",
+            "content": "# Paired skip-vs-plain arm for digits-mlp. SKIP toggles only the '+ h' term; everything else is identical across arms.\nfrom __future__ import annotations\n\nimport hashlib\nimport json\nimport os\nimport sys\n\nimport numpy as np\nimport torch\nimport torch.nn as nn\n\nfrom engines.torch_vision import prepare\n\nSKIP = True\nBATCH = 64\nHPARAMS = {'lr': 0.05, 'hidden': 128, 'depth': 3, 'weight_decay': 1e-4, 'epochs': 120}\n\n\ndef effective_hparams():\n    return {**HPARAMS, **json.loads(os.environ.get('SCHOLARLOOP_CONFIG', '{}'))}\n\n\ndef diag(msg):\n    print('DIAG ' + msg, file=sys.stderr, flush=True)\n\n\ndef linears(model):\n    return [m for m in model if isinstance(m, nn.Linear)]\n\n\ndef forward(model, x, skip, norms=None):\n    lins = linears(model)\n    h = torch.relu(lins[0](x))\n    for lin in lins[1:-1]:\n        f = torch.relu(lin(h))\n        h = h + f if skip else f\n        if norms is not None:\n            norms.append(float(h.norm(dim=1).mean()))\n    return lins[-1](h)\n\n\ndef train_model(seed, h):\n    torch.manual_seed(seed)\n    np.random.seed(seed)\n    x_tr, y_tr = prepare.load_train()\n    W = int(h['hidden'])\n    depth = int(h['depth'])\n    model = prepare.build_model({'depth': depth, 'hidden': W})\n    n_params = sum(p.numel() for p in model.parameters())\n    expected = (64 * W + W) + (depth - 1) * (W * W + W) + (W * 10 + 10)\n    assert n_params == expected, (n_params, expected)\n    hsh = hashlib.sha256()\n    for k, v in model.state_dict().items():\n        hsh.update(k.encode())\n        hsh.update(v.detach().numpy().tobytes())\n    diag(f'skip={int(SKIP)} seed={seed} n_params={n_params} init_sha256={hsh.hexdigest()[:16]}')\n    opt = torch.optim.SGD(model.parameters(), lr=float(h['lr']), momentum=0.9,\n                          weight_decay=float(h['weight_decay']))\n    loss_fn = nn.CrossEntropyLoss()\n    xt, yt = torch.from_numpy(x_tr), torch.from_numpy(y_tr)\n    gen = torch.Generator().manual_seed(1000003 + seed)\n    n = xt.shape[0]\n    step = 0\n    order_hash = hashlib.sha256()\n    epochs = int(h['epochs'])\n    model.train()\n    for ep in range(epochs):\n        perm = torch.randperm(n, generator=gen)\n        order_hash.update(perm.numpy().tobytes())\n        for i in range(0, n, BATCH):\n            idx = perm[i:i + BATCH]\n            opt.zero_grad()\n            loss = loss_fn(forward(model, xt[idx], SKIP), yt[idx])\n            if step == 0:\n                diag(f'skip_path_active={int(SKIP)} fired_at_step=0')\n            loss.backward()\n            opt.step()\n            step += 1\n        if ep % 10 == 0 or ep == epochs - 1:\n            with torch.no_grad():\n                norms = []\n                out = forward(model, xt, SKIP, norms)\n                tl = float(loss_fn(out, yt))\n                te = float((out.argmax(1) != yt).float().mean() * 100.0)\n            diag(f'epoch={ep} step={step} train_loss={tl:.5f} train_err={te:.3f} act_norms={[round(v, 3) for v in norms]}')\n            if not np.isfinite(tl):\n                diag(f'nonfinite_loss step={step}')\n    diag(f'total_steps={step} data_order_sha256={order_hash.hexdigest()[:16]}')\n    return model\n\n\ndef export(model, h):\n    W = int(h['hidden'])\n    depth = int(h['depth'])\n    if not SKIP:\n        return {**h, 'depth': depth, 'hidden': W}, dict(model.state_dict())\n    # Exact re-expression of the residual net inside the frozen Linear/ReLU stack at width 2W.\n    # The stream is carried as [h; f]; valid because h >= 0 (sums of ReLU outputs), so ReLU(h) = h.\n    tgt = prepare.build_model({'depth': depth, 'hidden': 2 * W})\n    src, dst = linears(model), linears(tgt)\n    eye = torch.eye(W)\n    with torch.no_grad():\n        for m in dst:\n            m.weight.zero_()\n            m.bias.zero_()\n        dst[0].weight[:W] = src[0].weight\n        dst[0].bias[:W] = src[0].bias\n        for s, d in zip(src[1:-1], dst[1:-1]):\n            d.weight[:W, :W] = eye\n            d.weight[:W, W:] = eye\n            d.weight[W:, :W] = s.weight\n            d.weight[W:, W:] = s.weight\n            d.bias[W:] = s.bias\n        dst[-1].weight[:, :W] = src[-1].weight\n        dst[-1].weight[:, W:] = src[-1].weight\n        dst[-1].bias.copy_(src[-1].bias)\n        x_tr, _ = prepare.load_train()\n        xt = torch.from_numpy(x_tr)\n        model.eval()\n        tgt.eval()\n        a = forward(model, xt, True)\n        b = tgt(xt)\n        md = float((a - b).abs().max())\n        agree = float((a.argmax(1) == b.argmax(1)).float().mean())\n    diag(f'export_equivalence max_abs_diff={md:.2e} argmax_agree={agree:.6f}')\n    assert md < 1e-3, md\n    return {**h, 'depth': depth, 'hidden': 2 * W}, dict(tgt.state_dict())\n\n\ndef main():\n    seed = int(os.environ.get('SCHOLARLOOP_SEED', '0'))\n    h = effective_hparams()\n    model = train_model(seed, h)\n    cfg, sd = export(model, h)\n    torch.save({'config': cfg, 'state_dict': sd}, os.environ['SCHOLARLOOP_ARTIFACT'])\n\n\nif __name__ == '__main__':\n    main()\n"
+          }
+        ]
+      },
+      {
+        "name": "plain_lr002",
+        "description": "Plain arm at the robustness lr=0.02. Script is identical to plain_lr005; only the lr knob differs.",
+        "config": [
+          {
+            "name": "lr",
+            "value": 0.02
+          },
+          {
+            "name": "hidden",
+            "value": 128
+          },
+          {
+            "name": "depth",
+            "value": 3
+          },
+          {
+            "name": "weight_decay",
+            "value": 0.0001
+          },
+          {
+            "name": "epochs",
+            "value": 120
+          }
+        ],
+        "edits": [
+          {
+            "path": "engines/torch_vision/train.py",
+            "content": "# Paired skip-vs-plain arm for digits-mlp. SKIP toggles only the '+ h' term; everything else is identical across arms.\nfrom __future__ import annotations\n\nimport hashlib\nimport json\nimport os\nimport sys\n\nimport numpy as np\nimport torch\nimport torch.nn as nn\n\nfrom engines.torch_vision import prepare\n\nSKIP = False\nBATCH = 64\nHPARAMS = {'lr': 0.05, 'hidden': 128, 'depth': 3, 'weight_decay': 1e-4, 'epochs': 120}\n\n\ndef effective_hparams():\n    return {**HPARAMS, **json.loads(os.environ.get('SCHOLARLOOP_CONFIG', '{}'))}\n\n\ndef diag(msg):\n    print('DIAG ' + msg, file=sys.stderr, flush=True)\n\n\ndef linears(model):\n    return [m for m in model if isinstance(m, nn.Linear)]\n\n\ndef forward(model, x, skip, norms=None):\n    lins = linears(model)\n    h = torch.relu(lins[0](x))\n    for lin in lins[1:-1]:\n        f = torch.relu(lin(h))\n        h = h + f if skip else f\n        if norms is not None:\n            norms.append(float(h.norm(dim=1).mean()))\n    return lins[-1](h)\n\n\ndef train_model(seed, h):\n    torch.manual_seed(seed)\n    np.random.seed(seed)\n    x_tr, y_tr = prepare.load_train()\n    W = int(h['hidden'])\n    depth = int(h['depth'])\n    model = prepare.build_model({'depth': depth, 'hidden': W})\n    n_params = sum(p.numel() for p in model.parameters())\n    expected = (64 * W + W) + (depth - 1) * (W * W + W) + (W * 10 + 10)\n    assert n_params == expected, (n_params, expected)\n    hsh = hashlib.sha256()\n    for k, v in model.state_dict().items():\n        hsh.update(k.encode())\n        hsh.update(v.detach().numpy().tobytes())\n    diag(f'skip={int(SKIP)} seed={seed} n_params={n_params} init_sha256={hsh.hexdigest()[:16]}')\n    opt = torch.optim.SGD(model.parameters(), lr=float(h['lr']), momentum=0.9,\n                          weight_decay=float(h['weight_decay']))\n    loss_fn = nn.CrossEntropyLoss()\n    xt, yt = torch.from_numpy(x_tr), torch.from_numpy(y_tr)\n    gen = torch.Generator().manual_seed(1000003 + seed)\n    n = xt.shape[0]\n    step = 0\n    order_hash = hashlib.sha256()\n    epochs = int(h['epochs'])\n    model.train()\n    for ep in range(epochs):\n        perm = torch.randperm(n, generator=gen)\n        order_hash.update(perm.numpy().tobytes())\n        for i in range(0, n, BATCH):\n            idx = perm[i:i + BATCH]\n            opt.zero_grad()\n            loss = loss_fn(forward(model, xt[idx], SKIP), yt[idx])\n            if step == 0:\n                diag(f'skip_path_active={int(SKIP)} fired_at_step=0')\n            loss.backward()\n            opt.step()\n            step += 1\n        if ep % 10 == 0 or ep == epochs - 1:\n            with torch.no_grad():\n                norms = []\n                out = forward(model, xt, SKIP, norms)\n                tl = float(loss_fn(out, yt))\n                te = float((out.argmax(1) != yt).float().mean() * 100.0)\n            diag(f'epoch={ep} step={step} train_loss={tl:.5f} train_err={te:.3f} act_norms={[round(v, 3) for v in norms]}')\n            if not np.isfinite(tl):\n                diag(f'nonfinite_loss step={step}')\n    diag(f'total_steps={step} data_order_sha256={order_hash.hexdigest()[:16]}')\n    return model\n\n\ndef export(model, h):\n    W = int(h['hidden'])\n    depth = int(h['depth'])\n    if not SKIP:\n        return {**h, 'depth': depth, 'hidden': W}, dict(model.state_dict())\n    # Exact re-expression of the residual net inside the frozen Linear/ReLU stack at width 2W.\n    # The stream is carried as [h; f]; valid because h >= 0 (sums of ReLU outputs), so ReLU(h) = h.\n    tgt = prepare.build_model({'depth': depth, 'hidden': 2 * W})\n    src, dst = linears(model), linears(tgt)\n    eye = torch.eye(W)\n    with torch.no_grad():\n        for m in dst:\n            m.weight.zero_()\n            m.bias.zero_()\n        dst[0].weight[:W] = src[0].weight\n        dst[0].bias[:W] = src[0].bias\n        for s, d in zip(src[1:-1], dst[1:-1]):\n            d.weight[:W, :W] = eye\n            d.weight[:W, W:] = eye\n            d.weight[W:, :W] = s.weight\n            d.weight[W:, W:] = s.weight\n            d.bias[W:] = s.bias\n        dst[-1].weight[:, :W] = src[-1].weight\n        dst[-1].weight[:, W:] = src[-1].weight\n        dst[-1].bias.copy_(src[-1].bias)\n        x_tr, _ = prepare.load_train()\n        xt = torch.from_numpy(x_tr)\n        model.eval()\n        tgt.eval()\n        a = forward(model, xt, True)\n        b = tgt(xt)\n        md = float((a - b).abs().max())\n        agree = float((a.argmax(1) == b.argmax(1)).float().mean())\n    diag(f'export_equivalence max_abs_diff={md:.2e} argmax_agree={agree:.6f}')\n    assert md < 1e-3, md\n    return {**h, 'depth': depth, 'hidden': 2 * W}, dict(tgt.state_dict())\n\n\ndef main():\n    seed = int(os.environ.get('SCHOLARLOOP_SEED', '0'))\n    h = effective_hparams()\n    model = train_model(seed, h)\n    cfg, sd = export(model, h)\n    torch.save({'config': cfg, 'state_dict': sd}, os.environ['SCHOLARLOOP_ARTIFACT'])\n\n\nif __name__ == '__main__':\n    main()\n"
+          }
+        ]
+      },
+      {
+        "name": "resid_lr002",
+        "description": "Residual arm at the robustness lr=0.02. Script is identical to resid_lr005; only the lr knob differs.",
+        "config": [
+          {
+            "name": "lr",
+            "value": 0.02
+          },
+          {
+            "name": "hidden",
+            "value": 128
+          },
+          {
+            "name": "depth",
+            "value": 3
+          },
+          {
+            "name": "weight_decay",
+            "value": 0.0001
+          },
+          {
+            "name": "epochs",
+            "value": 120
+          }
+        ],
+        "edits": [
+          {
+            "path": "engines/torch_vision/train.py",
+            "content": "# Paired skip-vs-plain arm for digits-mlp. SKIP toggles only the '+ h' term; everything else is identical across arms.\nfrom __future__ import annotations\n\nimport hashlib\nimport json\nimport os\nimport sys\n\nimport numpy as np\nimport torch\nimport torch.nn as nn\n\nfrom engines.torch_vision import prepare\n\nSKIP = True\nBATCH = 64\nHPARAMS = {'lr': 0.05, 'hidden': 128, 'depth': 3, 'weight_decay': 1e-4, 'epochs': 120}\n\n\ndef effective_hparams():\n    return {**HPARAMS, **json.loads(os.environ.get('SCHOLARLOOP_CONFIG', '{}'))}\n\n\ndef diag(msg):\n    print('DIAG ' + msg, file=sys.stderr, flush=True)\n\n\ndef linears(model):\n    return [m for m in model if isinstance(m, nn.Linear)]\n\n\ndef forward(model, x, skip, norms=None):\n    lins = linears(model)\n    h = torch.relu(lins[0](x))\n    for lin in lins[1:-1]:\n        f = torch.relu(lin(h))\n        h = h + f if skip else f\n        if norms is not None:\n            norms.append(float(h.norm(dim=1).mean()))\n    return lins[-1](h)\n\n\ndef train_model(seed, h):\n    torch.manual_seed(seed)\n    np.random.seed(seed)\n    x_tr, y_tr = prepare.load_train()\n    W = int(h['hidden'])\n    depth = int(h['depth'])\n    model = prepare.build_model({'depth': depth, 'hidden': W})\n    n_params = sum(p.numel() for p in model.parameters())\n    expected = (64 * W + W) + (depth - 1) * (W * W + W) + (W * 10 + 10)\n    assert n_params == expected, (n_params, expected)\n    hsh = hashlib.sha256()\n    for k, v in model.state_dict().items():\n        hsh.update(k.encode())\n        hsh.update(v.detach().numpy().tobytes())\n    diag(f'skip={int(SKIP)} seed={seed} n_params={n_params} init_sha256={hsh.hexdigest()[:16]}')\n    opt = torch.optim.SGD(model.parameters(), lr=float(h['lr']), momentum=0.9,\n                          weight_decay=float(h['weight_decay']))\n    loss_fn = nn.CrossEntropyLoss()\n    xt, yt = torch.from_numpy(x_tr), torch.from_numpy(y_tr)\n    gen = torch.Generator().manual_seed(1000003 + seed)\n    n = xt.shape[0]\n    step = 0\n    order_hash = hashlib.sha256()\n    epochs = int(h['epochs'])\n    model.train()\n    for ep in range(epochs):\n        perm = torch.randperm(n, generator=gen)\n        order_hash.update(perm.numpy().tobytes())\n        for i in range(0, n, BATCH):\n            idx = perm[i:i + BATCH]\n            opt.zero_grad()\n            loss = loss_fn(forward(model, xt[idx], SKIP), yt[idx])\n            if step == 0:\n                diag(f'skip_path_active={int(SKIP)} fired_at_step=0')\n            loss.backward()\n            opt.step()\n            step += 1\n        if ep % 10 == 0 or ep == epochs - 1:\n            with torch.no_grad():\n                norms = []\n                out = forward(model, xt, SKIP, norms)\n                tl = float(loss_fn(out, yt))\n                te = float((out.argmax(1) != yt).float().mean() * 100.0)\n            diag(f'epoch={ep} step={step} train_loss={tl:.5f} train_err={te:.3f} act_norms={[round(v, 3) for v in norms]}')\n            if not np.isfinite(tl):\n                diag(f'nonfinite_loss step={step}')\n    diag(f'total_steps={step} data_order_sha256={order_hash.hexdigest()[:16]}')\n    return model\n\n\ndef export(model, h):\n    W = int(h['hidden'])\n    depth = int(h['depth'])\n    if not SKIP:\n        return {**h, 'depth': depth, 'hidden': W}, dict(model.state_dict())\n    # Exact re-expression of the residual net inside the frozen Linear/ReLU stack at width 2W.\n    # The stream is carried as [h; f]; valid because h >= 0 (sums of ReLU outputs), so ReLU(h) = h.\n    tgt = prepare.build_model({'depth': depth, 'hidden': 2 * W})\n    src, dst = linears(model), linears(tgt)\n    eye = torch.eye(W)\n    with torch.no_grad():\n        for m in dst:\n            m.weight.zero_()\n            m.bias.zero_()\n        dst[0].weight[:W] = src[0].weight\n        dst[0].bias[:W] = src[0].bias\n        for s, d in zip(src[1:-1], dst[1:-1]):\n            d.weight[:W, :W] = eye\n            d.weight[:W, W:] = eye\n            d.weight[W:, :W] = s.weight\n            d.weight[W:, W:] = s.weight\n            d.bias[W:] = s.bias\n        dst[-1].weight[:, :W] = src[-1].weight\n        dst[-1].weight[:, W:] = src[-1].weight\n        dst[-1].bias.copy_(src[-1].bias)\n        x_tr, _ = prepare.load_train()\n        xt = torch.from_numpy(x_tr)\n        model.eval()\n        tgt.eval()\n        a = forward(model, xt, True)\n        b = tgt(xt)\n        md = float((a - b).abs().max())\n        agree = float((a.argmax(1) == b.argmax(1)).float().mean())\n    diag(f'export_equivalence max_abs_diff={md:.2e} argmax_agree={agree:.6f}')\n    assert md < 1e-3, md\n    return {**h, 'depth': depth, 'hidden': 2 * W}, dict(tgt.state_dict())\n\n\ndef main():\n    seed = int(os.environ.get('SCHOLARLOOP_SEED', '0'))\n    h = effective_hparams()\n    model = train_model(seed, h)\n    cfg, sd = export(model, h)\n    torch.save({'config': cfg, 'state_dict': sd}, os.environ['SCHOLARLOOP_ARTIFACT'])\n\n\nif __name__ == '__main__':\n    main()\n"
+          }
+        ]
+      }
+    ],
+    "reference": "reference",
+    "metric": "val_top1_err",
+    "fidelity": "verify",
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+    ],
+    "holdout": false,
+    "analysis": "paired_mean_difference",
+    "interpretation": "The runner reports each arm's paired mean difference against the default-recipe reference. The scientific contrast is resid - plain at the same lr. Because the arms share seeds, this equals (resid - reference) - (plain - reference) seed by seed, and it is read descriptively against the ±0.5 pp margin. A formal TOST is not computed by the engine. Read the outcomes as follows: (1) Equivalence-like: the interval is within ±0.5 pp at both lr values; this supports H1, i.e. the path does not change the endpoint once capacity, init, order, steps and lr are matched. (2) Clear benefit: the residual arm is better beyond 0.5 pp at both lr values; this refutes H1. (3) Benefit at one lr only: attributed to lr sensitivity. (4) Straddling the margin: inconclusive, more seeds are needed. DIAG lines must confirm that the init and data-order hashes match within seed pairs, that total_steps match, that skip_path_active=1 fired at step 0 only in resid arms, and that the export max_abs_diff is tiny. Early-epoch train_loss gaps speak only to speed, not to validation error.",
+    "budget_seconds": 100000,
+    "data_files": [],
+    "limitations": [
+      "The frozen scorer only builds Linear/ReLU stacks, so residual arms are scored through an exactly equivalent width-256 re-expression of the trained 128-wide residual weights. The trained parameter set is still 42,634 tensors in both arms; the exported zeros and identity blocks are not trainable parameters. Equivalence is asserted in-script, but float summation order may flip a tie on rare images.",
+      "The reference (unmodified default: full-batch, depth 1) differs from the arms in depth and batching. It serves only as the runner's anchor. The arm-vs-arm contrast must be read as a difference of paired differences.",
+      "The engine computes only a descriptive paired mean difference. The pre-registered TOST and bootstrap CIs on best-over-steps and AUC are not computed here.",
+      "There are 20 seeds rather than the registered 30, and the validation fold has about 288 images, so one image is about 0.35 pp. The ±0.5 pp margin is close to the resolution limit.",
+      "Validation curves per epoch are unavailable because train.py never sees the val split. Speed is proxied by the training-set loss and error logged every 10 epochs, so final versus best-over-steps validation error cannot be separated.",
+      "The idea leaves open whether the input projection is followed by a ReLU. This design uses a ReLU, matching the frozen build_model; this is also what makes the residual stream nonnegative.",
+      "The training-step budget, prompts/data, weight decay, momentum, batch size and epochs are identical across all four arms. Only SKIP and lr differ, and lr is shared within each pair."
+    ],
+    "idea_ids": [
+      "idea_b1977222a2e27c41d0442990"
+    ],
+    "arms": [
+      {
+        "condition": "reference",
+        "role": "reference",
+        "isolates": "The default recipe, anchoring the runner's paired differences. Not part of the path contrast."
+      },
+      {
+        "condition": "plain_lr005",
+        "role": "control",
+        "isolates": "Against resid_lr005, at shared lr=0.05, it isolates the zero-parameter '+ h_l' identity path, with parameters, init weights, minibatch order and step count bit-identical."
+      },
+      {
+        "condition": "resid_lr005",
+        "role": "treatment",
+        "isolates": "Residual arm at lr=0.05. Versus plain_lr005 this gives the primary path effect on final val_top1_err."
+      },
+      {
+        "condition": "plain_lr002",
+        "role": "control",
+        "isolates": "Against resid_lr002, the same path contrast at a second shared lr. Versus plain_lr005 it gives the plain arm's lr sensitivity."
+      },
+      {
+        "condition": "resid_lr002",
+        "role": "treatment",
+        "isolates": "Robustness check: whether any path effect seen at lr=0.05 persists at lr=0.02, or is lr-specific."
+      }
+    ],
+    "omitted_controls": [
+      "Per-arm lr tuning on an inner split (5 lrs × 5 disjoint tuning seeds): dropped at the author's explicit request ('No tuning arms'). A shared lr pair at two values is used instead.",
+      "Full 5-value shared-lr robustness grid {0.01, 0.02, 0.05, 0.1, 0.2}: reduced to two shared lrs (0.05 primary, 0.02 robustness) per author feedback.",
+      "Step-resolved validation curves (best-over-steps, AUC): train.py cannot access the validation split by design. Only training loss and error are logged as a speed proxy.",
+      "Separate 5-seed minimal-test arm at lr=0.05: it is subsumed by seeds 1-5 of the lr=0.05 pair, with the same checks (equal param count, identical init hash, under about 6% error)."
+    ]
+  },
+  "feedback": "Keep it to the registered two-arm question: a zero-parameter identity-skip MLP against the weight-identical plain MLP, paired on the same seeds, at one shared learning rate in the minibatch regime the campaign found to work, plus the same pair at a second shared learning rate as a robustness check. No tuning arms.",
+  "frozen": {
+    "profile": {
+      "name": "digits-mlp",
+      "paradigm": "supervised",
+      "train_entrypoint": "engines/torch_vision/train.py",
+      "fixed_module": "engines/torch_vision/prepare.py",
+      "metric": {
+        "name": "val_top1_err",
+        "direction": "minimize",
+        "vocab_independent": false
+      },
+      "budget": {
+        "smoke_sec": 60,
+        "verify_sec": 180,
+        "full_sec": 600
+      },
+      "allowed_edits": [
+        "architecture",
+        "optimizer",
+        "schedule",
+        "regularization"
+      ],
+      "forbidden_edits": [
+        "**/prepare.py",
+        "prepare.py"
+      ],
+      "datasets": [
+        "sklearn-digits"
+      ],
+      "baselines": [
+        "logreg@3.8"
+      ],
+      "knobs": {
+        "lr": 0.05,
+        "hidden": 128,
+        "depth": 1,
+        "weight_decay": 0.0001,
+        "epochs": 120
+      },
+      "debate_roles": [
+        "Innovator",
+        "Pragmatist",
+        "Contrarian"
+      ],
+      "holdout": true,
+      "cv_folds": 5,
+      "source_path": "profiles/digits-mlp.yaml"
+    },
+    "sources": {
+      "engines/torch_vision/__init__.py": "\"\"\"Real (non-stub) torch engine: a small MLP trained on sklearn's digits dataset.\n\nGenuine gradient descent on real data, CPU-fast and download-free — proof that the framework\ndrives real experiments and is engine-agnostic (a new domain = a profile + an engine pair,\nwith zero orchestrator changes).\n\"\"\"\n",
+      "engines/torch_vision/prepare.py": "\"\"\"FROZEN module for the digits-mlp engine — data, model construction, and evaluation.\nNever edit this file. It is the trust anchor:\n\n  1. `load_train()` hands the agent ONLY the training split — the val set never leaves here.\n  2. `build_model()` is frozen, so the model the scorer reconstructs is defined by trusted code;\n     the agent shapes it through hyperparameters, not by injecting classes the scorer must unpickle.\n  3. `score(artifact)` loads a state_dict with `weights_only=True` (no arbitrary-object unpickle,\n     so a malicious artifact can't run code in the trusted scorer) into the frozen architecture,\n     evaluates on the frozen val split, and emits the trusted number. The runner runs this from\n     pristine ROOT, so an edited train.py cannot reach it.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport os\nimport sys\n\nimport numpy as np\nfrom sklearn.datasets import load_digits\nfrom sklearn.model_selection import StratifiedKFold, train_test_split\n\nMETRIC_NAME = \"val_top1_err\"\n_IN_DIM = 64       # digits are 8x8\n_N_CLASSES = 10\nN_FOLDS = 5        # the pool outside the test split is cut into this many CV folds\n\n\ndef _split(fold: int = 0):\n    \"\"\"Train / val / held-out test. A fixed, stratified 20% is the held-out test split (scored only\n    on full-tier runs, never selected on). The other 80% is cut into N_FOLDS stratified folds:\n    `fold` is the val split (the metric the loop selects on) and the rest is training data. Without\n    cross-validation the runner never passes a fold, so val is fold 0.\"\"\"\n    d = load_digits()\n    x = (d.data.astype(\"float32\") / 16.0)\n    y = d.target.astype(\"int64\")\n    x_pool, x_te, y_pool, y_te = train_test_split(x, y, test_size=0.2, random_state=0, stratify=y)\n    folds = list(StratifiedKFold(N_FOLDS, shuffle=True, random_state=0).split(x_pool, y_pool))\n    tr, va = folds[fold]\n    return x_pool[tr], x_pool[va], x_te, y_pool[tr], y_pool[va], y_te\n\n\ndef _fold_from_env() -> int:\n    \"\"\"The CV fold the runner assigned this training run ($SCHOLARLOOP_FOLD, default 0).\"\"\"\n    return int(os.environ.get(\"SCHOLARLOOP_FOLD\", \"0\"))\n\n\ndef load_train():\n    \"\"\"Training data only — the agent never receives the validation split.\"\"\"\n    x_tr, _x_val, _x_te, y_tr, _y_val, _y_te = _split(_fold_from_env())\n    return x_tr, y_tr\n\n\ndef _eval_split(split: str = \"val\", fold: int = 0):\n    _x_tr, x_val, x_te, _y_tr, y_val, y_te = _split(fold)\n    return (x_te, y_te) if split == \"test\" else (x_val, y_val)\n\n\ndef build_model(hparams: dict):\n    \"\"\"Frozen architecture, parameterized by hyperparameters (depth / hidden width).\"\"\"\n    import torch.nn as nn\n\n    layers, d = [], _IN_DIM\n    for _ in range(int(hparams[\"depth\"])):\n        layers += [nn.Linear(d, int(hparams[\"hidden\"])), nn.ReLU()]\n        d = int(hparams[\"hidden\"])\n    layers += [nn.Linear(d, _N_CLASSES)]\n    return nn.Sequential(*layers)\n\n\ndef evaluate(model, split: str = \"val\", fold: int = 0) -> float:\n    \"\"\"Top-1 error (%) of `model` on a frozen split (val fold `fold`, or the held-out test). Lower\n    is better.\"\"\"\n    import torch\n\n    x_val, y_val = _eval_split(split, fold)\n    model.eval()\n    with torch.no_grad():\n        pred = model(torch.from_numpy(x_val)).argmax(1).numpy()\n    return round(float((pred != y_val).mean() * 100.0), 4)\n\n\ndef emit_result(value: float, seeds: list[float] | None = None, config: dict | None = None) -> None:\n    print(\"SCHOLARLOOP_RESULT \" + json.dumps(\n        {\"metric_name\": METRIC_NAME, \"value\": float(value),\n         \"seeds\": seeds or [value], \"config\": config or {}}))\n\n\ndef score(artifact_path: str, split: str = \"val\", fold: int = 0) -> None:\n    \"\"\"Trusted metric: rebuild the frozen model from config, load the agent's weights (safely),\n    and score on the frozen val set.\"\"\"\n    import torch\n\n    bundle = torch.load(artifact_path, weights_only=True)   # state_dict only — no code execution\n    cfg = bundle[\"config\"]\n    model = build_model(cfg)\n    model.load_state_dict(bundle[\"state_dict\"])\n    emit_result(evaluate(model, split, fold), config=cfg)\n\n\ndef _main(argv: list[str]) -> int:\n    parsed = parse_score_args(argv)\n    if parsed is None:\n        print(\"usage: python -m engines.torch_vision.prepare score <artifact> [test | val [fold]]\",\n              file=sys.stderr)\n        return 2\n    score(*parsed)\n    return 0\n\n\ndef parse_score_args(argv: list[str]):\n    \"\"\"`score <artifact> [val|test] [fold]` -> (artifact, split, fold), or None if malformed. The\n    fold is the one the model was trained without (the val split; for test it only selects the\n    training statistics the model was fit with).\"\"\"\n    if not 2 <= len(argv) <= 4 or argv[0] != \"score\":\n        return None\n    split = argv[2] if len(argv) > 2 else \"val\"\n    fold = argv[3] if len(argv) > 3 else \"0\"\n    if split not in (\"val\", \"test\") or not fold.isdigit() or int(fold) >= N_FOLDS:\n        return None\n    return argv[1], split, int(fold)\n\nif __name__ == \"__main__\":\n    raise SystemExit(_main(sys.argv[1:]))\n",
+      "engines/torch_vision/train.py": "\"\"\"EDITABLE training script for the digits-mlp engine.\n\nBuilds the (frozen) model via `prepare.build_model`, trains it on the FROZEN training split\n(`prepare.load_train()` — it never sees the val set), and saves a `state_dict` + config to\n$SCHOLARLOOP_ARTIFACT. It does NOT compute or report the metric — the runner runs the frozen\n`prepare score` step (from pristine ROOT) on the artifact for the trusted number, so an edited\ntrain.py cannot fabricate it. The runner injects a hyperparameter override via $SCHOLARLOOP_CONFIG.\n\nThe agent searches architecture *shape* (depth/hidden) and the training procedure (optimizer,\nschedule, epochs) here. Arbitrary new model *classes* are intentionally out of reach: the model\nis built by frozen code so the trusted scorer never has to unpickle agent-defined objects.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport os\n\nimport numpy as np\nimport torch\nimport torch.nn as nn\n\nfrom engines.torch_vision import prepare\n\nHPARAMS = {\n    \"lr\": 0.1,\n    \"hidden\": 64,\n    \"depth\": 1,\n    \"weight_decay\": 1e-4,\n    \"epochs\": 40,\n}\n\n\ndef effective_hparams() -> dict:\n    return {**HPARAMS, **json.loads(os.environ.get(\"SCHOLARLOOP_CONFIG\", \"{}\"))}\n\n\ndef train_model(seed: int, h: dict) -> nn.Module:\n    torch.manual_seed(seed)\n    np.random.seed(seed)\n    x_tr, y_tr = prepare.load_train()           # training data only — no val leakage\n    model = prepare.build_model(h)              # frozen architecture, shaped by hparams\n    opt = torch.optim.SGD(model.parameters(), lr=float(h[\"lr\"]), momentum=0.9,\n                          weight_decay=float(h[\"weight_decay\"]))\n    loss_fn = nn.CrossEntropyLoss()\n    xt, yt = torch.from_numpy(x_tr), torch.from_numpy(y_tr)\n    model.train()\n    for _ in range(int(h[\"epochs\"])):\n        opt.zero_grad()\n        loss_fn(model(xt), yt).backward()\n        opt.step()\n    return model\n\n\ndef main() -> None:\n    seed = int(os.environ.get(\"SCHOLARLOOP_SEED\", \"0\"))\n    h = effective_hparams()\n    model = train_model(seed, h)\n    # save weights only (a state_dict), so the frozen scorer never unpickles agent objects\n    torch.save({\"config\": h, \"state_dict\": dict(model.state_dict())},\n               os.environ[\"SCHOLARLOOP_ARTIFACT\"])\n\n\nif __name__ == \"__main__\":\n    main()\n"
+    },
+    "data_sha256": {},
+    "environment": {
+      "python": "3.12.9",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "packages": {
+        "numpy": "2.2.6",
+        "scikit-learn": "1.8.0",
+        "torch": "2.11.0",
+        "scipy": "1.17.1",
+        "scholarloop": "0.0.1"
+      }
+    },
+    "data_caveat": "Only declared local data are hashed. Dataset names, loader source and package versions do not prove the contents of undeclared or remote data."
+  }
+}
