@@ -269,3 +269,31 @@ def test_semantic_study_counts_a_fault_caught_only_when_the_objection_quotes_it(
     report = run_semantic(llm, cases, ctx, state, tmp_path / "sem", per_fault=2, controls=2)
     assert report["controls"] == {**report["controls"], "reads": 2, "with_objection": 1}
     assert report["all"]["detected"] == 0          # an objection that quotes nothing catches nothing
+
+
+def test_ablation_writes_each_arm_and_records_a_writer_that_stops(reviewed_run, tmp_path):
+    from scholarloop.reliability import DossierEvidence, run_ablation
+    from tests.test_scientific_review import PANEL_PASS, writing_outputs
+    profile, paths = reviewed_run
+    _, ctx = load_cases(profile, **paths)
+    evidence = DossierEvidence(ctx.bank.approved_dossier)
+    paths = {**paths, "review_dir": paths["writing"].parent, "research": None}   # as the fixture reviewed it
+    outline, kp, bodies = writing_outputs()
+    script = [outline, *([PANEL_PASS] * 3), kp, *([PANEL_PASS] * 3), *bodies, {"verdict": "pass", "issues": []}]
+    out = tmp_path / "ablation"
+    full = run_ablation(MockLLM(jsons=list(script)), profile, paths, out, "full", repeats=1, evidence=evidence)
+    assert full["completed"] == 1 and (out / "full_1.md").exists()
+    assert full["papers"][0]["provenance"]["ungrounded_numbers"] == []
+    # Without the deterministic checks an invented number in a section is accepted as written.
+    invented = [{"body": b["body"].replace("7.25", "3.14")} for b in bodies]
+    loose = [outline, *([PANEL_PASS] * 3), kp, *([PANEL_PASS] * 3), *invented, {"verdict": "pass", "issues": []}]
+    bare = run_ablation(MockLLM(jsons=list(loose)), profile, paths, out, "no_guards", repeats=1, evidence=evidence)
+    assert bare["completed"] == 1 and "3.14" in (out / "no_guards_1.md").read_text()
+    assert bare["papers"][0]["provenance"]["ungrounded_numbers"]
+    # The production writer refuses the same script and is recorded as stopped, with nothing published.
+    stopped = run_ablation(MockLLM(jsons=list(loose) + invented * 3), profile, paths, out / "strict", "full",
+                           repeats=1, evidence=evidence)
+    assert stopped["completed"] == 0 and stopped["papers"][0]["stopped_at"] == "draft"
+    assert not (out / "strict" / "full_1.md").exists()
+    again = run_ablation(MockLLM(jsons=[]), profile, paths, out, "full", repeats=1, evidence=evidence)
+    assert again["papers"] == full["papers"]                               # finished papers are reused

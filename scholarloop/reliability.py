@@ -962,6 +962,60 @@ def render_semantic(report: dict) -> str:
 # ---------------------------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------------------------
+ABLATION_ARMS = ("full", "no_review", "no_guards")
+
+
+def run_ablation(llm, profile, paths: dict, out_dir, arm: str, *, repeats: int = 3, evidence=None) -> dict:
+    """Write the same study again with one mechanism removed, for the claim audit to read.
+
+    `full` is the production writer: approved statements, deterministic checks, model reviewer.
+    `no_review` writes in stages from the run measurements with no scientific review and no
+    approved statements (the writer's demo mode). `no_guards` keeps the approved statements and
+    the model reviewer but accepts the first schema-valid output of the outliner, key pointer
+    and drafter, without their deterministic checks. A writer that stops is recorded as not
+    completed with its reason; nothing is published for it. The final simulated reviewers are
+    not called: they read the paper and do not change it."""
+    from scholarloop.core.agent import AgentError
+    from scholarloop.review.contracts import ReviewBlocked
+    from scholarloop.writing.session import WritingSession
+    if arm not in ABLATION_ARMS:
+        raise ValueError(f"unknown arm {arm!r}")
+    out = Path(out_dir)
+    rows = []
+    for n in range(1, repeats + 1):
+        name = f"{arm}_{n}"
+        status_path, paper_path = out / f"{name}.status.json", out / f"{name}.md"
+        if status_path.exists():
+            rows.append(json.loads(status_path.read_text()))
+            continue
+        demo = arm == "no_review"
+        session = WritingSession(llm, profile, out / name, ledger_path=paths["ledger"],
+                                 registry_dir=paths["registry"], research_dir=paths["research"],
+                                 review_dir=(out / name) if demo else paths["review_dir"], demo=demo)
+        if arm == "no_guards":
+            for agent in (session.outliner, session.key_pointer, session.drafter):
+                agent.postcheck = lambda output, ctx: []
+        row = {"name": name, "arm": arm, "completed": False, "stopped_at": None, "reason": ""}
+        try:
+            for stage in ("outline", "key_points", "draft"):
+                row["stopped_at"] = stage
+                getattr(session, stage)()
+            row.update(completed=True, stopped_at=None)
+        except (ReviewBlocked, AgentError) as exc:
+            row["reason"] = f"{type(exc).__name__}: {exc}"[:600]
+        if row["completed"]:
+            paper = "\n\n".join(f"## {x['heading']}\n\n{x['body']}" for x in session.state.sections)
+            paper_path.write_text(paper)
+            row["words"] = len(paper.split())
+            if evidence is not None:
+                audit = audit_paper("\n\n".join(x["body"] for x in session.state.sections), evidence)
+                row["provenance"] = {k: audit[k] for k in ("numbers_checked", "ungrounded_numbers",
+                                                           "ids_cited", "unknown_ids")}
+        status_path.write_text(json.dumps(row, indent=2, ensure_ascii=False))
+        rows.append(row)
+    return {"arm": arm, "papers": rows, "completed": sum(r["completed"] for r in rows), "attempted": len(rows)}
+
+
 def main(argv=None) -> int:
     import argparse
 
@@ -1007,6 +1061,13 @@ def main(argv=None) -> int:
     p.add_argument("--paper", action="append", metavar="NAME=FILE",
                    help="another paper on the same study to audit; NAME_<n> groups repeats of one writer")
     p.add_argument("--model")
+    p = sub.add_parser("ablation", help="write the study again with one mechanism removed "
+                                        "(USES THE API)")
+    run_args(p)
+    p.add_argument("--arm", required=True, choices=ABLATION_ARMS)
+    p.add_argument("--repeats", type=int, default=3)
+    p.add_argument("--max-llm-calls", type=int, default=120)
+    p.add_argument("--model")
     a = ap.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -1045,6 +1106,19 @@ def main(argv=None) -> int:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("ANTHROPIC_API_KEY is not set.", file=sys.stderr)
         return 1
+    if a.command == "ablation":
+        if ctx.bank.approved_dossier is None:
+            print("The ablation needs a reviewed run.", file=sys.stderr)
+            return 1
+        llm = CallLimitedLLM(AnthropicLLM(model=a.model or model_from_env()), a.max_llm_calls,
+                             path=out / f"ablation_{a.arm}_call_budget.json")
+        review_dir = paths["review_dir"] or Path(paths["writing"]).parent
+        report = run_ablation(llm, profile, {**paths, "review_dir": review_dir}, out, a.arm,
+                              repeats=a.repeats, evidence=DossierEvidence(ctx.bank.approved_dossier))
+        (out / f"ablation_{a.arm}.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
+        for row in report["papers"]:
+            print(row["name"], "completed" if row["completed"] else f"stopped at {row['stopped_at']}: {row['reason'][:160]}")
+        return 0
     if a.command == "semantic":
         state = json.loads(Path(paths["writing"]).read_text())
         if ctx.bank.approved_dossier is None or not state.get("sections"):
