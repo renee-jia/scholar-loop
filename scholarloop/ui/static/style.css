@@ -313,3 +313,13 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .welcome-art .orbit-dot { fill: var(--accent-art); }
 .welcome-art .orbit-card { fill: var(--paper); stroke: var(--line-strong); }
 .welcome-art .orbit-symbol { stroke: var(--muted); }
+
+/* A finished study or a recorded run: there is something to read, nothing left to do. */
+.callout.ready { background: #e7f1df; border-color: #bcd3a8; }
+.callout.ready .callout-icon { color: var(--success); }
+.welcome-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* Primary actions in the same light green as a finished study. */
+.btn.primary { color: #2f4527; background: #dcebd0; border-color: #b9d1a6; }
+.btn.primary:hover { background: #cfe2c0; border-color: #a7c391; }
+.new-button .icon { color: #4f6b3f; }

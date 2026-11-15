@@ -238,3 +238,15 @@ test("an archive shows what it recorded, never an invitation to act",()=>{
   h.state.detail.writing.stage="reviewed";
   assert.equal((h.run("progress()").match(/workflow-step done/g)||[]).length,5);
 });
+
+test("a finished study is marked ready, and the recorded runs are one click away",()=>{
+  const h=harness();
+  assert.doesNotMatch(h.run("callout()"),/callout ready/);
+  h.state.detail.review.status="READY_TO_WRITE";
+  h.state.detail.writing.stage="reviewed";
+  assert.match(h.run("callout()"),/class="callout ready"/);
+  h.state.detail.review.status=null;
+  h.state.detail.config.readonly=true;
+  assert.match(h.run("callout()"),/class="callout ready"/);
+  assert.match(h.run("home()"),/class="btn" data-do="sample"/);
+});
