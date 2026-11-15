@@ -357,6 +357,7 @@ def build(studies: list[tuple[str, Path, Path]], out: Path, key_path: Path, *, s
         {"question": "years of ML research experience"},
         {"question": "highest relevant degree or current position"},
         {"question": "have you used or contributed to ScholarLoop? (yes/no)"},
+        {"question": "which language of the instructions did you read? (English/Chinese)"},
         {"question": "minutes spent, study by study"},
         {"question": "anything unclear in the instructions"}])
     key_path.parent.mkdir(parents=True, exist_ok=True)
