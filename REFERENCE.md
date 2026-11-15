@@ -288,3 +288,83 @@ maximum is 288 requests. No paid model comparison has been performed.
 | `SCHOLARLOOP_PERSIST_SKILLS` | keep lessons in `~/.scholarloop/skills/<domain>` across campaigns |
 
 </details>
+
+## Measurements
+
+Measured on the three recorded runs in [`examples/sample_runs/`](examples/sample_runs/), all with `claude-opus-5-5`.
+
+The system's own simulated reviewers scored the three papers 2.2, 2.7 and 2.7 out of 10 and
+rejected all three, citing one small task each, few seeds, and comparisons on validation data.
+
+### Do the checks catch faults?
+
+`scholarloop.reliability` takes artifacts the checks accepted, changes one thing at a time, and
+runs each variant through the production check: 1,627 injected faults over the three runs.
+
+| Kind of fault | Example | Distillation | AG News | Digits |
+|---|---|---|---|---|
+| Fabrication | a citation, run id or number that does not exist | 257 of 257 | 360 of 360 | 354 of 354 |
+| Misattribution | a real measurement in the wrong place; "lower" flipped to "higher" | 77 of 179 (43%) | 123 of 221 (56%) | 135 of 256 (53%) |
+| Clean artifact rejected | an unchanged artifact | 0 of 12 | 0 of 15 | 0 of 14 |
+
+A check that looks up whether something exists cannot tell whether it is used correctly. A
+number moved to the wrong sentence is caught every time; a flipped direction inside prose mostly
+is not. The study also exposed two real holes in the checks, both now closed.
+
+### Does the paper say more than the evidence holds?
+
+A judge model read each paper with pipeline marks removed and labelled every result claim
+against the recorded evidence. The baseline is one model call given the same evidence, with the
+same rules as instructions.
+
+| Run | ScholarLoop paper: claims beyond the evidence | Single-call papers |
+|---|---|---|
+| Distillation | 5 of 93 (5%) | 59 of 492 (12%) |
+| AG News | 0 of 94 (0%) | 28 of 415 (7%) |
+| Digits | 1 of 110 (1%) | 65 of 332 (20%) |
+
+Lower in every run. The caveats: one ScholarLoop paper per run, intervals that overlap on
+distillation, and a judge from the same model family as the reviewers. A blinded check of these
+labels by people is under way.
+
+### Does enforcement change what a campaign tests?
+
+The same idea was handed to the experiment agent in two ways, ten campaigns each.
+
+| | Enforced by the harness | Asked for in the prompt |
+|---|---|---|
+| Campaigns that edited the code | 10 of 10 | 2 of 10 |
+| Edit implements the idea with a control that isolates it, per a judge model | 3 of 10 | 0 of 10 |
+
+Enforcement secures a matched pair. It does not secure that the pair tests the idea. One idea,
+one engine, and a judge from the same model family.
+
+### Agent versus random search
+
+Same number of training runs for each side, three campaigns each, on digits.
+
+| Agent | Agent held-out error | Random search | Result |
+|---|---|---|---|
+| first version | 4.22 | 3.13 ± 0.08 | random wins |
+| told the knob ranges, with an explore phase | 3.72 ± 0.24 | 3.13 | random wins all 9 pairs |
+| warm-started on random draws | 3.14 | 3.13 | a tie |
+
+A language model proposing hyperparameters does not beat random search on a small search space.
+If it has an edge, it is in changing the method, and we have not shown that it does.
+
+## Known limits
+
+This is a research preview. It runs end to end on real experiments, and several things are
+missing or unproven.
+
+- **It has not been shown to produce better research.** Its own reviewers rejected all three
+  papers, and the output is a Markdown manuscript without figures or typesetting.
+- **"Treatment" is a label the agent applies.** The harness enforces the order of control and
+  treatment and records the edit. It does not verify that the edit implements the idea: a judge
+  found that it did in 3 of 10 campaigns.
+- **Wrong-but-real references get through the lexical checks.** Catching a real citation on the
+  wrong claim falls to the critics and a model reviewer, and those are model judgments.
+- **There is no real sandbox yet.** A hash detects a tampered scorer, but nothing stops a process
+  from writing to disk. The guards are designed for a model proposing edits, not for hostile code.
+- **Small tasks, one provider.** The shipped engines train in seconds on a CPU, and live runs go
+  through the Anthropic SDK.

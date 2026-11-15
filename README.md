@@ -11,9 +11,9 @@ Code checks every citation, number and claim against the record before it reache
 [![python](https://img.shields.io/badge/python-3.10%2B-blue)](#-quick-start)
 [![platform](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)](#-quick-start)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![status](https://img.shields.io/badge/status-research%20preview-orange)](#-limits)
+[![release](https://img.shields.io/badge/status-research%20preview-orange)](#-quick-start)
 
-[Quick start](#-quick-start) · [The web UI](#%EF%B8%8F-the-web-ui) · [What it does](#-what-it-does) · [How it works](#-how-it-works) · [The rules](#%EF%B8%8F-rules-the-model-cannot-talk-its-way-around) · [Results](#-what-we-have-measured) · [Limits](#-limits)
+[Quick start](#-quick-start) · [The web UI](#%EF%B8%8F-the-web-ui) · [What it does](#-what-it-does) · [How it works](#-how-it-works) · [The rules](#%EF%B8%8F-rules-the-model-cannot-talk-its-way-around) · [Recorded runs](#-checked-not-just-claimed)
 
 <br>
 
@@ -33,12 +33,6 @@ never actually run.
 ScholarLoop keeps the model doing the thinking and puts a harness around it that keeps the
 books. When an output breaks a rule, the harness rejects it, hands the errors back, and the
 model tries again. You stay at the decisions that need judgment.
-
-> [!IMPORTANT]
-> ScholarLoop does not claim to be a better scientist. Its own reviewers rejected every paper
-> it has written, and on hyperparameter search it ties or loses to random search. What it offers
-> is a research process you can audit sentence by sentence, and [measurements](#-what-we-have-measured)
-> of how often that audit holds.
 
 ## ✨ What it does
 
@@ -137,6 +131,28 @@ read-only, so you can look at everything without spending anything.
 </tr>
 </table>
 
+### Explore a recorded study in five minutes
+
+1. Start the UI and click **Explore a real run**. Four studies appear under *Your research*.
+2. **Research Ideas**: read each idea's hypothesis, compare tournament ratings, open a source on arXiv.
+3. **Experiments**: see one bar per arm and the record of every run.
+4. **Scientific Review**: read the verdict, then unfold any issue to see how it was closed.
+5. **Writing**: open the manuscript, then the *sentence-by-sentence trace* to see the approved
+   statement behind each sentence, and the *evidence map* to reach its runs and code versions.
+
+### Run your own study
+
+1. Click **New research**, pick a domain, and set a spending cap.
+2. Add your Anthropic key under **Connections** (it stays in memory on your machine).
+3. **Literature & Directions**: write what you want to find out, run the review, choose directions.
+4. **Research Ideas**: generate ideas, refine them with feedback or add your own, and select one.
+5. **Experiments**: start the campaign and watch runs arrive; each stage runs as a background job
+   with a live log, and you can stop it at any time.
+6. **Scientific Review**: let the four critics examine the argument, answer what they raise, and approve.
+7. **Writing**: step through outline, key points, manuscript and panel review.
+
+### What each page shows
+
 | Page | What you find there |
 |---|---|
 | Literature & Directions | your steer, the literature review, and the direction map with each direction's open question |
@@ -212,87 +228,30 @@ These live in code. A prompt can ask for good behaviour; a check can refuse the 
 Every attempt by every agent is logged with its output, its validation errors and its outcome,
 so the rejected attempts stay on the record too.
 
-## 📊 What we have measured
+## 📊 Checked, not just claimed
 
-We test the checks instead of asserting them, on three complete runs with `claude-opus-5-5`.
+The checks are tested, not asserted. On three complete runs with `claude-opus-5-5`:
 
 <table>
 <tr>
-<td align="center" width="25%"><h3>971 of 971</h3>fabricated citations, numbers and run ids rejected<br><sub>no clean artifact rejected, 0 of 41</sub></td>
-<td align="center" width="25%"><h3>43–56%</h3>of misattributions caught by code<br><sub>the rest falls to a model reviewer</sub></td>
-<td align="center" width="25%"><h3>0–5% vs 7–20%</h3>claims beyond the evidence<br><sub>ScholarLoop paper vs a single-call writer</sub></td>
-<td align="center" width="25%"><h3>3 of 3</h3>papers rejected by the system's own reviewers<br><sub>and we agree with them</sub></td>
+<td align="center" width="33%"><h3>971 of 971</h3>fabricated citations, numbers and run ids rejected<br><sub>and 0 of 41 clean artifacts rejected</sub></td>
+<td align="center" width="33%"><h3>1,627</h3>faults injected one at a time into accepted artifacts<br><sub>run it yourself from Evaluation &amp; Tools, free</sub></td>
+<td align="center" width="33%"><h3>0–5% vs 7–20%</h3>claims that go beyond the evidence<br><sub>ScholarLoop paper vs a single-call writer</sub></td>
 </tr>
 </table>
 
-### Three live runs
+### Three recorded studies to explore
 
-Each went from a one-sentence steer to a reviewed paper. The author wrote the steer, chose the
-idea and approved the argument. All three are in [`examples/sample_runs/`](examples/sample_runs/).
+Each went from a one-sentence steer to a reviewed paper. All three open in the web UI, and their
+files are in [`examples/sample_runs/`](examples/sample_runs/).
 
-| Run | What was asked | What the evidence said | Review rounds / approvals | Own reviewers | Cost |
-|---|---|---|---|---|---|
-| [Distillation](examples/sample_runs/distillation_on_vs_off_policy/) | does an adaptive switch from teacher to student prefixes help | the registered prediction was falsified | 10 / 3 | 2.2 of 10 | $34.40 |
-| [AG News](examples/sample_runs/agnews_regularizers/) | which boosting regularizers transfer to a small text classifier | partly held; the named comparator never ran | 2 / 1 | 2.7 of 10 | $13.39 |
-| [Digits](examples/sample_runs/digits_skip_connection/) | does a skip connection change a shallow MLP's final error | neither supported nor falsified | 7 / 2 | 2.7 of 10 | $25.66 |
-
-The reviewers' reasons: one small task each, few seeds, comparisons on validation data.
-
-### Do the checks catch faults?
-
-`scholarloop.reliability` takes artifacts the checks accepted, changes one thing at a time, and
-runs each variant through the production check: 1,627 injected faults over the three runs.
-
-| Kind of fault | Example | Distillation | AG News | Digits |
+| Run | What was asked | What the evidence said | Review rounds / approvals | Cost |
 |---|---|---|---|---|
-| Fabrication | a citation, run id or number that does not exist | 257 of 257 | 360 of 360 | 354 of 354 |
-| Misattribution | a real measurement in the wrong place; "lower" flipped to "higher" | 77 of 179 (43%) | 123 of 221 (56%) | 135 of 256 (53%) |
-| Clean artifact rejected | an unchanged artifact | 0 of 12 | 0 of 15 | 0 of 14 |
+| [Distillation](examples/sample_runs/distillation_on_vs_off_policy/) | does an adaptive switch from teacher to student prefixes help | the registered prediction was falsified | 10 / 3 | $34.40 |
+| [AG News](examples/sample_runs/agnews_regularizers/) | which boosting regularizers transfer to a small text classifier | partly held; the named comparator never ran | 2 / 1 | $13.39 |
+| [Digits](examples/sample_runs/digits_skip_connection/) | does a skip connection change a shallow MLP's final error | neither supported nor falsified | 7 / 2 | $25.66 |
 
-A check that looks up whether something exists cannot tell whether it is used correctly. A
-number moved to the wrong sentence is caught every time; a flipped direction inside prose mostly
-is not. The study also exposed two real holes in the checks, both now closed.
-
-### Does the paper say more than the evidence holds?
-
-A judge model read each paper with pipeline marks removed and labelled every result claim
-against the recorded evidence. The baseline is one model call given the same evidence, with the
-same rules as instructions.
-
-| Run | ScholarLoop paper: claims beyond the evidence | Single-call papers |
-|---|---|---|
-| Distillation | 5 of 93 (5%) | 59 of 492 (12%) |
-| AG News | 0 of 94 (0%) | 28 of 415 (7%) |
-| Digits | 1 of 110 (1%) | 65 of 332 (20%) |
-
-Lower in every run. The caveats: one ScholarLoop paper per run, intervals that overlap on
-distillation, and a judge from the same model family as the reviewers. A blinded check of these
-labels by people is under way.
-
-### Does enforcement change what a campaign tests?
-
-The same idea was handed to the experiment agent in two ways, ten campaigns each.
-
-| | Enforced by the harness | Asked for in the prompt |
-|---|---|---|
-| Campaigns that edited the code | 10 of 10 | 2 of 10 |
-| Edit implements the idea with a control that isolates it, per a judge model | 3 of 10 | 0 of 10 |
-
-Enforcement secures a matched pair. It does not secure that the pair tests the idea. One idea,
-one engine, and a judge from the same model family.
-
-### Agent versus random search
-
-Same number of training runs for each side, three campaigns each, on digits.
-
-| Agent | Agent held-out error | Random search | Result |
-|---|---|---|---|
-| first version | 4.22 | 3.13 ± 0.08 | random wins |
-| told the knob ranges, with an explore phase | 3.72 ± 0.24 | 3.13 | random wins all 9 pairs |
-| warm-started on random draws | 3.14 | 3.13 | a tie |
-
-A language model proposing hyperparameters does not beat random search on a small search space.
-If it has an edge, it is in changing the method, and we have not shown that it does.
+The full measurements, with every table, are in [`REFERENCE.md`](REFERENCE.md#measurements).
 
 ## 🧪 Engines
 
@@ -338,23 +297,6 @@ examples/              runnable scripts, each listed in examples/README.md
 └── sample_runs/       four recorded runs with their records; browse them in the web UI
 tests/                 mirrors the package and runs offline
 ```
-
-## 📌 Limits
-
-This is a research preview. It runs end to end on real experiments, and several things are
-missing or unproven.
-
-- **It has not been shown to produce better research.** Its own reviewers rejected all three
-  papers, and the output is a Markdown manuscript without figures or typesetting.
-- **"Treatment" is a label the agent applies.** The harness enforces the order of control and
-  treatment and records the edit. It does not verify that the edit implements the idea: a judge
-  found that it did in 3 of 10 campaigns.
-- **Wrong-but-real references get through the lexical checks.** Catching a real citation on the
-  wrong claim falls to the critics and a model reviewer, and those are model judgments.
-- **There is no real sandbox yet.** A hash detects a tampered scorer, but nothing stops a process
-  from writing to disk. The guards are designed for a model proposing edits, not for hostile code.
-- **Small tasks, one provider.** The shipped engines train in seconds on a CPU, and live runs go
-  through the Anthropic SDK.
 
 ## 📖 More
 
