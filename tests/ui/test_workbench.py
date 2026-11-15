@@ -357,10 +357,10 @@ def test_delete_archive_removes_only_its_workspace_entry(app):
 
 def test_every_shipped_run_opens_read_only_and_is_shown_as_recorded(app):
     shown = app.store.import_samples()
-    assert Path(shown["path"]).name == "distillation"
+    assert Path(shown["path"]).name == "distillation_on_vs_off_policy"
     runs = {Path(r["path"]).name: r for r in app.store.list_runs()}
-    assert {"distillation", "agnews", "digits_skip_connection", "digits_hyperparameter_tuning"} <= set(runs)
-    for name in ("distillation", "agnews", "digits_skip_connection"):
+    assert {"distillation_on_vs_off_policy", "agnews_regularizers", "digits_skip_connection", "digits_hyperparameter_tuning"} <= set(runs)
+    for name in ("distillation_on_vs_off_policy", "agnews_regularizers", "digits_skip_connection"):
         assert runs[name]["readonly"]
         detail = app.store.detail(runs[name]["id"])
         assert detail["entries"] and not detail["warnings"]
