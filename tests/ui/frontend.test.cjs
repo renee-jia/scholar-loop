@@ -351,7 +351,9 @@ test("the writing page leads with the manuscript and marks each stage done, curr
   html=h.run("writing()");
   assert.match(html,/manuscript-hero done/);
   assert.match(html,/<b>3,376<\/b><span>Words/);
-  assert.match(html,/<b>2\.2<small>\/10<\/small><\/b><span>Panel score · reject/);
+  assert.match(html,/<b>3<\/b><span>Simulated reviewers' reports/);
+  // The panel's score is in its report, not on the page's headline.
+  assert.doesNotMatch(html,/2\.2|reject/);
   assert.match(html,/data-file="paper_traced.md"/);
   assert.doesNotMatch(html,/data-action="write"/);
 });

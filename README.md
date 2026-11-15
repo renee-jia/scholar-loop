@@ -133,7 +133,7 @@ read-only, so you can look at everything without spending anything.
 <tr>
 <td width="33%" valign="top"><img src="assets/ui-ideas.jpg" alt="The Research Ideas page: each idea leads with its hypothesis and predicted effect, beside its tournament rank and scores"><br><b>Ideas.</b> Each one leads with its hypothesis, next to its tournament standing, scores and linked sources.</td>
 <td width="33%" valign="top"><img src="assets/ui-review.jpg" alt="The Scientific Review page: the verdict, counts of reviewers passed and claims supported, and a card per reviewer"><br><b>Review.</b> The verdict and the counts behind it, then the four critics and every issue they raised.</td>
-<td width="33%" valign="top"><img src="assets/ui-writing.jpg" alt="The Writing page: the manuscript title, its length and panel score, and the four writing stages"><br><b>Writing.</b> The manuscript, its sentence-by-sentence trace and evidence map, and the four stages that built it.</td>
+<td width="33%" valign="top"><img src="assets/ui-writing.jpg" alt="The Writing page: the manuscript title and its length, and the four writing stages"><br><b>Writing.</b> The manuscript, its sentence-by-sentence trace and evidence map, and the four stages that built it.</td>
 </tr>
 </table>
 

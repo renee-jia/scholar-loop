@@ -512,3 +512,4 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 /* Columns keep their own height; a short panel is not stretched to match its neighbour. */
 .grid-two { align-items: start; }
 .grid-two > .stack > .panel { flex: none; }
+.review-stats.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
