@@ -301,3 +301,27 @@ test("artifacts are grouped by stage, each file once, only the first group unfol
   h.state.filter="exp_1";
   assert.match(h.run(`fileRows(${JSON.stringify(registry)})`).split("<summary>")[0],/open/);
 });
+
+test("the review page leads with the verdict and its counts; open issues come first, unfolded",()=>{
+  const h=harness();
+  const report=(role,verdict)=>({role,verdict,summary:"One. Two. Three. Four. Five.",claim_checks:[{status:"supported_in_scope"},{status:"supported_in_scope"}]});
+  h.state.detail.review={status:"READY_TO_WRITE",hash:"abc",release_error:"",reports:[report("implementation","pass"),report("argument","pass")],
+    issues:[{id:"a",target:"claim_a",severity:"minor",status:"noted",role:"argument",action:"reframe",observation:"Seen."},
+            {id:"b",target:"claim_b",severity:"major",status:"verified",role:"implementation",action:"inspect",observation:"Seen.",resolution:{reason:"Checked the logs."}}]};
+  let html=h.run("review()");
+  assert.match(html,/review-verdict approved/);
+  assert.match(html,/<b>2<small>\/2<\/small><\/b><span>Reviewers passed/);
+  assert.match(html,/<b>4<small>\/4<\/small><\/b><span>Claim checks supported/);
+  assert.match(html,/<b>0<\/b><span>Issues still open/);
+  assert.match(html,/<b>2\/2<\/b> claims supported<\/span><span><b>1<\/b> issues raised/);
+  assert.match(html,/2 more points/);
+  assert.doesNotMatch(html,/file-group-title">Open</);
+  assert.ok(html.indexOf("Major, closed")<html.indexOf("Minor, closed"));
+  assert.match(html,/How it was closed<\/div><p>Checked the logs\./);
+  h.state.detail.review.status="NEEDS_REVISION";
+  h.state.detail.review.issues[0].status="open";
+  html=h.run("review()");
+  assert.match(html,/review-verdict waiting/);
+  assert.match(html,/issue-group" open><summary><span class="file-group-title">Open</);
+  assert.match(html,/review-stat alert"><b>1<\/b><span>Issues still open/);
+});

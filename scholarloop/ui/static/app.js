@@ -90,13 +90,22 @@ function ideaCard(idea, i) {
     `<footer class="idea-foot"><div class="idea-sources">${(idea.sources||[]).map(x=>`<span>${esc(x)}</span>`).join("")}<span class="mono">${esc(idea.idea_id)}</span></div>${button("select",chosen?"Confirm selection again":"Select this idea",chosen?"soft":"",{select:i+1})}</footer></article>`;
 }
 // A long recorded paragraph, shown one sentence per point. The words are not changed.
-function points(text) {
-  const parts=String(text??"").split(/(?<=[.!?])\s+(?=[A-Z"'(\[])/).reduce((out,part)=>{
+function sentences(text) {
+  return String(text??"").split(/(?<=[.!?])\s+(?=[A-Z"'(\[])/).reduce((out,part)=>{
     const last=out[out.length-1];
     if(last&&/(?:^|\s)(?:e\.g|i\.e|cf|vs|etc|Fig|Eq|No)\.$/.test(last))out[out.length-1]=last+" "+part; else out.push(part);
     return out;
   },[]).filter(Boolean);
+}
+function points(text) {
+  const parts=sentences(text);
   return parts.length<2?`<p>${esc(text??"")}</p>`:`<ul class="points">${parts.map(part=>`<li>${esc(part)}</li>`).join("")}</ul>`;
+}
+// The first few points, with the rest one click away.
+function leadPoints(text, keep=3) {
+  const parts=sentences(text), list=items=>`<ul class="points">${items.map(part=>`<li>${esc(part)}</li>`).join("")}</ul>`;
+  if(parts.length<=keep+1)return points(text);
+  return list(parts.slice(0,keep))+`<details class="more-points"><summary>${parts.length-keep} more points</summary>${list(parts.slice(keep))}</details>`;
 }
 function empty(title, text, action="", label="", symbol="leaf") {
   return `<div class="empty"><div class="empty-symbol">${icon(symbol)}</div><h3>${esc(title)}</h3><p>${esc(text)}</p>${action?button(action,label,"primary"):""}</div>`;
@@ -210,14 +219,43 @@ function protocols(kind="agenda") {
   if(!ps.length)return "";
   return panel(kind==="pilot"?"Idea pilot protocols":"Follow-up experiment protocols",ps.map(p=>`<div class="list-row"><div class="file-icon">${icon("flask")}</div><div class="grow"><strong class="mono">${esc(p.id.slice(0,16))}…</strong><small>${esc(p.status)}</small></div>${artifactButton(p.path,"View protocol")}${button(kind+"_run","Run / resume","small",{protocol_hash:p.id})}</div>`).join(""));
 }
+const reviewRoles={implementation:["Implementation","Does the code do what the argument says it does?"],experimental:["Experiment design","Are the comparisons fair and the numbers right?"],
+  falsification:["Falsifiability","Could each claim have failed, and were the controls run?"],argument:["Argument and evidence","Does the recorded evidence support every statement?"]};
+const words=value=>String(value??"").replaceAll("_"," ");
+// The verdict leads the page: what was decided, and the counts behind it.
+function reviewVerdict(r) {
+  const tone=r.release_error?"stale":r.status==="READY_TO_WRITE"?"approved":"waiting";
+  const checks=r.reports.flatMap(report=>report.claim_checks||[]), supported=checks.filter(c=>String(c.status).startsWith("supported")).length;
+  const open=r.issues.filter(i=>i.status==="open").length, passed=r.reports.filter(report=>report.verdict==="pass").length;
+  const stat=(value,label,alert=false)=>`<div class="review-stat${alert?" alert":""}"><b>${value}</b><span>${label}</span></div>`;
+  return `<section class="panel review-verdict ${tone}"><div class="review-verdict-head"><div class="review-mark">${icon(tone==="approved"?"check":"clock")}</div><div class="grow"><div class="idea-kicker">Verdict</div><h2>${esc(reviewLabels[r.status]||r.status)}</h2><p class="form-note">Approval applies only to the report you reviewed. New experiments or changes to the argument or code require a new review.</p></div>${tag(r.release_error?"New review required":r.status,r.release_error?"red":tone==="approved"?"green":"amber")}</div>`+
+    `<div class="review-stats">${stat(`${passed}<small>/${r.reports.length}</small>`,"Reviewers passed",passed<r.reports.length)}${stat(`${supported}<small>/${checks.length}</small>`,"Claim checks supported",supported<checks.length)}${stat(r.issues.length,"Issues raised across rounds")}${stat(open,"Issues still open",open>0)}</div>`+
+    `<div class="review-verdict-foot">${fileExists("scientific_review.md")?artifactButton("scientific_review.md","Read full review"):""}${r.hash?`<span class="mono">Version ${esc(r.hash.slice(0,24))}…</span>`:""}</div></section>`;
+}
+function reviewerCard(report, issues) {
+  const [name,asks]=reviewRoles[report.role]||[report.role,""], pass=report.verdict==="pass";
+  const checks=report.claim_checks||[], supported=checks.filter(c=>String(c.status).startsWith("supported")).length;
+  const mine=issues.filter(i=>i.role===report.role), open=mine.filter(i=>i.status==="open").length;
+  return `<article class="panel reviewer-card ${pass?"pass":"flag"}"><header><div class="grow"><h3>${esc(name)}</h3><p class="reviewer-asks">${esc(asks)}</p></div>${tag(report.verdict,pass?"green":"amber")}</header>`+
+    `<div class="reviewer-facts"><span><b>${supported}/${checks.length}</b> claims supported</span><span><b>${mine.length}</b> issues raised</span><span${open?' class="alert"':""}><b>${open}</b> still open</span></div>${leadPoints(report.summary)}</article>`;
+}
+// Open issues first and unfolded; resolved ones by severity, each a single line until opened.
+function reviewIssues(issues) {
+  const rest=[...issues], take=test=>{const mine=rest.filter(test);mine.forEach(i=>rest.splice(rest.indexOf(i),1));return mine;};
+  const groups=[["Open","Still to resolve before approval.",take(i=>i.status==="open"),true],["Major, closed","Resolved, verified or ruled out of scope.",take(i=>i.severity==="major"||i.severity==="blocking"),false],
+    ["Minor, closed","Noted or resolved; none of them blocks writing.",take(()=>true),false]];
+  const part=(label,text)=>text?`<div class="idea-label">${label}</div>${points(text)}`:"";
+  return groups.filter(g=>g[2].length).map(([title,note,mine,open])=>`<details class="file-group issue-group"${open?" open":""}><summary><span class="file-group-title">${title}</span><span class="file-group-count">${mine.length}</span><span class="file-group-note">${note}</span></summary>${mine.map(i=>
+    `<details class="review-issue ${i.status==="open"?"open-issue":""}"><summary><span class="issue-severity ${esc(i.severity||"")}">${esc(i.severity||"issue")}</span><span class="issue-title">${esc(i.title||i.target||i.id)}</span><small>${esc((reviewRoles[i.role]||[i.role])[0])} · ${esc(words(i.action))}</small>${tag(words(i.status),i.status==="open"?"amber":"green")}</summary><div class="issue-body">${part("Observation",i.observation||i.description)}${part("Required action",i.required_action)}${part("Resolution criterion",i.resolution_criterion)}${part("How it was closed",i.resolution?.reason)}</div></details>`).join("")}</details>`).join("");
+}
 function review() {
   const r=state.detail.review, ready=r.status==="READY_FOR_AUTHOR"&&!r.release_error;
   return heading("Review the argument before writing","Four reviewers examine the evidence. Author approval is tied to the current research version.","04 / SCIENTIFIC REVIEW")+
     (r.release_error?`<div class="notice error">The current approval is no longer valid: ${esc(r.release_error)}</div>`:"")+
     `<div class="action-row">${button("review",r.status?"Give feedback and review again":"Start scientific review","primary")}${ready?button("approve","Approve this version for writing","soft",{review_hash:r.hash}):""}${r.status?button("review_status","Validate review status"):""}${r.status==="NEEDS_EXPERIMENTS"?button("agenda_plan","Plan follow-up experiments","soft"):""}</div>`+
-    panel("Scientific Review",r.status?`<div class="panel-body"><div class="row space-between"><h3>${esc(reviewLabels[r.status]||r.status)}</h3>${tag(r.release_error?"New review required":r.status,r.release_error?"red":r.status==="READY_TO_WRITE"?"green":"amber")}</div><p class="form-note">Approval applies only to the report you reviewed. New experiments or changes to the argument or code require a new review.</p>${fileExists("scientific_review.md")?artifactButton("scientific_review.md","Read full review"):""}${r.hash?`<p class="subtitle mono">Version ${esc(r.hash.slice(0,24))}…</p>`:""}</div>`:(state.detail.config.readonly?recorded("review.md","This run predates the scientific review; its reviewer panel report is kept as a document","Read panel report"):empty("Establish what the evidence supports","After experiments, examine the implementation, experiment design, falsifiability, and final argument.")))+
-    `<div class="spacer"></div><div class="tool-grid">${r.reports.map(report=>`<article class="panel tool-card"><div class="row space-between"><h3>${esc({implementation:"Implementation",experimental:"Experiment design",falsification:"Falsifiability",argument:"Argument and evidence"}[report.role]||report.role)}</h3>${tag(report.verdict,report.verdict==="pass"?"green":"amber")}</div>${points(report.summary)}</article>`).join("")}</div>`+
-    (r.issues.length?`<div class="spacer"></div>`+panel("Review issues",r.issues.map(i=>`<div class="issue"><div class="row space-between"><strong>${esc(i.title||i.target||i.id)}</strong>${tag(i.status,i.status==="open"?"amber":"green")}</div>${points(i.observation||i.description||"")}<p><strong>Required action: </strong>${esc(i.required_action||"")}</p><p><strong>Resolution criterion: </strong>${esc(i.resolution_criterion||"")}</p><small class="muted">${esc(i.role)} · ${esc(i.action)}</small></div>`).join("")):"")+
+    (r.status?reviewVerdict(r):panel("Scientific Review",state.detail.config.readonly?recorded("review.md","This run predates the scientific review; its reviewer panel report is kept as a document","Read panel report"):empty("Establish what the evidence supports","After experiments, examine the implementation, experiment design, falsifiability, and final argument.")))+
+    (r.reports.length?`<div class="spacer"></div><div class="section-title"><h2>The four reviewers</h2></div><div class="tool-grid">${r.reports.map(report=>reviewerCard(report,r.issues)).join("")}</div>`:"")+
+    (r.issues.length?`<div class="spacer"></div>`+panel(`Review issues <span class="file-group-count">${r.issues.length}</span>`,reviewIssues(r.issues)):"")+
     `<div class="spacer"></div>${protocols()}<div class="spacer"></div>${jobPanel()}`;
 }
 function writing() {

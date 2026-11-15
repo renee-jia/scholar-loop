@@ -385,3 +385,52 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .idea-hypothesis { background: #f4f1e8; border-left-color: var(--done); }
 .idea-label { color: var(--done); }
 .idea-dots i.on { background: var(--done); }
+
+/* Scientific review: the verdict leads, the four reviewers support it, issues fold away. */
+.review-verdict { border-left: 4px solid var(--line-strong); }
+.review-verdict.approved { border-left-color: var(--done); }
+.review-verdict.waiting { border-left-color: var(--warning); }
+.review-verdict.stale { border-left-color: var(--red); }
+.review-verdict-head { display: flex; gap: 18px; align-items: flex-start; padding: 26px 28px 20px; }
+.review-mark { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
+.review-verdict.approved .review-mark { background: var(--done); border-color: var(--done); color: var(--paper); }
+.review-verdict-head h2 { font-family: var(--font-heading); font-size: 28px; line-height: 1.2; font-weight: 500; letter-spacing: -0.5px; }
+.review-verdict-head .form-note { margin-top: 6px; }
+.review-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #f4f1e8; }
+.review-stat { padding: 16px 28px; border-left: 1px solid var(--line); }
+.review-stat:first-child { border-left: 0; }
+.review-stat b { display: block; font-family: var(--font-heading); font-size: 30px; font-weight: 500; line-height: 1.1; color: var(--done); }
+.review-stat b small { font-size: 16px; color: var(--muted); }
+.review-stat.alert b { color: var(--warning); }
+.review-stat span { font-size: 11px; color: var(--muted); }
+.review-verdict-foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 28px; color: var(--muted); }
+.reviewer-card { padding: 0; border-top: 3px solid var(--done); }
+.reviewer-card.flag { border-top-color: var(--warning); }
+.reviewer-card header { display: flex; gap: 12px; align-items: flex-start; padding: 20px 24px 12px; }
+.reviewer-card h3 { font-family: var(--font-heading); font-size: 20px; font-weight: 500; }
+.reviewer-asks { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.reviewer-facts { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0 24px; padding: 10px 14px; background: #f4f1e8; border-radius: 8px; font-size: 12px; color: var(--muted); }
+.reviewer-facts b { color: var(--ink); font-weight: 650; }
+.reviewer-facts .alert b { color: var(--warning); }
+.reviewer-card > .points, .reviewer-card > p { margin: 14px 24px 0; }
+.reviewer-card > :last-child { margin-bottom: 20px; }
+.more-points { margin: 4px 24px 0; }
+.more-points > summary { font-size: 12px; font-weight: 600; color: var(--done); padding: 4px 0; }
+.review-issue { margin: 0; border-bottom: 1px solid var(--line); }
+.review-issue:last-child { border-bottom: 0; }
+.review-issue > summary { display: flex; align-items: center; gap: 12px; padding: 12px 22px; font-size: 12px; color: var(--ink); list-style: none; }
+.review-issue > summary::-webkit-details-marker { display: none; }
+.review-issue > summary:hover { background: var(--surface); }
+.issue-severity { font-size: 9px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); min-width: 48px; text-align: center; }
+.issue-severity.major, .issue-severity.blocking { background: var(--warning-soft); color: var(--warning); border-color: transparent; }
+.issue-title { font-family: var(--font-mono); font-size: 12px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-issue > summary small { color: var(--muted); white-space: nowrap; }
+.issue-body { padding: 4px 22px 18px 92px; }
+.issue-body .idea-label { margin-top: 12px; }
+.issue-body .points, .issue-body p { font-size: 12px; line-height: 1.7; color: var(--muted); margin-top: 4px; }
+@media (max-width: 900px) { .review-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .issue-body { padding-left: 22px; } .review-issue > summary small { display: none; } }
+.review-verdict-head .grow, .reviewer-card header .grow, .idea-head .grow { flex: 1; min-width: 0; }
+.review-issue > summary::before { content: "▸"; color: var(--muted); font-size: 11px; width: 10px; }
+.review-issue[open] > summary::before { content: "▾"; }
+.review-issue[open] > summary { background: var(--surface); }
+.issue-body { padding-left: 114px; }
