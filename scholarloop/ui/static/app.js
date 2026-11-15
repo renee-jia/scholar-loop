@@ -74,6 +74,21 @@ function recorded(file, what, label) {
   return fileExists(file) ? `<div class="empty"><div class="empty-symbol">${icon("folder")}</div><h3>${esc(what)}</h3><p>This archived run did not record this stage in a structured form.</p>${artifactButton(file,label)}</div>`
     : `<div class="empty"><div class="empty-symbol">${icon("folder")}</div><h3>Nothing was recorded for this stage</h3><p>This archived run kept no record here.</p></div>`;
 }
+// One idea: the hypothesis leads, scores and tournament standing sit beside the title, and the
+// longer parts fold away. The chosen idea is marked and starts unfolded.
+function ideaCard(idea, i) {
+  const chosen=state.detail.session.selected===i+1, t=idea.tournament||{}, elo=t.elo??t.rating, h=idea.hypothesis||{};
+  const dots=n=>`<span class="idea-dots" aria-hidden="true">${[1,2,3,4,5].map(k=>`<i${k<=Math.round(n)?' class="on"':""}></i>`).join("")}</span>`;
+  const score=(label,n)=>Number.isFinite(Number(n))&&n!==null&&n!==""?`<span class="idea-score">${label} ${dots(Number(n))}<b>${Math.round(Number(n))}/5</b></span>`:"";
+  const novelty=idea.novelty_review?.status;
+  const fold=(title,text,open)=>text?`<details class="idea-fold"${open?" open":""}><summary>${title}</summary>${points(text)}</details>`:"";
+  const kicker=[`Idea ${String(i+1).padStart(2,"0")}`,t.rank?`Rank ${t.rank} in the tournament`:"",idea.strategy==="human"?"Added by the author":""].filter(Boolean).join(" · ");
+  return `<article class="panel idea-card${chosen?" chosen":""}"><header class="idea-head"><div class="idea-rank">${String(i+1).padStart(2,"0")}</div><div class="grow"><div class="idea-kicker">${esc(kicker)}</div><h3>${esc(idea.title)}</h3></div><div class="idea-tags">${chosen?tag("Selected","green"):""}${elo?tag(`Elo ${Math.round(elo)}`,"outline"):chosen?"":tag(idea.status||"candidate","outline")}${t.wins!==undefined?`<small>${t.wins}W · ${t.losses}L · ${t.draws}D</small>`:""}</div></header>`+
+    `<section class="idea-hypothesis"><div class="idea-label">Hypothesis</div><p>${esc(h.claim??"")}</p>${h.predicted_effect?`<div class="idea-label">Predicted effect</div>${points(h.predicted_effect)}`:""}</section>`+
+    `<div class="idea-scores">${score("Feasibility",idea.feasibility)}${score("Impact",idea.impact)}${novelty?`<span class="idea-score">Novelty check <b>${esc(String(novelty).replaceAll("_"," "))}</b></span>`:""}</div>`+
+    fold("Approach",idea.description,chosen)+fold("Why it might work",idea.design?.mechanism,false)+fold("Experiment plan",idea.experiment_plan,chosen)+
+    `<footer class="idea-foot"><div class="idea-sources">${(idea.sources||[]).map(x=>`<span>${esc(x)}</span>`).join("")}<span class="mono">${esc(idea.idea_id)}</span></div>${button("select",chosen?"Confirm selection again":"Select this idea",chosen?"soft":"",{select:i+1})}</footer></article>`;
+}
 // A long recorded paragraph, shown one sentence per point. The words are not changed.
 function points(text) {
   const parts=String(text??"").split(/(?<=[.!?])\s+(?=[A-Z"'(\[])/).reduce((out,part)=>{
@@ -179,7 +194,7 @@ function ideas() {
   const ideas=state.detail.session.ideas||[];
   return heading("Choose an idea worth testing","Compare hypotheses, feasibility, and experiment plans. Rankings inform your choice; you set the direction.","02 / RESEARCH IDEAS")+
     `<div class="action-row">${button("ideas","Generate candidate ideas","primary")}${button("refine_ideas","Give feedback and refine")}${button("inject","Add your own idea")}${button("decide","Manage idea decisions")}${button("pilot_plan","Plan a pilot")}</div>`+
-    (ideas.length?`<div class="cards idea-list">${ideas.map((idea,i)=>`<article class="panel idea-card"><div class="row space-between"><span class="card-number">IDEA 0${i+1}</span>${state.detail.session.selected===i+1?tag("Selected","green"):tag(idea.tournament?.rating?`Elo ${Math.round(idea.tournament.rating)}`:idea.status||"candidate","outline")}</div><h3>${esc(idea.title)}</h3>${points(idea.description)}<h4 class="idea-part">Hypothesis</h4>${points(idea.hypothesis?.claim)}<h4 class="idea-part">Experiment plan</h4>${points(idea.experiment_plan)}<div class="card-meta"><span class="mono">${esc(idea.idea_id)}</span><br>Sources: ${esc((idea.sources||[]).join(" · "))}</div>${button("select",state.detail.session.selected===i+1?"Confirm selection again":"Select this idea",state.detail.session.selected===i+1?"soft":"",{select:i+1})}</article>`).join("")}</div>`:panel("Candidate ideas",(state.detail.config.readonly?recorded("ideas.md","The ideas and their tournament are kept as a document","Read ideas"):empty("Develop a testable hypothesis","Complete the literature review and choose directions, or submit your own idea with supporting sources."))))+
+    (ideas.length?`<div class="cards idea-list">${ideas.map(ideaCard).join("")}</div>`:panel("Candidate ideas",(state.detail.config.readonly?recorded("ideas.md","The ideas and their tournament are kept as a document","Read ideas"):empty("Develop a testable hypothesis","Complete the literature review and choose directions, or submit your own idea with supporting sources."))))+
     `<div class="spacer"></div>${protocols("pilot")}<div class="spacer"></div>${jobPanel()}`;
 }
 function experiments() {

@@ -251,13 +251,25 @@ test("a finished study is marked ready, and the recorded runs are one click away
   assert.match(h.run("home()"),/class="btn" data-do="sample"/);
 });
 
-test("ideas are listed one per row",()=>{
+test("an idea leads with its hypothesis; the chosen one is marked and unfolded",()=>{
   const h=harness();
-  h.state.detail.session.ideas=[{idea_id:"i1",title:"A",description:"d",hypothesis:{claim:"c"},experiment_plan:"p",sources:[]}];
-  h.state.detail.session.ideas[0].experiment_plan="Train five seeds. Compare both arms.";
+  const idea=n=>({idea_id:"i"+n,title:"T"+n,description:"First step. Second step.",hypothesis:{claim:"Claim "+n,predicted_effect:"One point lower."},
+    experiment_plan:"Train five seeds. Compare both arms.",sources:["arXiv:1"],feasibility:4,impact:3,tournament:{elo:1214.5,rank:n,wins:2,losses:1,draws:1},novelty_review:{status:"provisional_difference"}});
+  h.state.detail.session.ideas=[idea(1),idea(2)];
+  h.state.detail.session.selected=2;
   const html=h.run("ideas()");
   assert.match(html,/class="cards idea-list"/);
-  assert.match(html,/Experiment plan<\/h4><ul class="points"><li>Train five seeds\.<\/li><li>Compare both arms\.<\/li>/);
+  const cards=html.split("<article").slice(1);
+  assert.equal(cards.length,2);
+  assert.doesNotMatch(cards[0],/idea-card chosen/);
+  assert.match(cards[1],/idea-card chosen/);
+  assert.match(cards[0],/idea-hypothesis"><div class="idea-label">Hypothesis<\/div><p>Claim 1<\/p>/);
+  assert.match(cards[0],/Elo 1215/);
+  assert.match(cards[0],/2W · 1L · 1D/);
+  assert.match(cards[0],/Feasibility .*4\/5/);
+  assert.match(cards[0],/provisional difference/);
+  assert.match(cards[0],/<details class="idea-fold"><summary>Experiment plan/);
+  assert.match(cards[1],/<details class="idea-fold" open><summary>Experiment plan<\/summary><ul class="points"><li>Train five seeds\.<\/li><li>Compare both arms\.<\/li>/);
 });
 
 test("a long recorded paragraph is shown one sentence per point, words unchanged",()=>{

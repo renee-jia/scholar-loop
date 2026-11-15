@@ -326,13 +326,6 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .workflow-step.done .step-circle { background: var(--done); border-color: var(--done); color: var(--paper); }
 .welcome-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
-/* Ideas carry a description, a hypothesis and a plan: one per row, at a readable line length. */
-.cards.idea-list { grid-template-columns: minmax(0, 1fr); gap: 14px; }
-.idea-list .idea-card { padding: 24px 28px; gap: 10px; }
-.idea-list .idea-card h3 { font-size: 17px; }
-.idea-list .idea-card p { font-size: 13px; line-height: 1.75; }
-.idea-list .idea-card .btn { align-self: flex-start; margin-top: 6px; }
-
 /* One sentence per point, for long recorded paragraphs. */
 .points { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .points li { margin: 0 0 6px; padding-left: 2px; }
@@ -355,6 +348,36 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .file-group > summary::before { content: "▸"; color: var(--muted); font-size: 11px; width: 10px; }
 .file-group[open] > summary::before { content: "▾"; }
 
-/* An idea reads as three short lists that use the full width of the card. */
-.idea-list .points { font-size: 13px; line-height: 1.7; margin-top: 0; }
-.idea-part { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink); margin: 8px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
+/* Ideas, one per row. The hypothesis is the point of the card; the rest supports it. */
+.cards.idea-list { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.idea-list .idea-card { padding: 0; gap: 0; overflow: hidden; border-left: 4px solid var(--line-strong); }
+.idea-list .idea-card.chosen { border-left-color: var(--done); box-shadow: var(--shadow); }
+.idea-head { display: flex; gap: 18px; align-items: flex-start; padding: 24px 28px 18px; }
+.idea-rank { font-family: var(--font-heading); font-size: 40px; line-height: 1; color: var(--line-strong); min-width: 52px; }
+.idea-card.chosen .idea-rank { color: var(--done); }
+.idea-kicker { font-size: 10px; font-weight: 600; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.idea-head h3 { font-family: var(--font-heading); font-size: 22px; line-height: 1.3; font-weight: 500; letter-spacing: -0.3px; text-wrap: balance; }
+.idea-tags { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; white-space: nowrap; }
+.idea-tags small { font-size: 10px; color: var(--muted); }
+.idea-hypothesis { margin: 0 28px; padding: 16px 20px; background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; }
+.idea-label { font-size: 10px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent); }
+.idea-hypothesis > p { font-size: 15px; line-height: 1.65; color: var(--ink); margin: 6px 0 0; }
+.idea-hypothesis .idea-label + .points, .idea-hypothesis p + .idea-label { margin-top: 12px; }
+.idea-hypothesis .points { margin-top: 6px; font-size: 13px; }
+.idea-scores { display: flex; flex-wrap: wrap; gap: 8px 26px; padding: 16px 28px 6px; font-size: 12px; color: var(--muted); }
+.idea-score { display: inline-flex; align-items: center; gap: 8px; }
+.idea-score b { color: var(--ink); font-weight: 600; }
+.idea-dots { display: inline-flex; gap: 3px; }
+.idea-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.idea-dots i.on { background: var(--accent); }
+.idea-fold { margin: 0; padding: 0 28px; border-top: 1px solid var(--line); }
+.idea-scores + .idea-fold { margin-top: 12px; }
+.idea-fold > summary { padding: 13px 0; font-size: 13px; font-weight: 600; color: var(--ink); }
+.idea-fold .points { margin: 0 0 16px; font-size: 13px; line-height: 1.7; }
+.idea-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 28px; background: var(--surface); border-top: 1px solid var(--line); }
+.idea-list .idea-card .idea-foot .btn { margin: 0; flex: none; }
+.idea-sources { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.idea-sources span { font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 2px 8px; background: var(--paper); }
+.idea-sources span.mono { border: 0; background: none; }
+@media (max-width: 760px) { .idea-head { flex-wrap: wrap; } .idea-tags { flex-direction: row; align-items: center; } }
+.idea-hypothesis .idea-label ~ .idea-label + p { font-size: 13px; line-height: 1.7; color: var(--muted); }
