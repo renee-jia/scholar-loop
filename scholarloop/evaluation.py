@@ -91,15 +91,24 @@ def process_report(directory) -> dict:
     out = Path(directory)
     stages, traced = [], 0.0
     for path in sorted(out.rglob("*.agents.jsonl")):
-        rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        rows = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue                                 # a killed process leaves a partial last line
+            if isinstance(row, dict):
+                rows.append(row)
         done = [r for r in rows if r.get("event") == "finished"]
         model = next((r.get("model") for r in rows if r.get("model")), None)
         readings, previous = [], None
-        for r in done:
+        for r in rows:
             usage = r.get("client_usage") or {}
             if previous is not None and usage.get("calls", 0) < previous.get("calls", 0):
                 readings.append(previous)                # a new process started counting again
-            previous = usage
+                previous = None
+            if r.get("event") == "finished":
+                previous = usage
         if previous:
             readings.append(previous)
         usd = sum(cost_of(u, model) or 0.0 for u in readings)
@@ -117,14 +126,15 @@ def process_report(directory) -> dict:
                                 + u.get("cache_read_input_tokens", 0) for u in readings),
             "output_tokens": sum(u.get("output_tokens", 0) for u in readings),
             "usd_estimate": round(usd, 2)})
-    spend = json.loads((out / "spend.json").read_text()) if (out / "spend.json").exists() else None
+    spend_path = next((out / n for n in ("spend.json", "ui_spend.json") if (out / n).exists()), None)
+    spend = json.loads(spend_path.read_text(encoding="utf-8")) if spend_path else None
     report = {"version": 1, "stages": stages, "usd_traced": round(traced, 2),
               "usd_spend_file": round(spend["usd"], 2) if spend else None,
               "requests_spend_file": spend.get("requests") if spend else None}
 
-    states = [json.loads(p.read_text()) for p in sorted((out / "review_history").glob("*.json"))]
+    states = [json.loads(p.read_text(encoding="utf-8")) for p in sorted((out / "review_history").glob("*.json"))]
     if (out / "scientific_review.json").exists():
-        states.append(json.loads((out / "scientific_review.json").read_text()))
+        states.append(json.loads((out / "scientific_review.json").read_text(encoding="utf-8")))
     rounds = {}
     for state in states:                       # a round is archived more than once; keep its last state
         if state.get("status") != "REVIEWING":
@@ -145,7 +155,7 @@ def process_report(directory) -> dict:
 
     writing = []
     for path in sorted(out.rglob("writing.json")):
-        state = json.loads(path.read_text())
+        state = json.loads(path.read_text(encoding="utf-8"))
         row = {"directory": str(path.parent.relative_to(out)) or ".", "stage_reached": state.get("stage"),
                "sections_drafted": len(state.get("sections") or [])}
         for key in ("outline_discussion", "keypoints_discussion"):
@@ -206,7 +216,7 @@ def main(argv=None):
     if args.process:
         report = process_report(args.out)
         atomic_json(Path(args.out) / "process.json", report)
-        (Path(args.out) / "process.md").write_text(render_process(report))
+        (Path(args.out) / "process.md").write_text(render_process(report), encoding="utf-8")
         print(render_process(report))
         return 0
     report = audit_run(load_profile(args.profile), args.out, research_dir=args.research)

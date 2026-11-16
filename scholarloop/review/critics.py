@@ -105,6 +105,10 @@ def keep_settled(argument, previous, issues) -> None:
         merged = [now.get(i) if i in named else x for i, x in before.items()]
         merged = [x for x in merged if x is not None]
         argument[key] = merged + [x for i, x in now.items() if i not in before]
+    # A restored claim may rest on a claim the revision withdrew: that dependency is gone too.
+    alive = {c["id"] for c in argument.get("claims", [])}
+    argument["claims"] = [{**c, "depends_on": [d for d in c["depends_on"] if d in alive]}
+                          if set(c.get("depends_on", [])) - alive else c for c in argument.get("claims", [])]
     if not any(i["target"] == "dossier" or "limitation" in text.lower() for i in owed):
         argument["limitations"] = list(previous["limitations"])
 

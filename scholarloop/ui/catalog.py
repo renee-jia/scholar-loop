@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -70,7 +71,7 @@ FIELDS = {
     "compare": [field("arms", "Methods to compare", "select", "random", options=["random", "agent,random"]),
                 field("repeats", "Repetitions", "number", 3, min=1, max=30),
                 field("rounds", "Rounds per study", "number", 3, min=1, max=100),
-                field("match", "Match budgets by", "select", "runs", options=["runs", "rounds"]),
+                field("match", "Match budgets by", "select", "rounds", options=["rounds", "runs"]),
                 field("warm_start", "Random initial candidates", "number", 0, min=0, max=100)],
 }
 LABELS = {
@@ -176,23 +177,35 @@ def build_command(action, p, config, run: Path, workspace: Path, job_dir: Path):
         path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
         return str(path)
 
+    def text(name, value):
+        # Free text travels as one `--name=value` token, so a value that starts with "-" is
+        # still that option's value and never a new option.
+        return f"--{name}={value}"
+
+    def ids(value):
+        found = value.replace(",", " ").split()
+        if any(not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.:-]*", i) for i in found):
+            raise ValueError("Idea IDs may contain only letters, digits and _ . : -")
+        return found
+
     def add(cmd, name, value):
         if value not in (None, "", False):
-            cmd.extend(["--" + name, str(value)])
+            cmd.append(text(name, value))
 
     if action in {"campaign", "demo", "literature", "directions", "ideas", "refine_ideas"}:
         payload = {"action": action, "params": p, "config": config, "run": str(run), "workspace": str(workspace)}
         return base + ["scholarloop.ui.worker", doc("request", payload)]
     if action in {"select", "inject", "decide"}:
         cmd = base + ["scholarloop.ideation", "--profile", profile, "--out", str(run),
-                      "--topic", config["title"], *model, *calls]
+                      text("topic", config["title"]), *model, *calls]
+        who = [text("actor", p["author"]), text("reason", p["reason"])]
         if action == "select":
-            cmd += ["--select", str(p["select"]), "--actor", p["author"], "--reason", p["reason"]]
+            cmd += ["--select", str(p["select"]), *who]
         elif action == "inject":
-            cmd += ["--inject-idea", doc("idea", p["idea"]), "--actor", p["author"], "--reason", p["reason"]]
+            cmd += ["--inject-idea", doc("idea", p["idea"]), *who]
         else:
-            cmd += ["--decision", p["decision"], "--idea-ids", *p["idea_ids"].replace(",", " ").split(),
-                    "--actor", p["author"], "--reason", p["reason"], "--n-ideas", str(p["n_ideas"])]
+            cmd += ["--decision", p["decision"], "--idea-ids", *ids(p["idea_ids"]), *who,
+                    "--n-ideas", str(p["n_ideas"])]
         return cmd
     if action in {"review", "approve", "review_status"}:
         cmd = base + ["scholarloop.review", {"review": "review", "approve": "approve", "review_status": "status"}[action],
@@ -207,7 +220,7 @@ def build_command(action, p, config, run: Path, workspace: Path, job_dir: Path):
             for line in p["critic_models"].splitlines():
                 add(cmd, "critic-model", line.strip())
         elif action == "approve":
-            cmd += ["--author", p["author"], "--review-hash", p["review_hash"]]
+            cmd += [text("author", p["author"]), text("review-hash", p["review_hash"])]
         return cmd
     if action.startswith("agenda_") or action.startswith("pilot_"):
         pilot = action.startswith("pilot_")
@@ -220,20 +233,20 @@ def build_command(action, p, config, run: Path, workspace: Path, job_dir: Path):
             if p["spec"]:
                 cmd += ["--spec", doc("spec", p["spec"])]
             if pilot:
-                cmd += ["--idea-ids", *p["idea_ids"].replace(",", " ").split()]
+                cmd += ["--idea-ids", *ids(p["idea_ids"])]
         else:
-            cmd += ["--protocol-hash", p["protocol_hash"], "--author", p["author"],
+            cmd += [text("protocol-hash", p["protocol_hash"]), text("author", p["author"]),
                     "--max-conditions", str(p["max_conditions"])]
         return cmd
     if action == "iterate":
         return base + ["scholarloop.experiment.research_cycle", *common, *research, *calls,
-                       "--question", p["question"], "--feedback", p["feedback"],
+                       text("question", p["question"]), text("feedback", p["feedback"]),
                        "--max-training-attempts", str(p["training_limit"])]
     if action in {"write", "write_feedback", "write_auto"}:
         writing_common = list(common)
         writing_common[writing_common.index("--out") + 1] = str(writing_directory(run))
         cmd = base + ["scholarloop.writing", *writing_common, "--review-dir", str(run), *research, *model, *calls]
-        return cmd + (["--feedback", p["feedback"]] if action == "write_feedback" else
+        return cmd + ([text("feedback", p["feedback"])] if action == "write_feedback" else
                       ["--auto" if action == "write_auto" else "--approve"])
     if action == "evaluate":
         return base + ["scholarloop.evaluation", "--profile", profile, "--out", str(run), *research,
@@ -253,7 +266,10 @@ def build_command(action, p, config, run: Path, workspace: Path, job_dir: Path):
                       [*model, "--arms", p["arms"], "--max-calls", str(p["calls"])])
     if action == "suite":
         manifest = p["manifest"]
-        for task in manifest.get("tasks", []):
+        tasks = manifest.get("tasks", []) if isinstance(manifest, dict) else None
+        if not isinstance(tasks, list) or any(not isinstance(t, dict) for t in tasks):
+            raise ValueError("The manifest must be an object whose `tasks` is a list of objects")
+        for task in tasks:
             path = (workspace / task.get("profile", "")).resolve()
             if not path.is_relative_to(workspace):
                 raise ValueError("Suite profiles must be inside the workspace")
@@ -261,7 +277,7 @@ def build_command(action, p, config, run: Path, workspace: Path, job_dir: Path):
         return base + ["scholarloop.experiment.suite", "--manifest", doc("manifest", manifest), "--out", str(run / "suite")]
     if action == "compare":
         cmd = base + ["examples.compare_search", "--profile", Path(profile).stem, "--out", str(run / "comparison"),
-                      "--max-calls", str(config["max_calls"]), "--topic", config["title"]]
+                      "--max-calls", str(config["max_calls"]), text("topic", config["title"])]
         for key in ("arms", "repeats", "rounds", "match", "warm_start"):
             cmd += ["--" + key.replace("_", "-"), str(p[key])]
         return cmd

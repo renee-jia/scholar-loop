@@ -37,7 +37,7 @@ class CallLimitedLLM(LLMClient):
     def _reserve(self):
         with self._mutex:
             if self.path:
-                with exclusive_lock(self.path.with_suffix(".lock")):
+                with exclusive_lock(self.path.with_suffix(".lock"), wait=10.0):
                     state = read_json(self.path) if self.path.exists() else {"reserved_calls": 0}
                     used = state["reserved_calls"]
                     if type(used) is not int or used < 0:

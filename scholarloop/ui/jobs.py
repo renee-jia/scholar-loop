@@ -151,6 +151,8 @@ class Jobs:
                     os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
+            if process.poll() == 0:                    # it finished on its own just before the signal
+                return dict(self.records[ident])
             self.records[ident]["status"] = "cancelled"
             atomic_json(self.root / ident / "job.json", self.records[ident])
             return dict(self.records[ident])

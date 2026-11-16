@@ -165,10 +165,10 @@ def test_profile_root_outside_a_profiles_folder(tmp_path):
     src = ROOT / "profiles" / "digits-mlp.yaml"
     flat = tmp_path / "proj"
     (flat / "engines").mkdir(parents=True)
-    (flat / "my-profile.yaml").write_text(src.read_text())
+    (flat / "my-profile.yaml").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
     p = load_profile(flat / "my-profile.yaml")
     (flat / p.train_entrypoint).parent.mkdir(parents=True, exist_ok=True)
-    (flat / p.train_entrypoint).write_text("")
+    (flat / p.train_entrypoint).write_text("", encoding="utf-8")
     assert p.root == flat                                                  # found the engine next to the profile
     assert PROFILE.root == ROOT                                            # the repo layout still works
 

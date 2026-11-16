@@ -96,7 +96,7 @@ def run_campaign(llm, profile, handoff: dict, out: Path, *, arm: str, steps: int
                         registry_dir=out / "registry", calibration_path=out / "calibration.json")
     orch.adopt(arm_handoff(handoff, arm))
     orch.run(steps, funnel=True)
-    (out / "done.json").write_text(json.dumps({"arm": arm, "steps": steps}))
+    (out / "done.json").write_text(json.dumps({"arm": arm, "steps": steps}), encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -105,12 +105,12 @@ def run_campaign(llm, profile, handoff: dict, out: Path, *, arm: str, steps: int
 
 def _records(directory: Path) -> tuple[list[dict], dict[str, dict]]:
     ledger = directory / "experiments.jsonl"
-    entries = [json.loads(line) for line in ledger.read_text().splitlines() if line.strip()] if ledger.exists() else []
+    entries = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines() if line.strip()] if ledger.exists() else []
     candidates = {}
     for e in entries:
         path = directory / "registry" / "candidates" / f"{e.get('candidate_id')}.json"
         if e.get("candidate_id") and path.exists():
-            candidates[e["candidate_id"]] = json.loads(path.read_text())
+            candidates[e["candidate_id"]] = json.loads(path.read_text(encoding="utf-8"))
     return entries, candidates
 
 
@@ -118,7 +118,7 @@ def structure(directory: Path, profile) -> dict:
     """Everything the records alone say about one campaign."""
     entries, candidates = _records(directory)
     root_path = profile.root / profile.train_entrypoint
-    root = root_path.read_text() if root_path.is_file() else ""
+    root = root_path.read_text(encoding="utf-8") if root_path.is_file() else ""
     source = {cid: c["sources"].get(profile.train_entrypoint, "") for cid, c in candidates.items()}
     knobs = {cid: {k: c["config"].get(k, default) for k, default in profile.knobs.items()}
              for cid, c in candidates.items()}
@@ -126,6 +126,8 @@ def structure(directory: Path, profile) -> dict:
     for e in entries:
         if e.get("candidate_id") in candidates:
             seeds = tuple((e.get("metric") or {}).get("seed_ids") or [])
+            if not seeds:                            # a killed run measured nothing to pair
+                continue
             ran.setdefault(e["candidate_id"], set()).add((tuple(e.get("fidelity") or []), seeds))
     roles = {e["candidate_id"]: e["reasoning"]["idea_role"] for e in entries
              if e.get("candidate_id") and (e.get("reasoning") or {}).get("idea_role")}
@@ -216,10 +218,10 @@ def measure(directory: Path, profile, idea: dict, llm=None, trace=None) -> dict:
     row["pairs"] = [list(p) for p in s["pairs"]]
     verdict_path = directory / "fidelity_judgment.json"
     if verdict_path.exists():
-        verdict = json.loads(verdict_path.read_text())
+        verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
     elif llm is not None and s["candidates"]:
         verdict = IdeaJudge(llm, trace=trace).run({"structure": s, "idea": idea})
-        verdict_path.write_text(json.dumps(verdict, indent=1))
+        verdict_path.write_text(json.dumps(verdict, indent=1), encoding="utf-8")
     else:
         verdict = None
     if verdict is not None:
@@ -237,7 +239,7 @@ def protocol_reference(directory: Path) -> list[dict]:
     entries, _ = _records(directory)
     rows = []
     for spec_path in sorted((directory / "registry" / "protocols").glob("*.json")):
-        spec = json.loads(spec_path.read_text())
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
         pid = spec_path.stem
         registered = _conditions(spec)
         runs = [e for e in entries if (e.get("protocol") or {}).get("id") == pid]
@@ -350,8 +352,8 @@ def build_report(out: Path, profile, handoff: dict, steps: int, llm=None, protoc
     report = {"version": "1", "profile": profile.name, "idea_title": handoff["idea"].get("title"),
               "steps": steps, "campaigns": rows, "summary": summarise(rows),
               "protocols": [row for run in protocol_runs for row in protocol_reference(Path(run))]}
-    (out / "fidelity.json").write_text(json.dumps(report, indent=1))
-    (out / "fidelity.md").write_text(render(report))
+    (out / "fidelity.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
+    (out / "fidelity.md").write_text(render(report), encoding="utf-8")
     return report
 
 
@@ -369,7 +371,7 @@ def main(argv=None) -> int:
                     help="a recorded run directory whose frozen protocols are reported as a reference")
     ap.add_argument("--no-judge", action="store_true", help="report the recorded counts only")
     a = ap.parse_args(argv)
-    profile, handoff, out = load_profile(a.profile), json.loads(Path(a.handoff).read_text()), Path(a.out)
+    profile, handoff, out = load_profile(a.profile), json.loads(Path(a.handoff).read_text(encoding="utf-8")), Path(a.out)
     if not handoff.get("idea"):
         ap.error("the handoff carries no idea")
     llm = AnthropicLLM(model=model_from_env())

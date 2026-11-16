@@ -87,7 +87,7 @@ def reset_campaign(out: Path, *, resume: bool) -> None:
 def total_usage(out: Path, usage: dict) -> dict:
     """This invocation's LLM usage plus what earlier (resumed) invocations recorded in usage.json."""
     path = out / "usage.json"
-    prior = json.loads(path.read_text()) if path.exists() else {}
+    prior = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     keys = set(prior) | set(usage)
     return {k: prior.get(k, 0) + usage.get(k, 0) for k in sorted(keys)
             if isinstance(prior.get(k, 0), (int, float)) and isinstance(usage.get(k, 0), (int, float))}
@@ -200,7 +200,7 @@ def main() -> int:
     dry_patience = os.environ.get("SCHOLARLOOP_DRY_PATIENCE")         # loop-until-dry convergence
     max_cost = os.environ.get("SCHOLARLOOP_MAX_COST")                 # USD budget ceiling
     handoff_path = os.environ.get("SCHOLARLOOP_HANDOFF")              # a research session's chosen idea
-    handoff = json.loads(Path(handoff_path).read_text()) if handoff_path else None
+    handoff = json.loads(Path(handoff_path).read_text(encoding="utf-8")) if handoff_path else None
     research_dir = Path(handoff_path).parent if handoff_path else None   # lit_review.json lives beside it
     writing_mode = os.environ.get("SCHOLARLOOP_WRITING", "session")
     out = Path(os.environ.get("SCHOLARLOOP_OUT", "")) if os.environ.get("SCHOLARLOOP_OUT") else OUT
@@ -253,11 +253,11 @@ def main() -> int:
         (out / "run.md").write_text(fmt_run(profile, entries, skills, total_usage(out, llm.usage), model,
                                             orch.trace,
                                             calibration=orch.calibration.render(), handoff=handoff,
-                                            stop_reason=orch.stop_reason))
+                                            stop_reason=orch.stop_reason), encoding="utf-8")
 
     spent = _cost(model, total_usage(out, llm.usage)) if max_cost else None
     if spent is not None and spent >= float(max_cost):
-        (out / "usage.json").write_text(json.dumps(total_usage(out, llm.usage), indent=1))
+        (out / "usage.json").write_text(json.dumps(total_usage(out, llm.usage), indent=1), encoding="utf-8")
         print("Scientific review and writing paused at the cost cap; no author approval was inferred.")
         return 0
 
@@ -284,7 +284,7 @@ def main() -> int:
         try:
             scientific.require_release()
         except ReviewBlocked as exc:
-            (out / "usage.json").write_text(json.dumps(total_usage(out, llm.usage), indent=1))
+            (out / "usage.json").write_text(json.dumps(total_usage(out, llm.usage), indent=1), encoding="utf-8")
             print(f"Writing paused: {exc}")
             print("Resolve requests, review and approve with python -m scholarloop.review; "
                   "resume using SCHOLARLOOP_PAPER_ONLY=1.")
@@ -298,7 +298,7 @@ def main() -> int:
         write_evidence_map(out, dossier, release)
         (out / "paper.md").write_text(
             fmt_paper(paper["draft"], paper["grounded"], paper["ungrounded"], paper["review"])
-            + "\n\n[Approved statement bindings](evidence_map.md)\n")
+            + "\n\n[Approved statement bindings](evidence_map.md)\n", encoding="utf-8")
         artifacts = "paper.md · run.md · experiments.jsonl · registry/"
     else:                                           # step by step, with the author in the loop
         session = WritingSession(llm, profile, out, ledger_path=ledger_path, registry_dir=registry_dir,
@@ -321,7 +321,7 @@ def main() -> int:
         artifacts = "outline.md · key_points.md · paper.md · review.md · run.md · experiments.jsonl · registry/"
 
     usage = total_usage(out, llm.usage)
-    (out / "usage.json").write_text(json.dumps(usage, indent=1))   # a later resume adds to it
+    (out / "usage.json").write_text(json.dumps(usage, indent=1), encoding="utf-8")   # a later resume adds to it
     cost = _cost(model, usage)
     print(f"\n=== done. artifacts in {out} ===")
     print(f"   {artifacts}")

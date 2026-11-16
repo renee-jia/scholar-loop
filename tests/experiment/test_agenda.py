@@ -75,7 +75,7 @@ def test_real_stub_protocol_runs_negative_conditions_and_rereviews(tmp_path):
     assert entries[-1].metric["folds"] == [3, 2]
     assert _scored_entries(entries) == _scored_entries(entries[:1])
     assert Ledger(a.review.ledger_path).best(a.review.profile.name) is None
-    analysis = json.loads((a.protocols / f"{pid}.analysis.json").read_text())
+    analysis = json.loads((a.protocols / f"{pid}.analysis.json").read_text(encoding="utf-8"))
     diff = mean(b - v for v, b in zip(entries[1].metric["seeds"], entries[2].metric["seeds"]))
     assert analysis["comparisons"][0]["mean_difference"] == diff
     assert analysis["scientific_outcome"] == "unreviewed"
@@ -125,7 +125,7 @@ def test_invalid_protocol_spends_no_compute(tmp_path, change):
 def test_frozen_protocol_detects_changed_inputs(tmp_path, change):
     a = agenda(tmp_path)
     data = a.review.profile.root / "dataset.txt"
-    data.write_text("original")
+    data.write_text("original", encoding="utf-8")
     spec = copy.deepcopy(SPEC)
     spec["data_files"] = ["dataset.txt"]
     state = a.plan(spec=spec)
@@ -135,11 +135,11 @@ def test_frozen_protocol_detects_changed_inputs(tmp_path, change):
             "ledger": a.review.ledger_path,
             "registry": a.review.registry_dir / "exp_0001.json"}[change]
     if change == "protocol":
-        envelope = json.loads(path.read_text())
+        envelope = json.loads(path.read_text(encoding="utf-8"))
         envelope["spec"]["seeds"] = [1, 2]
-        path.write_text(json.dumps(envelope))
+        path.write_text(json.dumps(envelope), encoding="utf-8")
     else:
-        path.write_text(path.read_text() + "changed")
+        path.write_text(path.read_text(encoding="utf-8") + "changed", encoding="utf-8")
     with pytest.raises(ReviewBlocked):
         a.execute(pid, author="Researcher")
     if change != "protocol":
@@ -158,7 +158,7 @@ def test_missing_seed_is_retained_and_cannot_create_complete_comparison(tmp_path
     state = a.execute(pid, author="Researcher")
     assert state["status"] == "EXECUTED"
     assert state["results"][0]["entry"]["metric"]["seeds_failed"] == 1
-    analysis = json.loads((a.protocols / f"{pid}.analysis.json").read_text())
+    analysis = json.loads((a.protocols / f"{pid}.analysis.json").read_text(encoding="utf-8"))
     assert analysis["comparisons"][0]["status"] == "incomplete"
     assert analysis["comparisons"][0]["mean_difference"] is None
     assert a.review.load()["issues"][0]["status"] == "open"
@@ -169,9 +169,9 @@ def test_corrupt_derived_analysis_blocks_review(tmp_path):
     pid = a.plan(spec=SPEC)["protocol_id"]
     a.execute(pid, author="Researcher")
     path = a.protocols / f"{pid}.analysis.json"
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     data["comparisons"][0]["mean_difference"] = -999
-    path.write_text(json.dumps(data))
+    path.write_text(json.dumps(data), encoding="utf-8")
     assert any("derived analysis" in s for s in build_dossier(a.review.inputs())["checks"])
 
 
@@ -198,7 +198,7 @@ def test_protocol_requires_explicit_actor(tmp_path):
 def test_declared_data_change_invalidates_later_writing_release(tmp_path):
     a = agenda(tmp_path)
     data = a.review.profile.root / "dataset.txt"
-    data.write_text("initial data")
+    data.write_text("initial data", encoding="utf-8")
     spec = copy.deepcopy(SPEC)
     spec["data_files"] = ["dataset.txt"]
     pid = a.plan(spec=spec)["protocol_id"]
@@ -210,6 +210,6 @@ def test_declared_data_change_invalidates_later_writing_release(tmp_path):
     state = a.review.review(argument=argument)
     a.review.approve(author="Researcher", review_hash=state["review_hash"])
     a.review.require_release()
-    data.write_text("different data")
+    data.write_text("different data", encoding="utf-8")
     with pytest.raises(ReviewBlocked, match="stale"):
         a.review.require_release()

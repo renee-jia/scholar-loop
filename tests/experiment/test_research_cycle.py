@@ -76,7 +76,7 @@ def test_evidence_change_during_assessment_does_not_commit_stale_judgement(tmp_p
     c = cycle(tmp_path)
     def mutate(prompt):
         source = c.profile.root / c.profile.train_entrypoint
-        source.write_text(source.read_text() + "\n# changed\n")
+        source.write_text(source.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
         return ASSESSMENT
     with pytest.raises(ReviewBlocked, match="changed"):
         assess(c, MockLLM(router=mutate))
@@ -85,9 +85,9 @@ def test_evidence_change_during_assessment_does_not_commit_stale_judgement(tmp_p
 
 def test_test_exposure_blocks_research_assessment_before_model_call(tmp_path):
     c = cycle(tmp_path)
-    row = json.loads(c.ledger_path.read_text())
+    row = json.loads(c.ledger_path.read_text(encoding="utf-8"))
     row["metric"]["holdout"] = {"value": 12345}
-    c.ledger_path.write_text(json.dumps(row) + "\n")
+    c.ledger_path.write_text(json.dumps(row) + "\n", encoding="utf-8")
     llm = MockLLM()
     with pytest.raises(ValueError, match="Final test access"):
         assess(c, llm)
@@ -117,7 +117,7 @@ def test_assessment_enters_review_then_frozen_experiment_and_reassessment(tmp_pa
     assert json.loads(planning_llm.calls[0]["prompt"])["research_iteration"] == recommendation
     _, envelope = agenda.load(plan["protocol_id"])
     assert envelope["research_iteration"] == recommendation
-    report = (agenda.out / f"{plan['protocol_id']}.md").read_text()
+    report = (agenda.out / f"{plan['protocol_id']}.md").read_text(encoding="utf-8")
     assert "decision_if_inconclusive" in report
     assert ASSESSMENT["next_step"]["remaining_uncertainty"] in report
     assert agenda.execute(plan["protocol_id"], author="Researcher")["status"] == "EXECUTED"
@@ -136,7 +136,7 @@ def test_assessment_enters_review_then_frozen_experiment_and_reassessment(tmp_pa
     assert json.loads(second_llm.calls[0]["prompt"])["dossier"]["protocols"]
     assert second["assessment"]["protocol_appraisals"][0]["outcome"] == "inconclusive"
     from scholarloop.experiment.research_cycle import tracked_issues
-    issues = tracked_issues(json.loads(c.path.read_text())["rounds"])
+    issues = tracked_issues(json.loads(c.path.read_text(encoding="utf-8"))["rounds"])
     assert len(issues) == 1 and issues[0]["status"] == "addressed_pending_review"
     review.llm = MockLLM()
     with pytest.raises(ReviewBlocked, match="stale"):
@@ -198,10 +198,10 @@ def test_issue_dispositions_cannot_silently_drop_or_close_concerns(tmp_path, mod
 def test_legacy_rounds_reconstruct_concerns_without_state_migration(tmp_path):
     c = cycle(tmp_path)
     assess(c, MockLLM(jsons=[ASSESSMENT]))
-    state = json.loads(c.path.read_text())
+    state = json.loads(c.path.read_text(encoding="utf-8"))
     del state["rounds"][0]["available_evidence"]
     del state["rounds"][0]["assessment"]["issue_updates"]
-    c.path.write_text(json.dumps(state))
+    c.path.write_text(json.dumps(state), encoding="utf-8")
     llm = MockLLM(router=continue_assessment)
     assess(c, llm)
     assert json.loads(llm.calls[0]["prompt"])["tracked_issues"][0]["opened_round"] == 1

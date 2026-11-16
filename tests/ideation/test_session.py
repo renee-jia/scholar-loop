@@ -49,20 +49,20 @@ def test_review_then_ideas_then_select_writes_artifacts_and_handoff(tmp_path):
     assert s.stage == "reviewed" and rev.queries == QUERIES["queries"]
     # deduped across queries; SGDR's abstract matches "cosine schedule", so it ranks first
     assert [p.arxiv_id for p in rev.papers] == ["arXiv:1608.03983v1", "arXiv:1512.03385v1"]
-    assert (s.out / "lit_review.md").read_text().startswith("# Literature review — mlp recipes")
+    assert (s.out / "lit_review.md").read_text(encoding="utf-8").startswith("# Literature review — mlp recipes")
 
     ideas = s.ideate(2)
     assert s.stage == "ideated" and [i.title for i in ideas] == ["Skip MLP", "Warm restarts"]
     assert all(i.novelty for i in ideas)                        # every idea was novelty-checked
-    assert "| 1 | **Skip MLP**" in (s.out / "ideas.md").read_text()
+    assert "| 1 | **Skip MLP**" in (s.out / "ideas.md").read_text(encoding="utf-8")
 
     h = s.select(1)
     assert s.stage == "selected" and h["topic"] == "Skip MLP"
     assert h["lit_priors"] == ["Skip MLP (arXiv:1512.03385v1)"]
     assert "Deep Residual Learning: skips" in h["lit_context"]  # the idea's sources, with the review's notes
     assert "set depth=20" in h["guidance"]
-    assert json.loads((s.out / "handoff.json").read_text()) == h
-    assert "✅ selected" in (s.out / "ideas.md").read_text()
+    assert json.loads((s.out / "handoff.json").read_text(encoding="utf-8")) == h
+    assert "✅ selected" in (s.out / "ideas.md").read_text(encoding="utf-8")
 
 
 def test_session_persists_and_resumes_across_instances(tmp_path):

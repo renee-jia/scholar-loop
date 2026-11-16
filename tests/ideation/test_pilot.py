@@ -51,11 +51,11 @@ def test_portfolio_pilot_runs_all_conditions_and_feeds_generation(tmp_path):
     assert len(entries) == 3 and all(e.purpose == "feasibility" for e in entries)
     assert entries[-1].verdict == "discarded" and all("holdout" not in e.metric for e in entries)
     assert not build_dossier(agenda.review.inputs())["checks"]
-    feedback = json.loads((research.out / "pilot_feedback.json").read_text())
+    feedback = json.loads((research.out / "pilot_feedback.json").read_text(encoding="utf-8"))
     assert {o["idea_id"] for o in feedback} == set(spec["idea_ids"])
     assert all(o["hypothesis_status"] == "unresolved" for o in feedback)
     assert len(agenda.execute(pid, author="Researcher")["results"]) == 3
-    assert len(json.loads((research.out / "pilot_feedback.json").read_text())) == 2
+    assert len(json.loads((research.out / "pilot_feedback.json").read_text(encoding="utf-8"))) == 2
     assert not (agenda.review.out / "scientific_review.json").exists()
     resumed = ResearchSession(MockLLM(jsons=[{"ideas": [_idea("Revised mechanism")]}]),
                                research.profile, research.out, sources=[])
@@ -101,7 +101,7 @@ def test_failed_pilot_is_not_marked_as_hypothesis_refutation(tmp_path, monkeypat
         raise RunError("implementation does not produce an artifact")
     monkeypatch.setattr("scholarloop.experiment.runner._run_one_seed", fail)
     assert agenda.execute(pid, author="Researcher")["status"] == "EXECUTED"
-    observations = json.loads((research.out / "pilot_feedback.json").read_text())
+    observations = json.loads((research.out / "pilot_feedback.json").read_text(encoding="utf-8"))
     assert all(o["execution_status"] == "failed" and o["hypothesis_status"] == "unresolved" for o in observations)
     assert all(o["comparison"]["mean_difference"] is None for o in observations)
 
@@ -114,7 +114,7 @@ def test_pilot_revokes_old_selection_and_new_choice_binds_observations(tmp_path)
     resumed = ResearchSession(MockLLM(), research.profile, research.out)
     assert resumed.stage == "ideated" and resumed.handoff is None
     assert not (research.out / "handoff.json").exists()
-    assert json.loads((research.out / "idea_pending_decisions.json").read_text())[0]["kind"] == "interpret_pilot"
+    assert json.loads((research.out / "idea_pending_decisions.json").read_text(encoding="utf-8"))[0]["kind"] == "interpret_pilot"
     decision = resumed.select(1)["selection_decision"]
     assert decision["pilot_protocol_ids"] == [pid] and decision["pilot_observation_hash"]
 

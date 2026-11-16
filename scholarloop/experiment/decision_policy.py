@@ -78,10 +78,10 @@ def run_model_benchmark(directory, client_factory, *, model, repeats=3, seed=0,
             "arms": list(arms), "tasks_hash": digest(tasks), "schema": SCHEMA,
             "prompts": {a: decision_iteration.SYSTEM if a == "iteration" else PROMPTS[a] for a in arms},
             "iteration_schema": decision_iteration.SCHEMA if "iteration" in arms else None,
-            "iteration_hash": digest(Path(decision_iteration.__file__).read_text()) if "iteration" in arms else None,
-            "reviewer_hash": digest(Path(research_cycle.__file__).read_text()) if "iteration" in arms else None,
-            "implementation_hash": digest(Path(__file__).read_text()),
-            "evaluator_hash": digest(Path(decision_bench.__file__).read_text())}
+            "iteration_hash": digest(Path(decision_iteration.__file__).read_text(encoding="utf-8")) if "iteration" in arms else None,
+            "reviewer_hash": digest(Path(research_cycle.__file__).read_text(encoding="utf-8")) if "iteration" in arms else None,
+            "implementation_hash": digest(Path(__file__).read_text(encoding="utf-8")),
+            "evaluator_hash": digest(Path(decision_bench.__file__).read_text(encoding="utf-8"))}
     out = Path(directory)
     out.mkdir(parents=True, exist_ok=True)
     with exclusive_lock(out / ".evaluation.lock"):

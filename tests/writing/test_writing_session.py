@@ -202,8 +202,8 @@ def test_writing_session_end_to_end_with_scripted_author(tmp_path):
     led, reg = _entries(tmp_path)
     rd = tmp_path / "research"
     rd.mkdir()
-    (rd / "lit_review.json").write_text(json.dumps(REVIEW.to_dict()))
-    (rd / "handoff.json").write_text(json.dumps({"idea": {"title": "Warmup first", "description": "d", "hypothesis": {"claim": "c"}}}))
+    (rd / "lit_review.json").write_text(json.dumps(REVIEW.to_dict()), encoding="utf-8")
+    (rd / "handoff.json").write_text(json.dumps({"idea": {"title": "Warmup first", "description": "d", "hypothesis": {"claim": "c"}}}), encoding="utf-8")
     llm = _session_llm(outline_rounds=(REVISE, ACCEPT), feedback_outline=True)
     s = WritingSession(llm, PROFILE, tmp_path / "w", ledger_path=led, registry_dir=reg, research_dir=rd, demo=True)
     answers = iter(["r make the title say revised", "a", "a"])
@@ -219,9 +219,9 @@ def test_writing_session_end_to_end_with_scripted_author(tmp_path):
     assert "one dataset" in r["weaknesses"] and len(r["weaknesses"]) == 1   # de-duplicated across reviewers
     for f in ("outline.md", "key_points.md", "paper.md", "review.md", "writing.json"):
         assert (s.out / f).exists()
-    paper = (s.out / "paper.md").read_text()
+    paper = (s.out / "paper.md").read_text(encoding="utf-8")
     assert "# Warmup on digits (revised)" in paper and "mean score 5.7/10" in paper
-    outline_md = (s.out / "outline.md").read_text()
+    outline_md = (s.out / "outline.md").read_text(encoding="utf-8")
     assert "Author feedback applied" in outline_md and "Round 1" in outline_md
     # the drafter saw the author-approved points, the outliner saw the idea + lit review
     outliner_prompt = llm.calls[0]["prompt"]
@@ -235,7 +235,7 @@ def test_writing_session_persists_and_resumes(tmp_path):
     s2 = WritingSession(MockLLM(jsons=[_kp(), ACCEPT, ACCEPT, ACCEPT]), PROFILE, tmp_path / "w", ledger_path=led, registry_dir=reg, demo=True)
     assert s2.stage == "outlined" and s2.state.outline == OUTLINE
     s2.key_points()
-    assert s2.stage == "keypointed" and (s2.out / "key_points.md").read_text().startswith("# Key points")
+    assert s2.stage == "keypointed" and (s2.out / "key_points.md").read_text(encoding="utf-8").startswith("# Key points")
 
 
 def test_draft_keeps_best_attempt_and_flags_when_lint_never_passes(tmp_path):
@@ -249,7 +249,7 @@ def test_draft_keeps_best_attempt_and_flags_when_lint_never_passes(tmp_path):
     assert s.stage == "drafted"
     assert sections[0]["body"].startswith("We leverage") and any("unresolved" in w for w in sections[0]["warnings"])
     assert sections[1]["warnings"] == [] or all("covered" in w for w in sections[1]["warnings"])
-    assert "Drafting notes" in (s.out / "paper.md").read_text()
+    assert "Drafting notes" in (s.out / "paper.md").read_text(encoding="utf-8")
 
 
 def test_render_outline_block_is_what_the_panel_sees():

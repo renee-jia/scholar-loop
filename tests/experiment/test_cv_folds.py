@@ -52,8 +52,8 @@ def test_engine_without_fold_support_kills_the_run(tmp_path):
 
 
 def test_one_fold_is_rejected(tmp_path):
-    raw = (ROOT / "profiles" / "image-classification.yaml").read_text() + "\ncv_folds: 1\n"
-    (tmp_path / "p.yaml").write_text(raw)
+    raw = (ROOT / "profiles" / "image-classification.yaml").read_text(encoding="utf-8") + "\ncv_folds: 1\n"
+    (tmp_path / "p.yaml").write_text(raw, encoding="utf-8")
     with pytest.raises(ProfileError):
         load_profile(tmp_path / "p.yaml")
 

@@ -46,7 +46,7 @@ def engine_sources(profile):
         if root not in path.resolve().parents:
             raise CandidateError("Engine sources must remain inside the profile root")
         # Profile entrypoints use '/' on every OS; snapshot keys must use the same spelling.
-        sources[path.relative_to(root).as_posix()] = path.read_text() if path.is_file() else None
+        sources[path.relative_to(root).as_posix()] = path.read_text(encoding="utf-8") if path.is_file() else None
     return sources
 
 
@@ -116,7 +116,7 @@ class CandidateStore:
         if not isinstance(candidate_id, str) or len(candidate_id) != 64 or any(c not in "0123456789abcdef" for c in candidate_id):
             raise CandidateError("Invalid candidate id")
         try:
-            value = validate_snapshot(json.loads((self.path / f"{candidate_id}.json").read_text()))
+            value = validate_snapshot(json.loads((self.path / f"{candidate_id}.json").read_text(encoding="utf-8")))
         except (OSError, json.JSONDecodeError) as exc:
             raise CandidateError(f"Missing or unreadable candidate {candidate_id}") from exc
         if value["id"] != candidate_id:
@@ -133,7 +133,7 @@ class CandidateStore:
             return
         fd, temporary = tempfile.mkstemp(dir=self.path, suffix=".tmp")
         try:
-            with os.fdopen(fd, "w") as f:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(snapshot, f, indent=2, ensure_ascii=False, allow_nan=False)
             os.replace(temporary, destination)
         finally:

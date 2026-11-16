@@ -9,7 +9,7 @@ from scholarloop.fidelity_study import (IdeaJudge, arm_handoff, build_report, ju
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = load_profile(ROOT / "profiles" / "digits-mlp.yaml")
 TRAIN = PROFILE.train_entrypoint
-REPO_SOURCE = (PROFILE.root / TRAIN).read_text()
+REPO_SOURCE = (PROFILE.root / TRAIN).read_text(encoding="utf-8")
 IDEA = {"title": "identity skip", "description": "add a skip", "hypothesis": {}, "experiment_plan": "two arms"}
 
 
@@ -20,12 +20,12 @@ def campaign(directory: Path, runs: list[dict]) -> Path:
     for i, run in enumerate(runs, 1):
         cid = run["id"]
         (directory / "registry" / "candidates" / f"{cid}.json").write_text(json.dumps(
-            {"id": cid, "sources": {TRAIN: run.get("source", REPO_SOURCE)}, "config": run.get("config", {})}))
+            {"id": cid, "sources": {TRAIN: run.get("source", REPO_SOURCE)}, "config": run.get("config", {})}), encoding="utf-8")
         reasoning = {"idea_role": run["role"]} if run.get("role") else {}
         lines.append(json.dumps({"id": f"exp_{i:04d}", "candidate_id": cid, "fidelity": [run.get("tier", "smoke")],
                                  "metric": {"seed_ids": run.get("seeds", [0])}, "reasoning": reasoning}))
-    (directory / "experiments.jsonl").write_text("\n".join(lines) + "\n")
-    (directory / "done.json").write_text("{}")
+    (directory / "experiments.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (directory / "done.json").write_text("{}", encoding="utf-8")
     return directory
 
 
@@ -80,7 +80,7 @@ def test_the_report_counts_by_arm_and_leaves_roles_unrecorded_in_the_context_arm
     assert s["enforced"]["edit_used"]["k"] == 1 and s["context"]["edit_used"]["k"] == 0
     assert s["enforced"]["declared_pair"] == {"k": 1, "n": 1, "interval_95": s["enforced"]["declared_pair"]["interval_95"]}
     assert s["context"]["declared_pair"]["n"] == 0 and s["enforced"]["idea_applied"]["n"] == 0   # no judge ran
-    text = (tmp_path / "fidelity.md").read_text()
+    text = (tmp_path / "fidelity.md").read_text(encoding="utf-8")
     assert "not recorded" in text and "| enforced | c1 |" in text
     assert summarise([])["enforced"]["campaigns"] == 0
 
@@ -88,10 +88,10 @@ def test_the_report_counts_by_arm_and_leaves_roles_unrecorded_in_the_context_arm
 def test_a_recorded_protocol_reports_whether_every_arm_ran_on_the_same_seeds(tmp_path):
     (tmp_path / "registry" / "protocols").mkdir(parents=True)
     spec = {"specification": {"spec": {"conditions": [{"name": "plain"}, {"name": "skip"}]}}}
-    (tmp_path / "registry" / "protocols" / "p1.json").write_text(json.dumps(spec))
-    (tmp_path / "registry" / "protocols" / "p1.analysis.json").write_text("{}")
+    (tmp_path / "registry" / "protocols" / "p1.json").write_text(json.dumps(spec), encoding="utf-8")
+    (tmp_path / "registry" / "protocols" / "p1.analysis.json").write_text("{}", encoding="utf-8")
     lines = [json.dumps({"id": f"protocol_p1_{arm}", "protocol": {"id": "p1", "condition": arm},
                          "metric": {"seed_ids": [1, 2, 3]}}) for arm in ("plain", "skip")]
-    (tmp_path / "experiments.jsonl").write_text("\n".join(lines) + "\n")
+    (tmp_path / "experiments.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (row,) = protocol_reference(tmp_path)
     assert row["all_arms_ran"] and row["same_seeds"] and row["seeds_per_arm"] == 3 and row["registered_arms"] == 2

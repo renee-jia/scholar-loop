@@ -49,7 +49,7 @@ def freeze_suite(spec, directory):
     directory = Path(directory)
     path = directory / "suite_plan.json"
     if path.exists():
-        if json.loads(path.read_text()) != plan:
+        if json.loads(path.read_text(encoding="utf-8")) != plan:
             raise ValueError("Frozen suite changed; use a separate output directory")
     else:
         if directory.exists() and any(directory.iterdir()):
@@ -81,14 +81,14 @@ def run_suite(spec, directory, *, arm="random", factory=None):
             out = directory / arm / task["id"] / f"seed{seed}"
             summary_path = out / "summary.json"
             if summary_path.exists():
-                results.append(json.loads(summary_path.read_text()))
+                results.append(json.loads(summary_path.read_text(encoding="utf-8")))
                 continue
             rows = list(Ledger(out / "experiments.jsonl").read_all())
             status, reason = "completed", None
             if out.exists() and any(out.iterdir()):
                 status, reason = "interrupted", "Existing unfinished execution retained"
             else:
-                out.mkdir(parents=True)
+                out.mkdir(parents=True, exist_ok=True)
                 try:
                     orch = factory(profile, out, seed)
                     if getattr(orch, "llm", None) is not None:
@@ -103,7 +103,7 @@ def run_suite(spec, directory, *, arm="random", factory=None):
                        "seed": seed, "arm": arm, "status": status, "reason": reason,
                        "train_budget": task["train_budget"]}
             budget_path = out / "experiments.jsonl.training_budget.json"
-            summary["reserved_training_attempts"] = (json.loads(budget_path.read_text())["reserved"]
+            summary["reserved_training_attempts"] = (json.loads(budget_path.read_text(encoding="utf-8"))["reserved"]
                                                        if budget_path.exists() else None)
             atomic_json(summary_path, summary)
             results.append(summary)
@@ -120,7 +120,7 @@ def main(argv=None):
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
     manifest_path = Path(args.manifest).resolve()
-    spec = json.loads(manifest_path.read_text())
+    spec = json.loads(manifest_path.read_text(encoding="utf-8"))
     for task in spec.get("tasks", []):
         if not Path(task["profile"]).is_absolute():
             task["profile"] = str(manifest_path.parent / task["profile"])

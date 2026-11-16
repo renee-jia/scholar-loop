@@ -23,7 +23,7 @@ def digest(value) -> str:
 
 def read_json(path: Path):
     try:
-        return json.loads(path.read_text(), parse_constant=lambda s: (_ for _ in ()).throw(
+        return json.loads(path.read_text(encoding="utf-8"), parse_constant=lambda s: (_ for _ in ()).throw(
             ValueError(f"non-finite JSON number: {s}")))
     except (OSError, ValueError) as e:
         raise ReviewBlocked(f"Cannot read {path}: {e}") from e
@@ -34,7 +34,7 @@ def atomic_json(path: Path, value) -> None:
     data = json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False, default=str) + "\n"
     fd, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())

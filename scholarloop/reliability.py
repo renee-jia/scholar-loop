@@ -64,6 +64,11 @@ def classify(error: str) -> str:
         return "invalid_json"
     if "unknown" in low and (" ids" in low or " id " in low):
         return "citation"
+    # Reviewed mode: the sentence-level checks of `audit_prose` and the claim check.
+    if "are not in the approved statements" in low or "lack explicitly bound measurements" in low:
+        return "number"
+    if ("approved statement" in low or "are not evidence of" in low or "not named by or evidence of" in low):
+        return "citation"
     if "numbers not in the evidence" in low or "ungrounded" in low:
         return "number"
     if any(m in low for m in _STYLE_MARKERS):
@@ -132,13 +137,13 @@ def load_cases(profile, *, ledger, registry, research, writing, review_dir=None)
     research = Path(research)
     entries = list(Ledger(ledger).read_all())
     lit_path = research / "lit_review.json"
-    raw_review = json.loads(lit_path.read_text()) if lit_path.exists() else None
+    raw_review = json.loads(lit_path.read_text(encoding="utf-8")) if lit_path.exists() else None
     review = LitReview.from_dict(raw_review) if raw_review else None
     handoff = research / "handoff.json"
-    idea = json.loads(handoff.read_text()).get("idea") if handoff.exists() else None
+    idea = json.loads(handoff.read_text(encoding="utf-8")).get("idea") if handoff.exists() else None
     bank = EvidenceBank.build(entries, registry, profile, review=review, idea=idea)
     ctx = Context(bank, [p.arxiv_id for p in review.papers] if review else [], [e.id for e in entries])
-    state = json.loads(Path(writing).read_text())
+    state = json.loads(Path(writing).read_text(encoding="utf-8"))
     if state.get("release_id"):
         ctx.mode = _bind_release(profile, bank, ctx, ledger=ledger, registry=registry,
                                  research=research,
@@ -155,7 +160,7 @@ def load_cases(profile, *, ledger, registry, research, writing, review_dir=None)
 
     ideas_path = research / "ideas.json"
     if ideas_path.exists() and review:
-        ideas = {"ideas": json.loads(ideas_path.read_text())}
+        ideas = {"ideas": json.loads(ideas_path.read_text(encoding="utf-8"))}
         ideator = Ideator(None, profile)
         cases.append(Case("ideas", "ideas", ideas,
                           lambda a: ideator.postcheck(a, {"review": review}), [],
@@ -567,7 +572,7 @@ def natural_faults(paths) -> dict:
     calls: dict[str, dict] = {}
     corrupt = 0
     for path in paths:
-        with Path(path).open() as stream:
+        with Path(path).open(encoding="utf-8") as stream:
             for line in stream:
                 try:
                     e = json.loads(line)
@@ -718,9 +723,9 @@ def run_baseline(llm, bank, review_block: str, out_dir, *, repeats: int = 3) -> 
             if marker.exists():
                 papers.append({"repeat": i, "status": "interrupted"})
                 continue
-            marker.write_text("")
-            paper.write_text(llm.complete(prompt, system=BASELINE_SYSTEM))
-        papers.append({"repeat": i, "status": "complete", **audit_paper(paper.read_text(), bank)})
+            marker.write_text("", encoding="utf-8")
+            paper.write_text(llm.complete(prompt, system=BASELINE_SYSTEM), encoding="utf-8")
+        papers.append({"repeat": i, "status": "complete", **audit_paper(paper.read_text(encoding="utf-8"), bank)})
     done = [p for p in papers if p["status"] == "complete"]
     report = {"version": 1, "model": getattr(llm, "model", None), "repeats": repeats,
               "interpretation": "Single-call writer with the grounding rules stated in the prompt only. "
@@ -733,7 +738,7 @@ def run_baseline(llm, bank, review_block: str, out_dir, *, repeats: int = 3) -> 
                           "numbers_checked": sum(p["numbers_checked"] for p in done),
                           "unknown_ids": sum(len(p["unknown_ids"]) for p in done),
                           "ids_cited": sum(p["ids_cited"] for p in done)}}
-    (out / "baseline.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    (out / "baseline.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     return report
 
 
@@ -827,8 +832,8 @@ def run_claim_audit(llm, dossier: dict, papers: dict[str, str], out_dir, *, pass
         for n in range(1, passes + 1):
             path = out / f"claims_{name}_{n}.json"
             if not path.exists():
-                path.write_text(json.dumps(auditor.run({"paper": paper}), indent=2, ensure_ascii=False))
-            claims = json.loads(path.read_text())["claims"]
+                path.write_text(json.dumps(auditor.run({"paper": paper}), indent=2, ensure_ascii=False), encoding="utf-8")
+            claims = json.loads(path.read_text(encoding="utf-8"))["claims"]
             counts = {v: sum(c["verdict"] == v for c in claims) for v in VERDICTS}
             rows.append({"paper": name, "pass": n, "words": len(paper.split()), "claims": len(claims), **counts})
     def group(name):                          # baseline_2 -> baseline; staged -> staged
@@ -850,8 +855,8 @@ def run_claim_audit(llm, dossier: dict, papers: dict[str, str], out_dir, *, pass
                                 "them is not independent confirmation. Claims within a paper are not "
                                 "independent, so the intervals are too narrow.",
               "rows": rows, "writers": {g: total(g) for g in dict.fromkeys(group(r["paper"]) for r in rows)}}
-    (out / "claims.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
-    (out / "claims.md").write_text(render_claims(report))
+    (out / "claims.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    (out / "claims.md").write_text(render_claims(report), encoding="utf-8")
     return report
 
 
@@ -903,8 +908,8 @@ def run_semantic(llm, cases: list[Case], ctx: Context, state: dict, out_dir, *, 
         path = out / f"semantic_{name}.json"
         if not path.exists():
             path.write_text(json.dumps(reviewer.run({"dossier": dossier, "title": title, "sections": sections}),
-                                       indent=2, ensure_ascii=False))
-        return json.loads(path.read_text())
+                                       indent=2, ensure_ascii=False), encoding="utf-8")
+        return json.loads(path.read_text(encoding="utf-8"))
 
     control_rows = []
     for i in range(1, controls + 1):
@@ -944,8 +949,8 @@ def run_semantic(llm, cases: list[Case], ctx: Context, state: dict, out_dir, *, 
                            "details": control_rows},
               "by_fault": {k: _rate(sum(v), len(v)) for k, v in sorted(by_fault.items())},
               "all": _rate(sum(t["detected"] for t in trials), len(trials)), "trials": trials}
-    (out / "semantic.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
-    (out / "semantic.md").write_text(render_semantic(report))
+    (out / "semantic.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    (out / "semantic.md").write_text(render_semantic(report), encoding="utf-8")
     return report
 
 
@@ -988,7 +993,7 @@ def run_ablation(llm, profile, paths: dict, out_dir, arm: str, *, repeats: int =
         name = f"{arm}_{n}"
         status_path, paper_path = out / f"{name}.status.json", out / f"{name}.md"
         if status_path.exists():
-            rows.append(json.loads(status_path.read_text()))
+            rows.append(json.loads(status_path.read_text(encoding="utf-8")))
             continue
         demo = arm == "no_review"
         session = WritingSession(llm, profile, out / name, ledger_path=paths["ledger"],
@@ -1017,13 +1022,13 @@ def run_ablation(llm, profile, paths: dict, out_dir, arm: str, *, repeats: int =
             row["reason"] = f"{type(exc).__name__}: {exc}"[:600]
         if row["completed"]:
             paper = "\n\n".join(f"## {x['heading']}\n\n{x['body']}" for x in session.state.sections)
-            paper_path.write_text(paper)
+            paper_path.write_text(paper, encoding="utf-8")
             row["words"] = len(paper.split())
             if evidence is not None:
                 audit = audit_paper("\n\n".join(x["body"] for x in session.state.sections), evidence)
                 row["provenance"] = {k: audit[k] for k in ("numbers_checked", "ungrounded_numbers",
                                                            "ids_cited", "unknown_ids")}
-        status_path.write_text(json.dumps(row, indent=2, ensure_ascii=False))
+        status_path.write_text(json.dumps(row, indent=2, ensure_ascii=False), encoding="utf-8")
         rows.append(row)
     return {"arm": arm, "papers": rows, "completed": sum(r["completed"] for r in rows), "attempted": len(rows)}
 
@@ -1091,8 +1096,8 @@ def main(argv=None) -> int:
             print("no *.agents.jsonl files found", file=sys.stderr)
             return 1
         report = {**natural_faults(files), "files": [str(f) for f in files]}
-        (out / "traces.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
-        (out / "traces.md").write_text(render_traces(report))
+        (out / "traces.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+        (out / "traces.md").write_text(render_traces(report), encoding="utf-8")
         print(render_traces(report))
         return 0
 
@@ -1105,8 +1110,8 @@ def main(argv=None) -> int:
 
     if a.command == "inject":
         report = run_injection(cases, ctx, seed=a.seed, per_case=a.per_case)
-        (out / "injection.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
-        (out / "injection.md").write_text(render_injection(report))
+        (out / "injection.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+        (out / "injection.md").write_text(render_injection(report), encoding="utf-8")
         print(render_injection(report))
         return 0
 
@@ -1127,12 +1132,12 @@ def main(argv=None) -> int:
         review_dir = paths["review_dir"] or Path(paths["writing"]).parent
         report = run_ablation(llm, profile, {**paths, "review_dir": review_dir}, out, a.arm,
                               repeats=a.repeats, evidence=DossierEvidence(ctx.bank.approved_dossier))
-        (out / f"ablation_{a.arm}.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
+        (out / f"ablation_{a.arm}.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
         for row in report["papers"]:
             print(row["name"], "completed" if row["completed"] else f"stopped at {row['stopped_at']}: {row['reason'][:160]}")
         return 0
     if a.command == "semantic":
-        state = json.loads(Path(paths["writing"]).read_text())
+        state = json.loads(Path(paths["writing"]).read_text(encoding="utf-8"))
         if ctx.bank.approved_dossier is None or not state.get("sections"):
             print("The semantic study needs a reviewed run with drafted sections.", file=sys.stderr)
             return 1
@@ -1145,16 +1150,16 @@ def main(argv=None) -> int:
         return 0
     if a.command == "claims":
         dossier = ctx.bank.approved_dossier
-        state = json.loads(Path(paths["writing"]).read_text())
+        state = json.loads(Path(paths["writing"]).read_text(encoding="utf-8"))
         if dossier is None or not state.get("sections"):
             print("The claim audit needs a reviewed run with drafted sections.", file=sys.stderr)
             return 1
         papers = {"staged": "\n\n".join(f"## {s['heading']}\n\n{s['body']}" for s in state["sections"])}
-        papers.update({f"baseline_{i}": f.read_text() for i, f in
+        papers.update({f"baseline_{i}": f.read_text(encoding="utf-8") for i, f in
                        enumerate(sorted(out.glob("baseline_[0-9]*.md")), 1)})
         for spec in a.paper or []:
             name, _, location = spec.partition("=")
-            papers[name] = Path(location).read_text()
+            papers[name] = Path(location).read_text(encoding="utf-8")
         if len(papers) == 1:
             print("No baseline papers in --out; run the baseline first.", file=sys.stderr)
             return 1
@@ -1167,18 +1172,18 @@ def main(argv=None) -> int:
         return 0
     llm = CallLimitedLLM(AnthropicLLM(model=a.model or model_from_env()), a.repeats,
                          path=out / "baseline_call_budget.json")
-    review = LitReview.from_dict(json.loads((Path(paths["research"]) / "lit_review.json").read_text()))
+    review = LitReview.from_dict(json.loads((Path(paths["research"]) / "lit_review.json").read_text(encoding="utf-8")))
     # The baseline sees the raw evidence and is audited against all of it (does each number
     # trace to some measurement, does each cited id exist), whatever mode the staged writer used.
     evidence = DossierEvidence(ctx.bank.approved_dossier) if ctx.bank.approved_dossier is not None else ctx.bank
     ctx.bank.approved_dossier = None
     report = run_baseline(llm, evidence, review.to_prompt_block(), out, repeats=a.repeats)
     report["audited_against"] = "reviewed dossier" if isinstance(evidence, DossierEvidence) else "run measurements"
-    state = json.loads(Path(paths["writing"]).read_text())
+    state = json.loads(Path(paths["writing"]).read_text(encoding="utf-8"))
     if state.get("sections"):
         staged = "\n\n".join(s["body"] for s in state["sections"])
         report["staged_pipeline_paper"] = audit_paper(staged, evidence)
-    (out / "baseline.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    (out / "baseline.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps({k: report[k] for k in ("summary", "staged_pipeline_paper") if k in report}, indent=2))
     return 0
 

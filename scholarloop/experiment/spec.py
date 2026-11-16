@@ -124,7 +124,7 @@ def frozen_context(profile, spec):
     for p in sorted(paths):
         rel = p.relative_to(root).as_posix()
         if p.suffix == ".py" and rel not in spec["data_files"]:
-            sources[rel] = p.read_text()
+            sources[rel] = p.read_text(encoding="utf-8")
         else:
             with p.open("rb") as f:
                 h = hashlib.sha256()

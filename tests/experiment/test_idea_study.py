@@ -49,7 +49,7 @@ def fixture(tmp_path, llm=None):
 def test_every_arm_runs_on_the_same_seeds_and_a_worse_control_is_not_pruned(tmp_path):
     research, study, spec, _ = fixture(tmp_path)
     state = study.plan(spec=spec)
-    page = (study.out / f"{state['protocol_id']}.md").read_text()
+    page = (study.out / f"{state['protocol_id']}.md").read_text(encoding="utf-8")
     assert "What each arm isolates" in page and "yoked arm: needs per-seed replay" in page
     done = study.execute(state["protocol_id"], author="Researcher")
     assert done["status"] == "EXECUTED" and len(done["results"]) == 3
@@ -57,7 +57,7 @@ def test_every_arm_runs_on_the_same_seeds_and_a_worse_control_is_not_pruned(tmp_
     assert [e.metric["seed_ids"] for e in entries] == [[0, 1]] * 3      # matched seeds, same tier
     assert all(e.purpose == "falsification" and e.fidelity == ["verify"] for e in entries)
     assert "discarded" in {e.verdict for e in entries}                  # scored worse, still ran
-    analysis = json.loads((study.protocols / f"{state['protocol_id']}.analysis.json").read_text())
+    analysis = json.loads((study.protocols / f"{state['protocol_id']}.analysis.json").read_text(encoding="utf-8"))
     assert [c["status"] for c in analysis["comparisons"]] == ["complete", "complete"]
     assert research.out.joinpath("handoff.json").exists()               # the selection stands
 
@@ -72,7 +72,7 @@ def test_every_arm_runs_on_the_same_seeds_and_a_worse_control_is_not_pruned(tmp_
 ])
 def test_an_unmatched_or_incomplete_study_is_rejected(tmp_path, change, message):
     research, study, spec, profile = fixture(tmp_path)
-    idea = json.loads((research.out / "handoff.json").read_text())["idea"]
+    idea = json.loads((research.out / "handoff.json").read_text(encoding="utf-8"))["idea"]
     min_seeds = 2
     if change == "few_seeds":
         min_seeds = 5
@@ -103,6 +103,6 @@ def test_planner_output_is_checked_and_a_changed_selection_makes_the_plan_stale(
     first = json.loads(llm.calls[0]["prompt"])
     assert first["idea"]["title"] == "Mechanism" and first["author_feedback"] == "include the noise control"
     handoff = research.out / "handoff.json"
-    handoff.write_text(handoff.read_text().replace("Mechanism", "Another mechanism"))
+    handoff.write_text(handoff.read_text(encoding="utf-8").replace("Mechanism", "Another mechanism"), encoding="utf-8")
     with pytest.raises(ReviewBlocked, match="stale"):
         study.execute(state["protocol_id"], author="Researcher")

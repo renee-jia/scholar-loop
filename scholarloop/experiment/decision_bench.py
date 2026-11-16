@@ -145,7 +145,7 @@ def run_benchmark(directory, *, repeats=3, seed=0, budget=3, arms=("accept", "ab
     tasks = make_tasks(repeats, seed)
     plan = {"version": VERSION, "split": "development", "seed": seed, "repeats": repeats,
             "budget": budget, "arms": list(arms), "tasks_hash": digest(tasks), "actions": ACTIONS,
-            "implementation_hash": digest(Path(__file__).read_text())}
+            "implementation_hash": digest(Path(__file__).read_text(encoding="utf-8"))}
     out = Path(directory)
     path = out / "plan.json"
     if path.exists():

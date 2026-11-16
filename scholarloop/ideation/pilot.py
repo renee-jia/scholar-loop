@@ -94,8 +94,15 @@ class PilotAgenda(ExperimentAgenda):
         active = {i["idea_id"]: i for i in state["ideas"] if i.get("status", "candidate") == "candidate"}
         if not 1 <= len(ids) <= 3 or len(set(ids)) != len(ids) or set(ids) - set(active):
             raise ReviewBlocked("Choose one to three distinct, active, grounded candidate ids")
-        context = context_hash(LitReview.from_dict(state["review"]), self.review.profile,
-                               state.get("research_brief", {}))
+        # The same brief the session hashed when it recorded the round: a steered session adds
+        # the steer and the chosen directions (IdeationSession._context_brief).
+        brief = state.get("research_brief", {})
+        if state.get("steer"):
+            chosen = set(state.get("chosen_directions", []))
+            brief = {**brief, "steer": state["steer"],
+                     "directions": [d for d in state.get("direction_map", []) if d["id"] in chosen],
+                     "direction_note": state.get("direction_note", "")}
+        context = context_hash(LitReview.from_dict(state["review"]), self.review.profile, brief)
         if context != state["idea_graph"]["rounds"][-1]["context_hash"]:
             raise ReviewBlocked("Ideation context changed; update candidates before running a pilot")
         ideas = [active[pid] for pid in ids]
@@ -175,7 +182,7 @@ class PilotAgenda(ExperimentAgenda):
             if handoff_path.exists():
                 history = self.research_dir / "handoff_history"
                 history.mkdir(exist_ok=True)
-                handoff_path.replace(history / f"{digest(handoff_path.read_text())}.json")
+                handoff_path.replace(history / f"{digest(handoff_path.read_text(encoding="utf-8"))}.json")
             atomic_json(self.research_dir / "idea_graph.json", session["idea_graph"])
             atomic_json(self.research_dir / "pilot_feedback.json", observations)
             lines = ["# Pilot observations", "", "These measurements do not confirm or refute the hypotheses.", ""]
@@ -185,7 +192,7 @@ class PilotAgenda(ExperimentAgenda):
                           f"Execution: **{observation['execution_status']}**. Hypothesis: **unresolved**.", "",
                           f"Recorded metric: `{json.dumps(observation['metric'], sort_keys=True)}`", "",
                           f"Comparison: `{json.dumps(observation['comparison'], sort_keys=True)}`", ""]
-            (self.research_dir / "pilot_feedback.md").write_text("\n".join(lines) + "\n")
+            (self.research_dir / "pilot_feedback.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
             atomic_json(self.research_dir / "idea_pending_decisions.json", [{
                 "kind": "interpret_pilot", "protocol_id": state["protocol_id"],
                 "idea_ids": envelope["spec"]["idea_ids"], "report": "pilot_feedback.md",

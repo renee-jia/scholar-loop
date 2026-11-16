@@ -85,8 +85,8 @@ def test_cached_episode_cannot_be_relabelled_as_another_arm(tmp_path):
     report = run_model_benchmark(tmp_path, client, model="mock-policy", repeats=1)
     task = report['arms']['plain']['episodes'][0]['task_id']
     path = tmp_path / 'plain' / task / 'result.json'
-    row = json.loads(path.read_text())
+    row = json.loads(path.read_text(encoding="utf-8"))
     row['arm'] = 'structured'
-    path.write_text(json.dumps(row))
+    path.write_text(json.dumps(row), encoding="utf-8")
     with pytest.raises(ValueError, match='Saved episode'):
         run_model_benchmark(tmp_path, lambda: pytest.fail('no calls'), model="mock-policy", repeats=1)

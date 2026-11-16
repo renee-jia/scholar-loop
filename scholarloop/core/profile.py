@@ -124,7 +124,7 @@ class Profile:
 
 
 def _load_schema() -> dict:
-    with _SCHEMA_PATH.open() as f:
+    with _SCHEMA_PATH.open(encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -133,7 +133,7 @@ def load_profile(path: str | Path) -> Profile:
     path = Path(path)
     if not path.exists():
         raise ProfileError(f"profile not found: {path}")
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         raw = yaml.safe_load(f)
     if not isinstance(raw, dict):
         raise ProfileError(f"profile must be a mapping, got {type(raw).__name__}")

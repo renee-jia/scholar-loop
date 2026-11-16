@@ -124,7 +124,7 @@ class ResearchSession:
         self.skills = skills                    # the experiment loop's lessons, read-only here
         state_path = self.out / self.STATE_FILE
         if state_path.exists():
-            self.state = SessionState.from_dict(json.loads(state_path.read_text()))
+            self.state = SessionState.from_dict(json.loads(state_path.read_text(encoding="utf-8")))
             if topic and topic != self.state.topic:
                 print(f"session: resuming {state_path} on its saved topic {self.state.topic!r} "
                       f"(ignoring --topic)", file=sys.stderr)
@@ -151,7 +151,7 @@ class ResearchSession:
             from scholarloop.review.contracts import digest
             archive = self.out / "handoff_history"
             archive.mkdir(exist_ok=True)
-            handoff_path.replace(archive / f"{digest(handoff_path.read_text())}.json")
+            handoff_path.replace(archive / f"{digest(handoff_path.read_text(encoding="utf-8"))}.json")
         if self.state.stage != "ideated":
             waiting = self.state.stage == "reviewed" and self.state.direction_map and not self.state.chosen_directions
             atomic_json(self.out / "idea_pending_decisions.json", [{
@@ -271,7 +271,7 @@ class ResearchSession:
     def _write_directions(self) -> None:
         (self.out / "directions.md").write_text(direction.render_markdown(
             self.topic, self.state.steer, self.state.direction_map, self.state.chosen_directions,
-            self.state.direction_note))
+            self.state.direction_note), encoding="utf-8")
         atomic_json(self.out / "directions.json", {"steer": self.state.steer, "map": self.state.direction_map,
                                                    "chosen": self.state.chosen_directions,
                                                    "note": self.state.direction_note, "log": self.state.direction_log})
@@ -321,8 +321,8 @@ class ResearchSession:
         self.state.ideas, self.state.selected, self.state.handoff = [], None, None   # downstream is stale
         self._reset_directions()                               # a map drawn from the old review is stale too
         self._save()
-        (self.out / "lit_review.md").write_text(litreview.render_markdown(rev))
-        (self.out / "lit_review.json").write_text(json.dumps(rev.to_dict(), indent=2, ensure_ascii=False))
+        (self.out / "lit_review.md").write_text(litreview.render_markdown(rev), encoding="utf-8")
+        (self.out / "lit_review.json").write_text(json.dumps(rev.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
         return rev
 
     # ---- [2] ideas ----------------------------------------------------------------------------
@@ -408,10 +408,10 @@ class ResearchSession:
         self.state.tournament_rounds += 1
         rnd = self.state.tournament_rounds
         log_path = self.out / "tournament.json"
-        log = json.loads(log_path.read_text()) if log_path.exists() else {}
+        log = json.loads(log_path.read_text(encoding="utf-8")) if log_path.exists() else {}
         rounds = [r for r in log.get("rounds", []) if r.get("round") != rnd]
         rounds.append({"round": rnd, "ideas": titles, "matches": matches})
-        log_path.write_text(json.dumps({"rounds": rounds}, indent=2, ensure_ascii=False))
+        log_path.write_text(json.dumps({"rounds": rounds}, indent=2, ensure_ascii=False), encoding="utf-8")
         if self.meta_reviewer is not None:       # incremental: the standing list is revised, not rewritten
             try:
                 self.state.meta_review = self.meta_reviewer.update(
@@ -426,8 +426,8 @@ class ResearchSession:
                                            meta_review=self.state.meta_review, directions=self.chosen)
         if self.state.idea_graph.get("observations"):
             rendered += "\nPilot observations: [pilot_feedback.json](pilot_feedback.json). Hypotheses remain unresolved.\n"
-        (self.out / "ideas.md").write_text(rendered)
-        (self.out / "ideas.json").write_text(json.dumps(self.state.ideas, indent=2, ensure_ascii=False))
+        (self.out / "ideas.md").write_text(rendered, encoding="utf-8")
+        (self.out / "ideas.json").write_text(json.dumps(self.state.ideas, indent=2, ensure_ascii=False), encoding="utf-8")
         from scholarloop.ideation.deep import portfolio
         atomic_json(self.out / "idea_portfolio.json", {"selection_rule": "strategy/mechanism diversity, then quality rank",
                                                        "shortlist": portfolio(self.ideas)})
@@ -543,7 +543,7 @@ class ResearchSession:
         self.state.stage = "selected"
         self._save()
         self._write_ideas()
-        (self.out / "handoff.json").write_text(json.dumps(self.state.handoff, indent=2, ensure_ascii=False))
+        (self.out / "handoff.json").write_text(json.dumps(self.state.handoff, indent=2, ensure_ascii=False), encoding="utf-8")
         return self.state.handoff
 
     def auto_select(self) -> dict:
@@ -776,10 +776,10 @@ def _run_cli(argv: list[str]) -> int:
                         tournament=None if a.no_tournament else Tournament(llm, profile),
                         meta_reviewer=None if a.no_tournament else MetaReviewer(llm))
     if a.brief:
-        s.set_brief(json.loads(Path(a.brief).read_text()), actor=a.actor)
+        s.set_brief(json.loads(Path(a.brief).read_text(encoding="utf-8")), actor=a.actor)
     try:
         if a.steer or a.interest:
-            steer = json.loads(Path(a.steer).read_text()) if a.steer else {}
+            steer = json.loads(Path(a.steer).read_text(encoding="utf-8")) if a.steer else {}
             if a.interest:
                 steer["interest"] = a.interest
             for key, extra in (("hunches", a.hunch), ("avoid", a.avoid)):
@@ -795,7 +795,7 @@ def _run_cli(argv: list[str]) -> int:
         return 2
     if a.inject_idea:
         try:
-            idea = s.inject(json.loads(Path(a.inject_idea).read_text()), actor=a.actor, reason=a.reason)
+            idea = s.inject(json.loads(Path(a.inject_idea).read_text(encoding="utf-8")), actor=a.actor, reason=a.reason)
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2

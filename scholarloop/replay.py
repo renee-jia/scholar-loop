@@ -35,7 +35,7 @@ WIDTH = 96
 # ---- capture ------------------------------------------------------------------------------------
 
 def _load(path: Path, default=None):
-    return json.loads(path.read_text()) if path.exists() else default
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
 
 
 def _trace_rows(run: Path) -> tuple[int, list[dict]]:
@@ -44,7 +44,7 @@ def _trace_rows(run: Path) -> tuple[int, list[dict]]:
     for file in sorted(run.rglob("*.agents.jsonl")):
         if "reliability" in file.parts:               # the evaluation's own calls are not the run
             continue
-        for line in file.read_text().splitlines():
+        for line in file.read_text(encoding="utf-8").splitlines():
             try:
                 row = json.loads(line)
             except ValueError:
@@ -68,16 +68,22 @@ def build_record(run, writing=None) -> dict:
     if not review or not review.get("release") or not state or not state.get("sections"):
         raise ValueError(f"{run} is not a reviewed run with a drafted paper")
     dossier = review["dossier"]
-    directions = _load(run / "directions.json", {})
+    # A trimmed archive keeps the ideation stage in session.json only.
+    session = _load(run / "session.json", {})
+    directions = _load(run / "directions.json") or {"map": session.get("direction_map") or [],
+                                                    "chosen": session.get("chosen_directions") or [],
+                                                    "steer": session.get("steer") or {}}
     chosen = set(directions.get("chosen", []))
     handoff = _load(run / "handoff.json", {})
     picked = (handoff.get("idea") or {}).get("title")
-    lit = _load(run / "lit_review.json", {})
+    lit = _load(run / "lit_review.json") or session.get("review") or {}
     process = _load(run / "process.json", {})
     best = {}
     for ref, m in dossier["measurements"].items():
         best[m["run_id"]] = ref                       # later tiers come later in the record
     calls, rejected = _trace_rows(run)
+    if not any("reliability" not in f.parts for f in run.rglob("*.agents.jsonl")):
+        calls = None                                  # traces not kept in this archive: unknown, not zero
     return {
         "version": 1,
         "name": run.name,
@@ -90,7 +96,7 @@ def build_record(run, writing=None) -> dict:
                         "chosen": d.get("id") in chosen} for d in directions.get("map", [])],
         "own_directions": [d for d in directions.get("own", [])] if isinstance(directions.get("own"), list) else [],
         "ideas": [{"title": i["title"], "elo": (i.get("tournament") or {}).get("elo"),
-                   "picked": i["title"] == picked} for i in _load(run / "ideas.json", [])],
+                   "picked": i["title"] == picked} for i in _load(run / "ideas.json") or session.get("ideas") or []],
         "selection": handoff.get("selection_decision", {}),
         "experiments": [{"id": r["id"], "fidelity": r.get("fidelity"), "verdict": r.get("verdict"),
                          "value": dossier["measurements"][best[r["id"]]]["value"] if r["id"] in best else None,
@@ -117,8 +123,9 @@ def build_record(run, writing=None) -> dict:
 def capture(run, dest, writing=None) -> Path:
     """Write a recorded run to `dest`: record.json and the papers a reader may want to open."""
     run, dest = Path(run), Path(dest)
+    record = build_record(run, writing)               # before creating anything: an unsuitable run leaves no folder
     dest.mkdir(parents=True, exist_ok=True)
-    (dest / "record.json").write_text(json.dumps(build_record(run, writing), indent=1, ensure_ascii=False))
+    (dest / "record.json").write_text(json.dumps(record, indent=1, ensure_ascii=False), encoding="utf-8")
     for name in ("paper.md", "paper_traced.md", "review.md", "evidence_map.md"):
         source = (Path(writing) if writing else run) / name
         if source.exists():
@@ -133,9 +140,9 @@ def load(location=None, sample: str = DEFAULT_SAMPLE) -> dict:
     """A record from a capture directory, a record.json, a raw run directory, or a sample."""
     path = Path(location) if location else SAMPLES / sample
     if path.is_file():
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     if (path / "record.json").exists():
-        return json.loads((path / "record.json").read_text())
+        return json.loads((path / "record.json").read_text(encoding="utf-8"))
     if not path.exists():
         shipped = sorted(p.name for p in SAMPLES.glob("*") if p.is_dir())
         hint = (f"samples: {shipped}" if shipped else
@@ -204,7 +211,9 @@ def stages(record: dict) -> list[tuple[str, str]]:
     by = {}
     for x in rej:
         by[x["agent"]] = by.get(x["agent"], 0) + 1
-    lines = [f"  {r['agent_calls']} agent calls; {len(rej)} outputs were refused by a check and returned to the model:"]
+    lines = (["  This archive does not include the agent traces, so calls and refused outputs are not listed."]
+             if r["agent_calls"] is None else
+             [f"  {r['agent_calls']} agent calls; {len(rej)} outputs were refused by a check and returned to the model:"])
     lines += [f"    {agent}: {n}" for agent, n in sorted(by.items(), key=lambda kv: -kv[1])]
     for x in rej[:3]:
         lines += [f"  {x['agent']}, attempt {x['attempt']}:"] + [_wrap(e, "      ") for e in x["errors"][:2]]
@@ -328,7 +337,11 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     if a.command == "capture":
-        print(f"recorded {capture(a.run, a.dest, a.writing)}")
+        try:
+            print(f"recorded {capture(a.run, a.dest, a.writing)}")
+        except (FileNotFoundError, ValueError) as exc:
+            print(exc, file=sys.stderr)
+            return 1
         return 0
     try:
         record = load(a.run, a.sample)

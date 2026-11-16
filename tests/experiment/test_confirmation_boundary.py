@@ -33,9 +33,9 @@ def test_invalid_confirmation_is_rejected_before_execution(tmp_path, monkeypatch
         options["artifact_cache"] = tmp_path / "cache"
     else:
         path = tmp_path / "registry" / "protocols" / f"{pid}.json"
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         data["spec"]["seeds"] = [7, 8]
-        path.write_text(json.dumps(data))
+        path.write_text(json.dumps(data), encoding="utf-8")
     def forbidden(*args, **kwargs):
         raise AssertionError("No training or scoring may run")
     monkeypatch.setattr("scholarloop.experiment.runner._run_one_seed", forbidden)

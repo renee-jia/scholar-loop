@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import json
-import mimetypes
 import secrets
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -13,6 +13,8 @@ from scholarloop.ui.jobs import Jobs
 from scholarloop.ui.store import Store
 
 STATIC = Path(__file__).parent / "static"
+# Fixed, not looked up: on Windows the registry can map .js to text/plain, which browsers refuse.
+STATIC_TYPES = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}
 
 
 class Application:
@@ -77,7 +79,7 @@ def make_server(app, host="127.0.0.1", port=8765):
                     return self.send(200, html, "text/html; charset=utf-8")
                 if url.path in {"/app.js", "/style.css", "/favicon.svg"}:
                     p = STATIC / url.path[1:]
-                    return self.send(200, p.read_bytes(), mimetypes.guess_type(p.name)[0] + "; charset=utf-8")
+                    return self.send(200, p.read_bytes(), STATIC_TYPES[p.suffix] + "; charset=utf-8")
                 if url.path == "/api/bootstrap":
                     return self.send(200, app.bootstrap())
                 if url.path == "/api/runs":
@@ -99,6 +101,9 @@ def make_server(app, host="127.0.0.1", port=8765):
                 self.send(403, {"error": str(exc)})
             except (ValueError, OSError, KeyError, TypeError) as exc:
                 self.send(400, {"error": str(exc)})
+            except Exception as exc:               # never leave a request without a reply
+                traceback.print_exc()
+                self.send(500, {"error": f"Internal error: {type(exc).__name__}: {exc}"})
 
         def do_POST(self):
             try:
@@ -147,5 +152,8 @@ def make_server(app, host="127.0.0.1", port=8765):
                 self.send(403, {"error": str(exc)})
             except (ValueError, OSError, KeyError, TypeError) as exc:
                 self.send(400, {"error": str(exc)})
+            except Exception as exc:               # never leave a request without a reply
+                traceback.print_exc()
+                self.send(500, {"error": f"Internal error: {type(exc).__name__}: {exc}"})
 
     return ThreadingHTTPServer((host, port), Handler)

@@ -11,7 +11,7 @@ def test_audit_distinguishes_stale_release_from_missing_work(tmp_path):
     audit = audit_run(p, tmp_path)
     assert audit["scientific_review"]["current_release_valid"] is True
     assert audit["ideation"] is None and audit["token_usage"] is None
-    (p.root / p.train_entrypoint).write_text("changed source")
+    (p.root / p.train_entrypoint).write_text("changed source", encoding="utf-8")
     audit = audit_run(p, tmp_path)
     assert audit["scientific_review"]["current_release_valid"] is False
     assert "stale" in audit["scientific_review"]["writing_block_reason"]
@@ -28,8 +28,8 @@ def test_process_report_counts_rounds_and_costs_each_process_once(tmp_path):
                 "client_usage": {"calls": calls, "input_tokens": tokens, "output_tokens": tokens}}
     rows = [finished("a", 1, "rejected", 1, 1000), finished("a", 2, "accepted", 2, 2000),   # one process
             finished("b", 1, "accepted", 1, 500)]                                           # a second one
-    (tmp_path / "review.agents.jsonl").write_text("\n".join(json.dumps(r) for r in rows))
-    (tmp_path / "spend.json").write_text(json.dumps({"usd": 1.0, "requests": 3}))
+    (tmp_path / "review.agents.jsonl").write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+    (tmp_path / "spend.json").write_text(json.dumps({"usd": 1.0, "requests": 3}), encoding="utf-8")
     report = process_report(tmp_path)
     stage = report["stages"][0]
     # cumulative readings are not summed attempt by attempt: 2000 from the first process, 500 from the second

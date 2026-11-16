@@ -43,6 +43,13 @@ def within(path, root):
     return path
 
 
+def _same(a: Path, b: Path) -> bool:
+    try:
+        return a == b or a.samefile(b)
+    except OSError:
+        return False
+
+
 class Store:
     def __init__(self, workspace, runs_dir):
         self.workspace = Path(workspace).resolve()
@@ -64,7 +71,7 @@ class Store:
                 profiles.append({"id": path.name, "name": DOMAIN_LABELS.get(p.name, p.name), "metric": p.metric.name,
                                  "direction": p.metric.direction, "baseline": p.best_baseline(),
                                  "datasets": list(p.datasets), "knobs": p.knobs})
-            except (ValueError, OSError):
+            except Exception:                      # one unreadable profile (YAML errors included) is skipped
                 continue
         return profiles
 
@@ -118,10 +125,12 @@ class Store:
         if not path.is_dir():
             raise ValueError("No ScholarLoop research records found in this directory")
         sample = self.workspace / "examples" / "sample_runs"
-        readonly = readonly or path.is_relative_to(sample)
+        # Compared as files, not strings: on a case-insensitive file system "Sample_Runs" is the
+        # same folder and must stay read-only, and the same run must not be imported twice.
+        readonly = readonly or any(_same(p, sample) for p in (path, *path.parents))
         with self.lock:
             for record in self.records.values():
-                if Path(record["path"]) == path:
+                if _same(Path(record["path"]), path):
                     if record.get("deleted_at") and not discovery:
                         record.pop("deleted_at")
                         self._save()
@@ -135,7 +144,10 @@ class Store:
             if ledger.exists():
                 with ledger.open(encoding="utf-8") as stream:
                     first = next((line for line in stream if line.strip()), "{}")
-                domain = json.loads(first).get("domain", domain)
+                first = json.loads(first)
+                if not isinstance(first, dict):
+                    raise ValueError("The experiment ledger in this directory is not readable")
+                domain = first.get("domain", domain)
             config = self.config({"title": session.get("topic") or path.name,
                                   "profile": profile or domain + ".yaml"})
             ident = "import-" + uuid.uuid4().hex[:8]
@@ -194,7 +206,7 @@ class Store:
             if path.is_dir() and not path.name.startswith("."):
                 try:
                     self.import_run(path, discovery=True)
-                except (ValueError, OSError):
+                except Exception:                  # an unreadable folder must not hide the others
                     pass
         with self.lock:
             return sorted((dict(r) for r in self.records.values() if not r.get("deleted_at")),

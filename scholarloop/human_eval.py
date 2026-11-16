@@ -219,7 +219,7 @@ def collect_claims(audit_dir: Path, name: str, paper: str) -> list[dict]:
     for path in sorted(audit_dir.glob(f"claims_{name}_*.json")):
         if not path.stem.rpartition("_")[2].isdigit() or path.stem.rpartition("_")[0] != f"claims_{name}":
             continue
-        for c in json.loads(path.read_text())["claims"]:
+        for c in json.loads(path.read_text(encoding="utf-8"))["claims"]:
             quote = _squash(c["quote"])
             if quote in text:
                 entry = found.setdefault(quote, {"quote": quote, "kind": c["kind"], "model": []})
@@ -289,7 +289,7 @@ def _scrub(value) -> None:
 def build_study(study: str, run: Path, staged: Path, out: Path, rng: random.Random, *,
                 per_staged: int, per_baseline: int) -> dict:
     from scholarloop.review.dossier import prompt_view
-    dossier = json.loads((run / "scientific_review.json").read_text())["dossier"]
+    dossier = json.loads((run / "scientific_review.json").read_text(encoding="utf-8"))["dossier"]
     view = prompt_view({k: v for k, v in dossier.items() if k != "argument"})
     _scrub(view)
     audit_dir = run / "reliability"
@@ -299,14 +299,14 @@ def build_study(study: str, run: Path, staged: Path, out: Path, rng: random.Rand
     rng.shuffle(names)
     folder = out / "materials" / study
     (folder / "papers").mkdir(parents=True, exist_ok=True)
-    (folder / "evidence.md").write_text(render_evidence(view))
-    (folder / "run_notes.md").write_text(render_run_notes(view))
-    (folder / "code_versions.md").write_text(render_code(view))
-    (folder / "evidence.json").write_text(json.dumps(view, indent=1, ensure_ascii=False))
+    (folder / "evidence.md").write_text(render_evidence(view), encoding="utf-8")
+    (folder / "run_notes.md").write_text(render_run_notes(view), encoding="utf-8")
+    (folder / "code_versions.md").write_text(render_code(view), encoding="utf-8")
+    (folder / "evidence.json").write_text(json.dumps(view, indent=1, ensure_ascii=False), encoding="utf-8")
 
     papers, items = {}, []
     for label, name in zip("ABCDEFGH", names):
-        text = rater_paper(sources[name].read_text())
+        text = rater_paper(sources[name].read_text(encoding="utf-8"))
         pool = collect_claims(audit_dir, name, text)
         if not pool and name != "staged":
             continue                                   # a paper the model judge never audited
@@ -317,7 +317,7 @@ def build_study(study: str, run: Path, staged: Path, out: Path, rng: random.Rand
     relabel = {p["source"]: label for label, p in zip("ABCDEFGH", papers.values())}
     papers = {relabel[p["source"]]: p for p in papers.values()}
     for label, p in papers.items():
-        (folder / "papers" / f"paper_{label}.md").write_text(p.pop("text"))
+        (folder / "papers" / f"paper_{label}.md").write_text(p.pop("text"), encoding="utf-8")
     rng.shuffle(items)
     for n, item in enumerate(items, 1):
         item["item_id"] = f"{study}-{n:02d}"
@@ -330,7 +330,7 @@ def build_study(study: str, run: Path, staged: Path, out: Path, rng: random.Rand
     for item in items:
         lines += [f"## {item['item_id']}", "", f"Paper: `papers/paper_{item['paper']}.md`", "",
                   "> " + item["quote"], ""]
-    (folder / "claims.md").write_text("\n".join(lines))
+    (folder / "claims.md").write_text("\n".join(lines), encoding="utf-8")
     template = out / "responses_template" / study
     _write_csv(template / "claims.csv", CLAIM_COLUMNS,
                [{"item_id": i["item_id"], "paper": f"paper_{i['paper']}", "quote": i["quote"]} for i in items])
@@ -361,7 +361,7 @@ def build(studies: list[tuple[str, Path, Path]], out: Path, key_path: Path, *, s
         {"question": "minutes spent, study by study"},
         {"question": "anything unclear in the instructions"}])
     key_path.parent.mkdir(parents=True, exist_ok=True)
-    key_path.write_text(json.dumps(key, indent=1, ensure_ascii=False))
+    key_path.write_text(json.dumps(key, indent=1, ensure_ascii=False), encoding="utf-8")
     return key
 
 
@@ -531,7 +531,7 @@ def main(argv=None) -> int:
             flagged = sum(i["model_flagged"] for i in k["items"])
             print(f"{name}: {len(k['papers'])} papers, {len(k['items'])} claims ({flagged} flagged by the model judge)")
         return 0
-    key = json.loads(Path(args.key).read_text())
+    key = json.loads(Path(args.key).read_text(encoding="utf-8"))
     raters = {p.name: read_responses(p) for p in sorted(Path(args.responses).iterdir()) if p.is_dir()}
     raters = {name: r for name, r in raters.items() if r["claims"]}
     if not raters:
@@ -542,8 +542,8 @@ def main(argv=None) -> int:
     if args.out:
         out = Path(args.out)
         out.mkdir(parents=True, exist_ok=True)
-        (out / "score.json").write_text(json.dumps(report, indent=1, ensure_ascii=False))
-        (out / "score.md").write_text(text)
+        (out / "score.json").write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")
+        (out / "score.md").write_text(text, encoding="utf-8")
     print(text)
     return 0
 

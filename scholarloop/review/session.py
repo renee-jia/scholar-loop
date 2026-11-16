@@ -100,12 +100,13 @@ class ScientificReviewSession:
                 # A round that failed part-way is continued, not repeated: same evidence, same
                 # argument, same feedback, so the reviews already returned still apply.
                 before = old.get("dossier") or {}
-                done = []
+                done, resumed = [], False
                 if (old.get("status") == "REVIEW_FAILED" and before.get("argument") and iteration is None
                         and before.get("input_hash") == dossier["input_hash"]
                         and old.get("feedback", "") == feedback
                         and argument in (None, before["argument"])):
                     argument, done = before["argument"], list(old.get("reports", []))
+                    resumed = True
                     state["round"], state["resumed_roles"] = old["round"], [r["role"] for r in done]
                 last = last or {}
                 # What each reviewer passed last round, as it still reads. A round that is being
@@ -132,7 +133,7 @@ class ScientificReviewSession:
                 dossier["argument"] = argument
                 this_round = f"r{state['round']}:"
                 pending = [i for i in state["issues"] if i["status"] == "open" and not i["id"].startswith(this_round)]
-                state["settled"] = (old.get("settled", {}) if done else {
+                state["settled"] = (old.get("settled", {}) if resumed else {
                     role: settled_statements(before["argument"], argument, report,
                                              [i["target"] for i in pending if i["role"] == role])
                     for role, report in passed.items()})
@@ -311,7 +312,7 @@ class ScientificReviewSession:
             lines += ["", "Failure: " + state["failure"]]
         if state.get("review_hash"):
             lines += ["", f"Review hash: `{state['review_hash']}`"]
-        (self.out / "scientific_review.md").write_text("\n".join(lines) + "\n")
+        (self.out / "scientific_review.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
         requests = [{"issue_id": i["id"], "target": i["target"], "required_action": i["required_action"],
                      "resolution_criterion": i["resolution_criterion"]}
                     for i in state["issues"] if i["status"] == "open" and i["action"] == "experiment"]

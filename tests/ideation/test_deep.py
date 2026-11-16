@@ -37,8 +37,8 @@ def test_deep_generation_is_diverse_auditable_and_resumable(tmp_path):
     assert {i.strategy for i in ideas} == {"mechanism", "transfer", "contradiction"}
     assert all(i.idea_id and i.design["kill_criterion"] for i in ideas)
     assert len(s.state.idea_graph["nodes"]) == 3
-    assert len(json.loads((s.out / "idea_portfolio.json").read_text())["shortlist"]) == 3
-    assert "abstracts_only" in (s.out / "ideas.md").read_text()
+    assert len(json.loads((s.out / "idea_portfolio.json").read_text(encoding="utf-8"))["shortlist"]) == 3
+    assert "abstracts_only" in (s.out / "ideas.md").read_text(encoding="utf-8")
     # Three independent generation calls precede the novelty reviews, without peer candidates.
     for call in s.llm.calls[2:5]:
         assert "Archived decisions" in call["prompt"]

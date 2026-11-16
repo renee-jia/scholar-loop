@@ -38,6 +38,6 @@ def test_command_line_runs_without_a_terminal(capsys):
 def test_capture_writes_a_record_a_copy_can_be_replayed_from(tmp_path):
     record = replay.load()
     (tmp_path / "copy").mkdir()
-    (tmp_path / "copy" / "record.json").write_text(json.dumps(record))
+    (tmp_path / "copy" / "record.json").write_text(json.dumps(record), encoding="utf-8")
     assert replay.load(tmp_path / "copy")["paper"]["title"] == record["paper"]["title"]
     assert replay.load(tmp_path / "copy" / "record.json")["name"] == record["name"]

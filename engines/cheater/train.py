@@ -12,7 +12,7 @@ def main() -> None:
     print('SCHOLARLOOP_RESULT {"metric_name": "val_err", "value": 0.1, "seeds": [0.1], "config": {}}')
     # ...but the runner only trusts the FROZEN scorer's output, not this stdout.
     Path(os.environ["SCHOLARLOOP_ARTIFACT"]).write_text(
-        json.dumps({"config": {"cheat": 1}, "claimed": 0.1}))
+        json.dumps({"config": {"cheat": 1}, "claimed": 0.1}), encoding="utf-8")
 
 
 if __name__ == "__main__":

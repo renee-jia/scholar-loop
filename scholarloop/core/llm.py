@@ -63,7 +63,7 @@ def remaining_budget() -> float | None:
     if not cap:
         return None
     path = Path(os.environ.get("SCHOLARLOOP_SPEND_FILE") or "scholarloop_spend.json")
-    spent = json.loads(path.read_text())["usd"] if path.exists() else 0.0
+    spent = json.loads(path.read_text(encoding="utf-8"))["usd"] if path.exists() else 0.0
     return float(cap) - spent
 
 
@@ -85,8 +85,12 @@ def _spend(model: str, usage: dict | None = None, upcoming: float = 0.0) -> None
     if price is None:
         raise SpendCapExceeded(f"SCHOLARLOOP_SPEND_CAP is set but model {model!r} has no price")
     path = Path(os.environ.get("SCHOLARLOOP_SPEND_FILE") or "scholarloop_spend.json")
-    with _spend_mutex:
-        state = json.loads(path.read_text()) if path.exists() else {"usd": 0.0, "requests": 0}
+    from scholarloop.core.locking import exclusive_lock
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Commands that share one spend file run in separate processes: the read-modify-write is
+    # serialised across them, and each writer uses its own temporary file.
+    with _spend_mutex, exclusive_lock(path.with_name(path.name + ".lock"), wait=30.0):
+        state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"usd": 0.0, "requests": 0}
         if usage is None:
             if state["usd"] >= float(cap):
                 raise SpendCapExceeded(f"spend cap reached: ${state['usd']:.2f} of ${float(cap):.2f} "
@@ -100,9 +104,8 @@ def _spend(model: str, usage: dict | None = None, upcoming: float = 0.0) -> None
         state["usd"] += cost_of(usage, model)
         state["requests"] += 1
         state["cap_usd"] = float(cap)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(state, indent=1))
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
         os.replace(tmp, path)
 
 

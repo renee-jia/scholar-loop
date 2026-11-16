@@ -35,7 +35,7 @@ def access_records(ledger_path):
         raise ValueError("Uncertain final test access directory")
     for path in sorted(directory.glob("*.json")):
         try:
-            record = json.loads(path.read_text())
+            record = json.loads(path.read_text(encoding="utf-8"))
             if (set(record) != {"version", "run_id", "candidate_id", "protocol"}
                     or record["version"] != 1 or not isinstance(record["protocol"], dict)
                     or not isinstance(record["run_id"], str) or not isinstance(record["candidate_id"], str)):
@@ -58,7 +58,7 @@ def reserve_test_access(ledger_path, run_id, candidate_id, protocol):
         require_unopened_test(ledger_path, continuing_protocol=protocol.get("id"))
         path = directory / (hashlib.sha256(run_id.encode()).hexdigest() + ".json")
         value = {"version": 1, "run_id": run_id, "candidate_id": candidate_id, "protocol": protocol}
-        with path.open("x") as stream:
+        with path.open("x", encoding="utf-8") as stream:
             json.dump(value, stream, sort_keys=True)
             stream.flush()
             os.fsync(stream.fileno())

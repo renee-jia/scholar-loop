@@ -124,7 +124,7 @@ def test_ui_review_approval_and_writing_keep_author_and_staleness_gates(tmp_path
     assert execute("write", {}) == 2
     assert model.calls == []
     assert execute("review", {"argument": ARGUMENT}) == 0
-    saved = json.loads((tmp_path / "scientific_review.json").read_text())
+    saved = json.loads((tmp_path / "scientific_review.json").read_text(encoding="utf-8"))
     assert saved["status"] == "READY_FOR_AUTHOR" and not (tmp_path / "paper.md").exists()
     assert execute("approve", {"author": "UI author", "review_hash": "wrong"}) == 2
     assert execute("approve", {"author": "UI author", "review_hash": saved["review_hash"]}) == 0
@@ -239,10 +239,10 @@ def test_new_release_retains_old_manuscript_and_pilot_kind(app):
     atomic_json(run / "scientific_review.json", {"release": {"id": "a" * 64}})
     first = writing_directory(run)
     first.mkdir(parents=True)
-    (first / "paper.md").write_text("old evidence")
+    (first / "paper.md").write_text("old evidence", encoding="utf-8")
     atomic_json(run / "scientific_review.json", {"release": {"id": "b" * 64}})
     second = writing_directory(run)
-    assert second != first and (first / "paper.md").read_text() == "old evidence"
+    assert second != first and (first / "paper.md").read_text(encoding="utf-8") == "old evidence"
     assert "paper.md" not in app.store.detail(r["id"])["writing"]["artifacts"]
     pid = "c" * 64
     atomic_json(run / "experiment_agenda" / (pid + ".json"), {"protocol_id": pid, "status": "PLANNED"})
@@ -293,7 +293,7 @@ def test_http_origin_token_files_and_secret_boundary(app, http):
     assert http("/api/runs", {"title": "blocked"}, {"Origin": "https://attacker.test"})[0] == 403
     assert http("/api/connection", {"api_key": "test-secret"})[0] == 200
     assert b"test-secret" not in http("/api/bootstrap")[1]
-    assert "test-secret" not in app.store.index_path.read_text() if app.store.index_path.exists() else True
+    assert "test-secret" not in app.store.index_path.read_text(encoding="utf-8") if app.store.index_path.exists() else True
     code, body, _ = http("/api/runs", {"title": "中文测试", "mode": "demo"})
     assert code == 201
     ident = json.loads(body)["id"]

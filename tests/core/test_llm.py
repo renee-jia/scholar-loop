@@ -151,14 +151,14 @@ def test_spend_cap_is_shared_across_clients_and_refuses_before_sending(monkeypat
     monkeypatch.setenv("SCHOLARLOOP_SPEND_CAP", "1.0")
     monkeypatch.setenv("SCHOLARLOOP_SPEND_FILE", str(path))
     AnthropicLLM(client=_metered(), fallbacks=False).complete("q")           # $0.60
-    assert json.loads(path.read_text())["usd"] == pytest.approx(0.6)
+    assert json.loads(path.read_text(encoding="utf-8"))["usd"] == pytest.approx(0.6)
     second = _metered()
     AnthropicLLM(client=second, fallbacks=False).complete("q")               # a new client, same file: $1.20
     third = _metered()
     with pytest.raises(SpendCapExceeded, match="spend cap reached"):
         AnthropicLLM(client=third, fallbacks=False).complete("q")
     assert third.messages.last_kwargs is None                               # nothing was sent
-    assert json.loads(path.read_text())["requests"] == 2
+    assert json.loads(path.read_text(encoding="utf-8"))["requests"] == 2
 
 
 def test_spend_cap_refuses_an_unpriced_model(monkeypatch, tmp_path):
@@ -247,7 +247,7 @@ def test_cache_writes_and_reads_are_priced_and_counted(monkeypatch, tmp_path):
     llm.complete_json("q", {"type": "object"}, context="c")
     # $4/M input: 1k plain + 100k written at 1.25x + 1M read at 0.05x
     expected = (1_000 + 125_000 + 50_000) / 1e6 * 4.0
-    assert json.loads(path.read_text())["usd"] == pytest.approx(expected)
+    assert json.loads(path.read_text(encoding="utf-8"))["usd"] == pytest.approx(expected)
     assert llm.usage["cache_read_input_tokens"] == 1_000_000
     assert cost_of(llm.usage, llm.model) == pytest.approx(expected)
     assert cost_of({"input_tokens": 0, "cache_read_input_tokens": 1_000_000}, "claude-haiku-5-5") == \
@@ -258,7 +258,7 @@ def test_a_request_too_large_for_what_is_left_is_refused_before_it_is_sent(monke
     import json
     from scholarloop.core.llm import SpendCapExceeded, remaining_budget
     path = tmp_path / "spend.json"
-    path.write_text(json.dumps({"usd": 0.9, "requests": 3}))
+    path.write_text(json.dumps({"usd": 0.9, "requests": 3}), encoding="utf-8")
     monkeypatch.setenv("SCHOLARLOOP_SPEND_CAP", "1.0")
     monkeypatch.setenv("SCHOLARLOOP_SPEND_FILE", str(path))
     assert remaining_budget() == pytest.approx(0.1)
@@ -266,6 +266,6 @@ def test_a_request_too_large_for_what_is_left_is_refused_before_it_is_sent(monke
     llm = AnthropicLLM(client=fake, fallbacks=False)
     with pytest.raises(SpendCapExceeded, match=r"would cost about \$0\.\d+ in input alone and \$0\.10 is left"):
         llm.complete("x" * 240_000)                  # about 100k tokens, $0.40 of input on the default model
-    assert fake.messages.last_kwargs is None and json.loads(path.read_text())["requests"] == 3
+    assert fake.messages.last_kwargs is None and json.loads(path.read_text(encoding="utf-8"))["requests"] == 3
     llm.complete("short")                            # a request that fits still goes out
     assert fake.messages.last_kwargs is not None

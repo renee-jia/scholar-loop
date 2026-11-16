@@ -37,7 +37,11 @@ from pathlib import Path
 # token matches this. "top-1", "arXiv:1609.04836", "resnet18" do NOT match.
 _PURE_NUMBER_RE = re.compile(r"^[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?$")
 # Punctuation that may wrap a number in prose (but NOT '.', which is part of decimals).
-_WRAP = "([{<>}]),;:%\"'"
+_WRAP = "([{<>}]),;:%\"'*`|~$\u2248\u2020"
+# A number written with a unit ("2.3x", "3.10pp") or joined to another ("3.10\u00b10.02", "4.1/5.2",
+# "3.10\u20133.20") is still a number the text states.
+_UNIT_RE = re.compile(r"([-+]?\d+(?:\.\d+)?)(?:x|pp|\u00d7)")
+_JOIN_RE = re.compile(r"[\u00b1/\u2013\u2014]")
 # Delimiters to split on, in addition to whitespace, so embedded numbers like "err=4.1" or
 # "(4.1,5.2)" are caught. Deliberately EXCLUDES ':' '.' '-' so arXiv ids ("arXiv:1609.04836"),
 # decimals, and hyphenated terms ("top-1") stay single, non-numeric tokens.
@@ -52,12 +56,27 @@ def _number_tokens(text: str):
     yielded. Ranges like "5.5-4.9" and identifiers like "top-1" / "arXiv:1609.04836" are skipped.
     """
     for raw in _SPLIT_RE.split(text):
-        tok = raw.strip(_WRAP)
-        # peel a trailing sentence period: "5.8." -> "5.8"
-        while tok.endswith(".") and not _PURE_NUMBER_RE.match(tok):
-            tok = tok[:-1]
+        # Peel wrappers and trailing sentence periods until stable: "4.1%." and "**4.1**." both
+        # reduce to "4.1". A Unicode minus counts as a minus sign.
+        tok = raw.replace("\u2212", "-")
+        while True:
+            peeled = tok.strip(_WRAP)
+            if peeled.endswith(".") and not _PURE_NUMBER_RE.match(peeled):
+                peeled = peeled[:-1]
+            if peeled == tok:
+                break
+            tok = peeled
         if _PURE_NUMBER_RE.match(tok):
             yield tok
+            continue
+        unit = _UNIT_RE.fullmatch(tok)
+        if unit:
+            yield unit.group(1)
+            continue
+        parts = [_UNIT_RE.sub(r"\1", p.strip(_WRAP)) if _UNIT_RE.fullmatch(p.strip(_WRAP)) else p.strip(_WRAP)
+                 for p in _JOIN_RE.split(tok)]
+        if len(parts) > 1 and all(_PURE_NUMBER_RE.match(p) for p in parts):
+            yield from parts
 
 
 def _decimals(tok: str) -> int:
@@ -103,11 +122,11 @@ class VerifiedRegistry:
         p.parent.mkdir(parents=True, exist_ok=True)
         payload = {"exp_id": self.exp_id, "status": self.status,
                    "measurements": {k: m.to_dict() for k, m in self.measurements.items()}}
-        p.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+        p.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
     @classmethod
     def load(cls, path: str | Path) -> "VerifiedRegistry":
-        data = json.loads(Path(path).read_text())
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
         reg = cls(path=path, exp_id=data.get("exp_id", ""), status=data.get("status", "ok"))
         for k, m in data.get("measurements", {}).items():
             reg.measurements[k] = Measurement(m["value"], m.get("seeds", []), m.get("std"))
@@ -121,6 +140,8 @@ class VerifiedRegistry:
             vals.extend(m.seeds)
         return vals
 
+    exact_integers = False   # set by checks where "7" must not stand for a recorded 7.25
+
     def is_grounded(self, number: float, decimals: int | None = None) -> bool:
         """True if `number` matches a captured measurement.
 
@@ -131,7 +152,11 @@ class VerifiedRegistry:
             if decimals is None:
                 if abs(number - v) <= self.tol:
                     return True
-            elif round(v, decimals) == round(number, decimals):
+            elif decimals == 0 and self.exact_integers:
+                if abs(number - v) < 1e-9:
+                    return True
+            # Either rounding convention is accepted: 0.8125 grounds both "0.812" and "0.813".
+            elif round(v, decimals) == round(number, decimals) or abs(v - number) <= 0.5 * 10 ** -decimals + 1e-12:
                 return True
         return False
 

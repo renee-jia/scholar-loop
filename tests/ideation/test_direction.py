@@ -50,7 +50,7 @@ def test_ideation_refuses_to_start_without_a_steer_and_a_chosen_direction(tmp_pa
     s.map_directions()
     with pytest.raises(ValueError, match="Choose the directions"):
         s.ideate(1)
-    pending = json.loads((s.out / "idea_pending_decisions.json").read_text())
+    pending = json.loads((s.out / "idea_pending_decisions.json").read_text(encoding="utf-8"))
     assert pending[0]["kind"] == "choose_directions" and len(pending[0]["direction_ids"]) == 3
 
 
@@ -64,7 +64,7 @@ def test_steer_reaches_the_query_planner_the_mapper_and_the_ideator(tmp_path):
     chosen = s.choose_directions([2], actor="renee", note="keep it to one knob",
                                  own=["Compare skips against simply widening the layer"])
     assert [d["origin"] for d in chosen] == ["mapper", "author"]
-    page = (s.out / "directions.md").read_text()
+    page = (s.out / "directions.md").read_text(encoding="utf-8")
     assert "✅ **Learning-rate confound** | challenges H2" in page and "Written by you" in page
 
     mine = chosen[1]["id"]
@@ -75,7 +75,7 @@ def test_steer_reaches_the_query_planner_the_mapper_and_the_ideator(tmp_path):
     assert "Directions the author CHOSE" in prompt and "keep it to one knob" in prompt
     assert board[0]["name"] not in prompt.split("Directions the author CHOSE")[1].split("Propose")[0]
     assert ideas[1].direction == mine
-    md = (s.out / "ideas.md").read_text()
+    md = (s.out / "ideas.md").read_text(encoding="utf-8")
     assert "**Direction:** Learning-rate confound" in md and "**Follows your steer:** tests H1" in md
     handoff = s.select(1)
     assert handoff["author_direction"]["direction"]["name"] == "Learning-rate confound"
@@ -195,8 +195,8 @@ def test_cli_stops_for_the_author_at_each_step(tmp_path, monkeypatch, capsys):
     assert "choose: --directions" in capsys.readouterr().out and len(llm.calls) == 3
     assert not (out / "ideas.md").exists()
 
-    board = json.loads((out / "directions.json").read_text())["map"]
+    board = json.loads((out / "directions.json").read_text(encoding="utf-8"))["map"]
     llm._jsons.append({"ideas": [_steered(_idea("A"), board[1]["id"])]})
     assert run(base + ["--directions", "2", "--n-ideas", "1", "--stop-after", "ideas"]) == 0
-    assert "**Direction:** Learning-rate confound" in (out / "ideas.md").read_text()
+    assert "**Direction:** Learning-rate confound" in (out / "ideas.md").read_text(encoding="utf-8")
     assert run(base + ["--select", "1"]) == 0 and (out / "handoff.json").exists()

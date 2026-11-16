@@ -66,7 +66,7 @@ SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
 def load_skill(*names: str) -> str:
     """Concatenate bundled writing-skill files (e.g. load_skill("narrative", "style"))."""
-    return "\n\n".join((SKILLS_DIR / f"{n}.md").read_text() for n in names)
+    return "\n\n".join((SKILLS_DIR / f"{n}.md").read_text(encoding="utf-8") for n in names)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -438,6 +438,21 @@ class Outliner(Agent):
             wrong = [c[:60] for c in output["contributions"] if c not in texts]
             if wrong:
                 errs.append(f"each contribution must be the id of an approved claim; not ids: {wrong}")
+            # The title and the headings are printed in the paper and cite nothing, so they may
+            # state no number that the approved statements do not.
+            from scholarloop.core.registry import VerifiedRegistry, _number_tokens
+            from scholarloop.review.dossier import approved_statements
+            reg = VerifiedRegistry(":outline:")
+            reg.exact_integers = True
+            for n, st in enumerate(approved_statements(self.bank.approved_dossier).values()):
+                for k, tok in enumerate(_number_tokens(st["text"])):
+                    reg.capture(f"{n}.{k}", float(tok))
+            for label, line in [("title", output.get("title", ""))] + [
+                    ("heading", sec.get("heading", "")) for sec in output.get("sections", [])]:
+                bad = reg.audit_text(re.sub(r"^\s*\d+(\.\d+)*[.)]?\s+", "", line))
+                if bad:
+                    errs.append(f"the {label} {line[:70]!r} states numbers {bad} that no approved statement "
+                                "contains; use an approved figure or none")
             empty = [sec["heading"] for sec in output.get("sections", []) if not sec.get("evidence")]
             if empty:
                 errs.append(f"sections {empty} list no approved statement: every sentence of the paper "
@@ -972,9 +987,9 @@ class WritingSession:
         if research_dir is not None:
             rd = Path(research_dir)
             if (rd / "lit_review.json").exists():
-                review = LitReview.from_dict(json.loads((rd / "lit_review.json").read_text()))
+                review = LitReview.from_dict(json.loads((rd / "lit_review.json").read_text(encoding="utf-8")))
             if (rd / "handoff.json").exists():
-                idea = json.loads((rd / "handoff.json").read_text()).get("idea")
+                idea = json.loads((rd / "handoff.json").read_text(encoding="utf-8")).get("idea")
         self.review_doc = review
         self.bank = EvidenceBank.build(entries, registry_dir, profile, review=review, idea=idea)
         self.outliner = Outliner(llm, self.bank, trace=self.trace)
@@ -983,7 +998,7 @@ class WritingSession:
         self.panel = [Panelist(llm, r, trace=self.trace, fixed_text=not demo) for r in panel_roles]
         self.reviewers = [PaperReviewer(llm, p, trace=self.trace) for p in reviewer_personas]
         sp = self.out / self.STATE_FILE
-        self.state = WritingState.from_dict(json.loads(sp.read_text())) if sp.exists() else WritingState()
+        self.state = WritingState.from_dict(json.loads(sp.read_text(encoding="utf-8"))) if sp.exists() else WritingState()
         if sp.exists() and self.state.demo != demo:
             raise ReviewBlocked("Cannot switch an existing writing session between demo and reviewed modes")
         self.state.demo = demo
@@ -1054,7 +1069,7 @@ class WritingSession:
         self.state.sections, self.state.review = [], None
         self.state.stage = "outlined"
         self._save()
-        (self.out / "outline.md").write_text(render_outline_md(outline, transcript, self._feedback("outline")))
+        (self.out / "outline.md").write_text(render_outline_md(outline, transcript, self._feedback("outline")), encoding="utf-8")
         return outline
 
     # ---- [2] key points -------------------------------------------------------------------------
@@ -1088,7 +1103,7 @@ class WritingSession:
         self.state.stage = "keypointed"
         self._save()
         (self.out / "key_points.md").write_text(
-            render_keypoints_md(outline, kp, transcript, self._feedback("key_points")))
+            render_keypoints_md(outline, kp, transcript, self._feedback("key_points")), encoding="utf-8")
         return kp
 
     FIDELITY_REVISIONS = 2
@@ -1105,7 +1120,7 @@ class WritingSession:
         # objection or a crash in a later section must not cost the sections that were paid for.
         key = _digest({"outline": o, "key_points": kp, "release": self.state.release_id})
         saved = self.out / "draft_checkpoint.json"
-        done = json.loads(saved.read_text()) if saved.exists() else {}
+        done = json.loads(saved.read_text(encoding="utf-8")) if saved.exists() else {}
         done = done if done.get("key") == key else {"key": key, "sections": {}, "issues": []}
 
         homes = statement_homes(kp["sections"])
@@ -1156,7 +1171,7 @@ class WritingSession:
                 if attempt == self.FIDELITY_REVISIONS or not routed:
                     (self.out / "draft_rejected.md").write_text(
                         render_paper_md(o, sections, demo=self.demo) + "\n## Fidelity objections\n\n"
-                        + "\n".join(f"- {i}" for i in done["issues"]) + "\n")
+                        + "\n".join(f"- {i}" for i in done["issues"]) + "\n", encoding="utf-8")
                     raise ReviewBlocked("Draft changed approved claims (see draft_rejected.md): "
                                         + "; ".join(done["issues"]))
                 sections = assemble(routed)       # only the sections objected to are written again
@@ -1171,9 +1186,9 @@ class WritingSession:
         """Two editions of one draft: `paper.md` to read, `paper_traced.md` with the approved
         statement behind every sentence. A demo draft has no statements and gets one file."""
         o, sections, review = self.state.outline, self.state.sections, self.state.review
-        (self.out / "paper.md").write_text(render_paper_md(o, sections, review, demo=self.demo, traced=self.demo))
+        (self.out / "paper.md").write_text(render_paper_md(o, sections, review, demo=self.demo, traced=self.demo), encoding="utf-8")
         if not self.demo:
-            (self.out / "paper_traced.md").write_text(render_paper_md(o, sections, review))
+            (self.out / "paper_traced.md").write_text(render_paper_md(o, sections, review), encoding="utf-8")
 
     # ---- [4] review ------------------------------------------------------------------------------
     def review(self) -> dict:
@@ -1203,7 +1218,7 @@ class WritingSession:
         self.state.stage = "reviewed"
         self._save()
         self._write_paper()
-        (self.out / "review.md").write_text(render_review_md(result))
+        (self.out / "review.md").write_text(render_review_md(result), encoding="utf-8")
         return result
 
     # ---- interactive driver ----------------------------------------------------------------------

@@ -188,8 +188,10 @@ class Orchestrator:
         return self._gate_score(matched)
 
     def _propose(self, entries: list[LedgerEntry], *, lit_context: str = "", skills: str = "",
-                 lit_priors: list[str] | None = None, pending_roles: list[str] | None = None):
-        """Propose → admissibility gate → debate gate. Returns (proposal, reasoning) or None."""
+                 lit_priors: list[str] | None = None, pending_roles: list[str] | None = None,
+                 pending: int = 0):
+        """Propose → admissibility gate → debate gate. Returns (proposal, reasoning) or None.
+        `pending` counts ideas already accepted in the current round and not yet in the ledger."""
         import time
         from scholarloop.experiment.test_boundary import require_unopened_test
         require_unopened_test(self.ledger_path)
@@ -201,7 +203,7 @@ class Orchestrator:
             # current direction — topic + guidance + literature priors — not just the heaviest.
             query = " ".join(filter(None, [self.topic, self.guidance, *(lit_priors or [])]))
             skills = self.skill_library.render(time.time(), query=query)   # injected intuition, relevance-ranked
-        warm = sum(1 for e in entries if e.fidelity == ["smoke"]) < self.warm_start
+        warm = sum(1 for e in entries if e.fidelity == ["smoke"]) + pending < self.warm_start
         if warm:
             from scholarloop.experiment.random_search import RandomProposer
             if self._warm is None:
@@ -361,7 +363,7 @@ class Orchestrator:
         roles: list[str] = []
         for _ in range(k):
             prepared = self._propose(entries, lit_context=lit_context, skills=skills,
-                                     lit_priors=lit_priors, pending_roles=roles)
+                                     lit_priors=lit_priors, pending_roles=roles, pending=len(batch))
             if prepared is None:
                 continue
             proposal, reasoning = prepared
@@ -548,6 +550,11 @@ class Orchestrator:
                     print(f"governor: stopping — {why}", file=sys.stderr)
                     break
             if n_steps is not None and round_idx >= n_steps:
+                break
+            if self.training_budget is not None and self.training_budget.used >= self.training_budget.limit:
+                # No model can be trained: another round would only pay for proposals it cannot test.
+                self.stop_reason = "training budget exhausted"
+                print("stopping: training budget exhausted", file=sys.stderr)
                 break
             if n_steps is None and governor is None:               # nothing bounds the loop -> one round
                 if round_idx >= 1:

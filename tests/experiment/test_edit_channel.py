@@ -54,7 +54,7 @@ def test_reasoner_rejects_edit_outside_entrypoint():
 
 def test_edit_runs_in_isolation_without_touching_real_source(tmp_path):
     real_train = ROOT / "engines" / "vision" / "train.py"
-    before = real_train.read_text()
+    before = real_train.read_text(encoding="utf-8")
     edit = [{"path": "engines/vision/train.py", "content": EDITED_TRAIN}]
     entry = run_experiment(PROFILE, "smoke", "exp_edit",
                            Hypothesis("hardcode near-ideal config", "arXiv:1"),
@@ -62,7 +62,7 @@ def test_edit_runs_in_isolation_without_touching_real_source(tmp_path):
                            registry_dir=tmp_path / "r")
     # the edited code ran: config reflects the hardcoded near-ideal values, scored kept
     assert entry.config["depth"] == 20 and entry.verdict == "kept"
-    assert real_train.read_text() == before          # the real repo source is untouched
+    assert real_train.read_text(encoding="utf-8") == before          # the real repo source is untouched
 
 
 def test_run_experiment_refuses_edit_outside_entrypoint_defense_in_depth(tmp_path):

@@ -169,7 +169,7 @@ class IdeaStudy(ExperimentAgenda):
         if spec["omitted_controls"]:
             lines += ["", "## Controls the idea named that this protocol omits", ""]
             lines += [f"- {text}" for text in spec["omitted_controls"]]
-        path.write_text(path.read_text() + "\n".join(lines) + "\n")
+        path.write_text(path.read_text(encoding="utf-8") + "\n".join(lines) + "\n", encoding="utf-8")
 
     def _save(self, state):
         super()._save(state)

@@ -2,6 +2,7 @@
 import argparse
 from contextlib import ExitStack
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -12,6 +13,9 @@ from pathlib import Path
 def run_utf8(argv):
     """Use UTF-8 consistently and keep the launcher attached to its terminal."""
     process = subprocess.Popen([sys.executable, "-X", "utf8", "-m", "scholarloop.ui", *argv])
+    for name in ("SIGTERM", "SIGHUP"):         # pass a termination on, so the UI can stop its jobs
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), lambda signum, frame: process.send_signal(signum))
     while True:
         try:
             return process.wait()
@@ -67,6 +71,13 @@ def main(argv=None):
             print(f"ScholarLoop workspace: {url}\nResearch directory: {runs}\nPress Ctrl+C to stop.", flush=True)
             if not args.no_browser:
                 threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+            # A terminated server must stop its jobs as Ctrl+C does: they run in their own
+            # sessions and would otherwise keep running, and spending, with nothing to stop them.
+            def stop(signum, frame):
+                raise KeyboardInterrupt
+            for name in ("SIGTERM", "SIGHUP"):
+                if hasattr(signal, name):
+                    signal.signal(getattr(signal, name), stop)
             try:
                 server.serve_forever(poll_interval=0.3)
             except KeyboardInterrupt:

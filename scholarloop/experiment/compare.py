@@ -165,7 +165,7 @@ def freeze_comparison(directory, profile, settings):
                                  "root_candidate": make_snapshot(profile)["id"],
                                  "settings": settings}, default=str))
     if path.exists():
-        if json.loads(path.read_text()) != plan:
+        if json.loads(path.read_text(encoding="utf-8")) != plan:
             raise ValueError("Comparison inputs/settings changed; use a separate output directory")
     else:
         if any(directory.glob("*/rep*")):

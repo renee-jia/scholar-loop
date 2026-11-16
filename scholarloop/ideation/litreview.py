@@ -19,6 +19,7 @@ Two agents on the harness, one deterministic retrieval step between them:
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 
 from scholarloop.core.agent import Agent
@@ -146,6 +147,8 @@ class LitReview:
         return "\n".join(lines)
 
 
+_PROSE_ID = re.compile(r"(?:arXiv:[\w.\-/]+|doi:[\w./\-()]+|openalex:\w+|s2:\w+)")
+
 class LitReviewer(Agent):
     name = "lit_reviewer"
     system = ("You are a careful researcher writing a literature review for a colleague who will "
@@ -162,6 +165,11 @@ class LitReviewer(Agent):
         cited = [pid for t in output.get("themes", []) for pid in t.get("papers", [])]
         cited += [n.get("id") for n in output.get("paper_notes", [])]
         cited += [pid for g in output.get("gaps", []) for pid in g.get("sources", [])]
+        # Identifiers written in the prose are citations too, not only those in the id lists.
+        prose = [output.get("overview", ""), *output.get("trends", [])]
+        for group in ("themes", "paper_notes", "gaps"):
+            prose += [v for item in output.get(group, []) for v in item.values() if isinstance(v, str)]
+        cited += [i.rstrip(".,;:)") for t in prose for i in _PROSE_ID.findall(t)]
         unknown = sorted({c for c in cited if c not in ids})
         if unknown:                                    # citation grounding — hallucinated ids are rejected
             errs.append(f"unknown paper ids (cite only the bracketed ids given): {unknown}")

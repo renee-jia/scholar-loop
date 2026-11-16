@@ -28,12 +28,12 @@ def test_interrupted_campaign_is_not_deleted(tmp_path, monkeypatch):
     rep = tmp_path / "random" / "rep1"
     rep.mkdir(parents=True)
     marker = rep / "precious_trace"
-    marker.write_text("unfinished")
+    marker.write_text("unfinished", encoding="utf-8")
     def forbidden(*a, **kw):
         raise AssertionError("must not restart")
     monkeypatch.setattr(compare_search, "random_orchestrator", forbidden)
     summary = compare_search.run_arm("random", PROFILE, tmp_path, args(repeats=1))[0]
-    assert summary["status"] == "interrupted" and marker.read_text() == "unfinished"
+    assert summary["status"] == "interrupted" and marker.read_text(encoding="utf-8") == "unfinished"
 
 
 def test_budget_skipped_repeats_stay_in_denominator(tmp_path):

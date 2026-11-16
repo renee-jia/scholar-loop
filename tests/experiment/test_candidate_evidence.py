@@ -23,7 +23,7 @@ from tests.experiment.test_orchestrator import PROFILE, _entry, _proposal_json
 
 
 def edited_source():
-    return (PROFILE.root / PROFILE.train_entrypoint).read_text().replace(
+    return (PROFILE.root / PROFILE.train_entrypoint).read_text(encoding="utf-8").replace(
         "hparams = effective_hparams()", "hparams = effective_hparams()\n    hparams['depth'] += 2")
 
 
@@ -42,7 +42,7 @@ def test_effective_candidate_identity_includes_code_but_not_numeric_spelling():
 
 def test_structural_candidate_survives_resume_and_parameter_refinement(tmp_path):
     source = edited_source()
-    original = (PROFILE.root / PROFILE.train_entrypoint).read_text()
+    original = (PROFILE.root / PROFILE.train_entrypoint).read_text(encoding="utf-8")
     proposal = _proposal_json({"lr": 0.1, "weight_decay": 5e-4, "warmup": 5})
     proposal["edits"] = [{"path": PROFILE.train_entrypoint, "content": source}]
     options = {"ledger_path": tmp_path / "ledger.jsonl", "registry_dir": tmp_path / "registry"}
@@ -59,7 +59,7 @@ def test_structural_candidate_survives_resume_and_parameter_refinement(tmp_path)
     duplicate = Reasoner(MockLLM(jsons=[_proposal_json({"lr": 0.11})]), PROFILE).propose(
         [first, second], base_candidate=CandidateStore(options["registry_dir"]).load(second.candidate_id))
     assert not duplicate.admissible
-    assert (PROFILE.root / PROFILE.train_entrypoint).read_text() == original
+    assert (PROFILE.root / PROFILE.train_entrypoint).read_text(encoding="utf-8") == original
     # Explicit root branch resets inherited code and non-overridden knobs.
     root = {**_proposal_json({"lr": 0.12}), "base": "root"}
     third = Orchestrator(MockLLM(jsons=[root]), PROFILE, **options).step()
@@ -99,9 +99,9 @@ def test_review_blocks_missing_or_modified_candidate_snapshots(tmp_path, change)
     if change == "missing":
         path.unlink()
     else:
-        value = json.loads(path.read_text())
+        value = json.loads(path.read_text(encoding="utf-8"))
         value["sources"][PROFILE.train_entrypoint] += "\n# changed"
-        path.write_text(json.dumps(value))
+        path.write_text(json.dumps(value), encoding="utf-8")
     with pytest.raises(ReviewBlocked):
         snapshot(PROFILE, tmp_path / "ledger.jsonl", tmp_path / "registry")
 
@@ -123,7 +123,7 @@ def test_changed_engine_dependency_blocks_inheritance_and_invalidates_cache(tmp_
     a = run(tmp_path, profile=profile, artifact_cache=tmp_path / "cache")
     parent = CandidateStore(tmp_path / "registry").load(a.candidate_id)
     scorer = root / PROFILE.fixed_module
-    scorer.write_text(scorer.read_text() + "\n# new dependency version\n")
+    scorer.write_text(scorer.read_text(encoding="utf-8") + "\n# new dependency version\n", encoding="utf-8")
     with pytest.raises(CandidateError, match="dependencies changed"):
         make_snapshot(profile, {"lr": 0.1}, base=parent)
     b = run(tmp_path, profile=profile, eid="two", artifact_cache=tmp_path / "cache")

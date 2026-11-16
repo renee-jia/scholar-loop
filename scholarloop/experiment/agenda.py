@@ -115,7 +115,7 @@ class ExperimentAgenda:
         lines += [f"- {r['condition']}: `{r['entry']['id']}`, {r['entry']['verdict']}, "
                   f"{r['entry']['metric']}" for r in state["results"]]
         lines += ["", "Execution never approves writing or resolves an issue. Run scientific review again."]
-        (self.out / f"{pid}.md").write_text("\n".join(lines) + "\n")
+        (self.out / f"{pid}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def load(self, protocol_id):
         if len(protocol_id) != 64 or any(c not in "0123456789abcdef" for c in protocol_id):

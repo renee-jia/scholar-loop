@@ -41,7 +41,7 @@ def snapshot(profile, ledger_path, registry_dir, research_dir=None) -> dict:
         paths[f"protocols/{p.name}"] = p.resolve()
     # Include referenced candidates only; orphan proposals are not experimental evidence.
     if ledger_path.is_file():
-        for line in ledger_path.read_text().splitlines():
+        for line in ledger_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
             row = _json(line)
@@ -444,6 +444,7 @@ def validate_argument(argument: dict, dossier: dict) -> list[str]:
         if set(c["evidence"]) - known:
             errors.append(f"{c['id']}: unknown evidence: " + explain_unknown(c["evidence"], known, dossier))
         reg = VerifiedRegistry(":claim:")
+        reg.exact_integers = True
         for ref in c["measurements"]:
             m = dossier["measurements"].get(ref)
             if not m:
@@ -659,7 +660,7 @@ def write_evidence_map(directory, dossier, release):
         for ref in item["measurements"]:
             m = dossier["measurements"][ref]
             lines += [f"- `{ref}`: value={m['value']}, std={m['std']}; owning evidence `{m['run_id']}`."]
-    (directory / "evidence_map.md").write_text("\n".join(lines) + "\n")
+    (directory / "evidence_map.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 STATEMENT_ID = re.compile(r"\[(" + STATEMENT_ID_PATTERN + r")\]")
@@ -706,6 +707,7 @@ def audit_prose(text: str, dossier: dict) -> list[str]:
                           f"that this sentence cites: {sentence.strip()[:90]!r}")
         allowed = [t for cid in ids for t in _number_tokens(statements[cid]["text"])]
         reg = VerifiedRegistry(":sentence:")
+        reg.exact_integers = True
         for i, tok in enumerate(allowed):
             reg.capture(str(i), float(tok))
         bad = reg.audit_text(STATEMENT_ID.sub("", sentence))

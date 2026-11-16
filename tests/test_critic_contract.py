@@ -54,9 +54,9 @@ def test_critics_route_to_configured_models_without_peer_reports(tmp_path):
     for call in base.calls + experimental.calls + falsification.calls:
         assert "No unresolved concerns" not in call["prompt"]
     s.approve(author="Researcher", review_hash=state["review_hash"])
-    raw = json.loads((out / s.STATE_FILE).read_text())
+    raw = json.loads((out / s.STATE_FILE).read_text(encoding="utf-8"))
     raw["reports"][0]["reviewer"]["model"] = "different-model"
-    (out / s.STATE_FILE).write_text(json.dumps(raw))
+    (out / s.STATE_FILE).write_text(json.dumps(raw), encoding="utf-8")
     with pytest.raises(ReviewBlocked, match="artifacts changed"):
         s.require_release()
 
@@ -103,13 +103,13 @@ def test_old_review_contract_is_archived_but_cannot_release_writing(tmp_path):
         report.pop("claim_checks")
         report.pop("reviewer")
     raw["review_hash"] = s._review_hash(raw)
-    (s.out / s.STATE_FILE).write_text(json.dumps(raw))
+    (s.out / s.STATE_FILE).write_text(json.dumps(raw), encoding="utf-8")
     with pytest.raises(ReviewBlocked, match="contract changed"):
         s.require_release()
     s.llm = MockLLM(jsons=[PASS] * 4)
     current = s.review(argument=ARGUMENT)
     assert current["schema_version"] == 2 and current["status"] == "READY_FOR_AUTHOR"
-    archived = [json.loads(p.read_text()) for p in (s.out / "review_history").glob("*.json")]
+    archived = [json.loads(p.read_text(encoding="utf-8")) for p in (s.out / "review_history").glob("*.json")]
     assert any(a["schema_version"] == 1 for a in archived)
     with pytest.raises(ReviewBlocked):
         s.require_release()  # new contract still requires a fresh author decision

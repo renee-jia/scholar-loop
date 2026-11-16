@@ -47,12 +47,12 @@ PANEL_REVISE = {"verdict": "revise", "issues": [{"target": "Results", "issue": "
 def setup(tmp_path):
     profile_path = tmp_path / "profiles" / "image-classification.yaml"
     profile_path.parent.mkdir()
-    profile_path.write_text((ROOT / "profiles/image-classification.yaml").read_text())
+    profile_path.write_text((ROOT / "profiles/image-classification.yaml").read_text(encoding="utf-8"), encoding="utf-8")
     profile = load_profile(profile_path)
     for relative in (profile.train_entrypoint, profile.fixed_module):
         p = tmp_path / relative
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text((ROOT / relative).read_text())
+        p.write_text((ROOT / relative).read_text(encoding="utf-8"), encoding="utf-8")
     ledger, registry, out = tmp_path / "experiments.jsonl", tmp_path / "registry", tmp_path / "review"
     e = LedgerEntry("exp_0001", profile.name, Hypothesis("The recipe may help", "paper:source"),
                     profile.metric.name, config={"lr": 0.1}, fidelity=["full"],
@@ -120,8 +120,8 @@ def test_negative_result_can_be_reviewed_approved_and_written(tmp_path):
     w.key_points()
     w.draft()
     assert w.state.release_id == release["id"]
-    assert "7.25 percent [claim_error]" in (out / "paper_traced.md").read_text()
-    reader = (out / "paper.md").read_text()                # the edition to read carries no statement ids
+    assert "7.25 percent [claim_error]" in (out / "paper_traced.md").read_text(encoding="utf-8")
+    reader = (out / "paper.md").read_text(encoding="utf-8")                # the edition to read carries no statement ids
     assert "7.25 percent." in reader and "[claim_error]" not in reader and "paper_traced.md" in reader
 
 
@@ -132,7 +132,7 @@ def test_dissent_blocks_approval_and_records_experiment_request(tmp_path):
     assert state["status"] == "NEEDS_EXPERIMENTS"
     with pytest.raises(ReviewBlocked):
         s.approve(author="Researcher", review_hash=state["review_hash"])
-    assert json.loads((s.out / "experiment_requests.json").read_text())[0]["issue_id"] == "r1:experimental:1"
+    assert json.loads((s.out / "experiment_requests.json").read_text(encoding="utf-8"))[0]["issue_id"] == "r1:experimental:1"
     assert all("No unresolved concerns" not in c["prompt"] for c in s.llm.calls)  # no peer reviews
 
 
@@ -174,11 +174,11 @@ def test_changes_invalidate_release_even_for_resumed_sessions(tmp_path, change):
             "scorer": p.root / p.fixed_module, "profile": p.source_path,
             "argument": out / s.STATE_FILE}[change]
     if change == "argument":
-        data = json.loads(file.read_text())
+        data = json.loads(file.read_text(encoding="utf-8"))
         data["dossier"]["argument"]["claims"][0]["text"] = "Unsupported interpretation."
-        file.write_text(json.dumps(data))
+        file.write_text(json.dumps(data), encoding="utf-8")
     else:
-        file.write_text(file.read_text() + "\n")
+        file.write_text(file.read_text(encoding="utf-8") + "\n", encoding="utf-8")
     with pytest.raises(ReviewBlocked):
         session(paths).require_release()
 
@@ -268,7 +268,7 @@ def test_corrupt_or_missing_measurements_fail_closed(tmp_path):
     s = session(paths, MockLLM())
     state = s.review(argument=ARGUMENT)
     assert state["status"] == "INSUFFICIENT_EVIDENCE" and s.llm.calls == []
-    led.write_text(led.read_text() + "broken json\n")
+    led.write_text(led.read_text(encoding="utf-8") + "broken json\n", encoding="utf-8")
     with pytest.raises(ReviewBlocked):
         s.review(argument=ARGUMENT)
 
@@ -339,12 +339,12 @@ def test_changed_research_brief_invalidates_writing_release(tmp_path):
     research = tmp_path / "research"
     research.mkdir()
     brief = research / "research_brief.json"
-    brief.write_text((ROOT / "examples/research_brief.json").read_text())
+    brief.write_text((ROOT / "examples/research_brief.json").read_text(encoding="utf-8"), encoding="utf-8")
     s = ScientificReviewSession(MockLLM(jsons=[PASS] * 4), p, out,
                                 ledger_path=led, registry_dir=reg, research_dir=research)
     state = s.review(argument=ARGUMENT)
     s.approve(author="Researcher", review_hash=state["review_hash"])
-    brief.write_text(brief.read_text().replace("CPU only", "GPU replication required"))
+    brief.write_text(brief.read_text(encoding="utf-8").replace("CPU only", "GPU replication required"), encoding="utf-8")
     with pytest.raises(ReviewBlocked, match="stale"):
         s.require_release()
 
@@ -362,13 +362,13 @@ def test_profile_path_alias_does_not_invalidate_the_same_evidence(tmp_path, monk
 def test_consistently_wrong_aggregate_is_recomputed_before_critic_calls(tmp_path):
     paths = setup(tmp_path)
     p, led, reg, out = paths
-    entry = json.loads(led.read_text())
+    entry = json.loads(led.read_text(encoding="utf-8"))
     entry["metric"]["full"] = 9.0
-    led.write_text(json.dumps(entry) + "\n")
+    led.write_text(json.dumps(entry) + "\n", encoding="utf-8")
     path = reg / "exp_0001.json"
-    measured = json.loads(path.read_text())
+    measured = json.loads(path.read_text(encoding="utf-8"))
     measured["measurements"]["val_top1_err.full"]["value"] = 9.0
-    path.write_text(json.dumps(measured))
+    path.write_text(json.dumps(measured), encoding="utf-8")
     s = session(paths, MockLLM())
     state = s.review(argument=ARGUMENT)
     assert state["status"] == "INSUFFICIENT_EVIDENCE"
@@ -505,7 +505,7 @@ def test_a_failure_after_a_panel_round_keeps_that_round(tmp_path):
     w = WritingSession(llm, p, out, ledger_path=led, registry_dir=reg, max_rounds=1)
     with pytest.raises(AgentError):
         w.outline()
-    saved = json.loads((out / "writing.json").read_text())
+    saved = json.loads((out / "writing.json").read_text(encoding="utf-8"))
     assert saved["stage"] == "outlined" and len(saved["outline_discussion"]) == 1
     assert saved["outline_discussion"][0]["accepted"] is False
     with pytest.raises(ReviewBlocked, match="Panel concerns"):          # and it still cannot advance
@@ -659,7 +659,7 @@ def test_after_the_first_round_a_new_minor_issue_is_a_note_that_does_not_block(t
     assert state["status"] == status
     assert state["issues"][-1]["status"] == ("noted" if severity == "minor" else "open")
     if severity == "minor":
-        assert "do not block approval" in (s.out / "scientific_review.md").read_text()
+        assert "do not block approval" in (s.out / "scientific_review.md").read_text(encoding="utf-8")
         s.approve(author="Researcher", review_hash=state["review_hash"])
         s.require_release()
 
@@ -747,8 +747,8 @@ def test_a_fidelity_objection_rewrites_only_its_section_and_keeps_the_rest(tmp_p
     w.key_points()
     with pytest.raises(ReviewBlocked, match="draft_rejected.md"):
         w.draft()
-    assert "drops the scope" in (out2 / "draft_rejected.md").read_text() and w.stage == "keypointed"
-    saved = json.loads((out2 / "draft_checkpoint.json").read_text())
+    assert "drops the scope" in (out2 / "draft_rejected.md").read_text(encoding="utf-8") and w.stage == "keypointed"
+    saved = json.loads((out2 / "draft_checkpoint.json").read_text(encoding="utf-8"))
     assert set(saved["sections"]) == {"Abstract", "Results", "Limitations"}
 
 
@@ -836,7 +836,7 @@ def test_renaming_the_run_directory_keeps_the_release_and_a_later_edit_still_voi
                                tmp_path / "experiments.jsonl", tmp_path / "registry", tmp_path / "review"), tmp_path)
     moved = ScientificReviewSession(None, p, out, ledger_path=led, registry_dir=reg)
     assert moved.require_release()[1]["id"] == release["id"]
-    led.write_text(led.read_text().replace("7.25", "6.25"))
+    led.write_text(led.read_text(encoding="utf-8").replace("7.25", "6.25"), encoding="utf-8")
     with pytest.raises(ReviewBlocked, match="stale"):
         moved.require_release()
 
@@ -855,7 +855,7 @@ def test_a_hash_that_recorded_absolute_paths_survives_a_move_but_not_a_change(tm
     extra.save()
     assert not same_inputs(snapshot(p, led, reg), recorded, manifest)    # an added record
     (reg / "exp_0002.json").unlink()
-    (reg / "exp_0001.json").write_text((reg / "exp_0001.json").read_text().replace("7.25", "6.25"))
+    (reg / "exp_0001.json").write_text((reg / "exp_0001.json").read_text(encoding="utf-8").replace("7.25", "6.25"), encoding="utf-8")
     assert not same_inputs(snapshot(p, led, reg), recorded, manifest)    # changed contents
 
 
@@ -902,12 +902,12 @@ def test_a_late_major_issue_on_a_statement_the_reviewer_passed_unchanged_is_a_no
     issue = state["issues"][-1]
     assert (issue["status"], issue.get("late", False)) == (("open", False) if blocks else ("noted", True))
     if not blocks:
-        assert ", late)" in (s.out / "scientific_review.md").read_text()
+        assert ", late)" in (s.out / "scientific_review.md").read_text(encoding="utf-8")
         s.approve(author="Researcher", review_hash=state["review_hash"])
         s.require_release()
         tampered = s.load()
         tampered["settled"]["experimental"] = []                # the note was only a note because of this
-        (s.out / s.STATE_FILE).write_text(json.dumps(tampered))
+        (s.out / s.STATE_FILE).write_text(json.dumps(tampered), encoding="utf-8")
         with pytest.raises(ReviewBlocked):
             s.require_release()
 

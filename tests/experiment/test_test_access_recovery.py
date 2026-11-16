@@ -70,7 +70,7 @@ def test_partial_access_record_fails_closed(tmp_path):
     from scholarloop.experiment.test_boundary import access_directory
     directory = access_directory(tmp_path / "ledger.jsonl")
     directory.mkdir()
-    (directory / "interrupted.json").write_text('{"version":')
+    (directory / "interrupted.json").write_text('{"version":', encoding="utf-8")
     with pytest.raises(ValueError, match="Uncertain"):
         require_unopened_test(tmp_path / "ledger.jsonl")
 

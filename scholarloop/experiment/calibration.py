@@ -58,7 +58,7 @@ class CalibrationLog:
         """A log persisted at `path` (JSON), loading what an earlier process recorded there, so a
         resumed campaign keeps each agent's track record instead of starting it from zero."""
         path = Path(path)
-        raw = json.loads(path.read_text()) if path.exists() else []
+        raw = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
         return cls([Verdict(**v) for v in raw], path=path)
 
     def record(self, verdict: Verdict | None) -> None:
@@ -66,7 +66,9 @@ class CalibrationLog:
             self.verdicts.append(verdict)
             if self.path is not None:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
-                self.path.write_text(json.dumps([asdict(v) for v in self.verdicts], indent=1))
+                tmp = self.path.with_name(self.path.name + ".tmp")     # never leave a truncated log
+                tmp.write_text(json.dumps([asdict(v) for v in self.verdicts], indent=1), encoding="utf-8")
+                tmp.replace(self.path)
 
     def by_agent(self) -> dict:
         """Per-agent {n, hit_rate, mean_error}, computed over all recorded verdicts."""
@@ -88,9 +90,9 @@ class CalibrationLog:
         lines = []
         for agent, s in sorted(stats.items()):
             if s["kind"] == "delta":
-                lines.append(f"- {agent}: predicted the right direction {int(s['hit_rate'] * 100)}% of "
+                lines.append(f"- {agent}: predicted the right direction {round(s['hit_rate'] * 100)}% of "
                              f"{s['n']} times; mean magnitude error {s['mean_error']}.")
             else:
-                lines.append(f"- {agent}: {int(s['hit_rate'] * 100)}% of {s['n']} go/no-go calls were "
+                lines.append(f"- {agent}: {round(s['hit_rate'] * 100)}% of {s['n']} go/no-go calls were "
                              f"correct.")
         return "\n".join(lines)

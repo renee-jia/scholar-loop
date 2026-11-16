@@ -11,10 +11,10 @@ def test_retry_history_survives_new_trace_instance(tmp_path):
     path = tmp_path / "agent.agents.jsonl"
     _Echo(MockLLM(jsons=[{}, {"x": 1}]), trace=AgentTrace(path=path)).run({"q": "private prompt"})
     _Echo(MockLLM(jsons=[{"x": 2}]), trace=AgentTrace(path=path)).run({"q": "second"})
-    rows = [json.loads(s) for s in path.read_text().splitlines()]
+    rows = [json.loads(s) for s in path.read_text(encoding="utf-8").splitlines()]
     assert [r["status"] for r in rows if r["event"] == "finished"] == ["rejected", "accepted", "accepted"]
     assert rows[0]["prompt_hash"] != rows[2]["prompt_hash"]
-    assert "private prompt" not in path.read_text()
+    assert "private prompt" not in path.read_text(encoding="utf-8")
     summary = summarize_trace(path)
     assert summary["attempts_started"] == 3 and summary["calls_started"] == 2
     assert summary["complete_record"]
@@ -24,7 +24,7 @@ def test_retry_history_survives_new_trace_instance(tmp_path):
 def test_exceptions_preserve_started_and_finished_attempt(tmp_path, failure):
     path = tmp_path / "trace.agents.jsonl"
     def fail(prompt):
-        assert json.loads(path.read_text())["event"] == "started"
+        assert json.loads(path.read_text(encoding="utf-8"))["event"] == "started"
         raise failure
     expected = AgentError if isinstance(failure, ValueError) else type(failure)
     with pytest.raises(expected):
@@ -38,7 +38,7 @@ def test_exceptions_preserve_started_and_finished_attempt(tmp_path, failure):
 def test_hard_interruption_and_corrupt_tail_are_not_successes(tmp_path):
     path = tmp_path / "trace.agents.jsonl"
     AgentTrace(path=path).event({"version": 1, "call_id": "interrupted", "attempt": 1, "event": "started"})
-    with path.open("a") as f:
+    with path.open("a", encoding="utf-8") as f:
         f.write('{"partial":')
     summary = summarize_trace(path)
     assert summary["unfinished_attempts"] == 1 and summary["outcomes"]["accepted"] == 0

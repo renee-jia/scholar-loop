@@ -49,7 +49,7 @@ def test_real_reviewer_component_replays_issues_and_observations(tmp_path):
         assert second['dossier']['source_kind'] == 'synthetic_development_observations'
     paths = list(tmp_path.glob('iteration/*/synthetic_iterations.json'))
     assert len(paths) == 4
-    assert all(json.loads(p.read_text())['source_kind'] == 'synthetic_component_evaluation_only' for p in paths)
+    assert all(json.loads(p.read_text(encoding="utf-8"))['source_kind'] == 'synthetic_component_evaluation_only' for p in paths)
     assert not list(tmp_path.rglob('scientific_review.json'))
     assert not list(tmp_path.rglob('experiments.jsonl'))
 

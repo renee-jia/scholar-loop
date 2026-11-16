@@ -92,11 +92,11 @@ def test_verify_frozen_detects_runtime_tamper(tmp_path):
     from scholarloop.experiment.runner import RunError, _file_hash, _verify_frozen
 
     f = tmp_path / "prepare.py"
-    f.write_text("FROZEN SCORER")
+    f.write_text("FROZEN SCORER", encoding="utf-8")
     h = _file_hash(f)
     _verify_frozen(f, h)                          # unchanged -> ok
     _verify_frozen(f, None)                       # no baseline -> ok
-    f.write_text("TAMPERED BY train.py")          # adversarial overwrite at runtime
+    f.write_text("TAMPERED BY train.py", encoding="utf-8")          # adversarial overwrite at runtime
     with pytest.raises(RunError, match="modified or removed"):
         _verify_frozen(f, h)
     f.unlink()                                     # adversarial DELETE must also count as tampering

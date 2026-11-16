@@ -119,9 +119,9 @@ def test_session_orders_ideas_by_tournament_and_auto_selects_its_winner(tmp_path
     ranked = s.ideate(3)
     assert [i.title for i in ranked] == ["Gamma", "Beta", "Alpha"]
     assert ranked[0].tournament["rank"] == 1 and ranked[0].tournament["wins"] == 2
-    md = (s.out / "ideas.md").read_text()
+    md = (s.out / "ideas.md").read_text(encoding="utf-8")
     assert "pairwise Elo tournament" in md and "| 1 | **Gamma**" in md
-    (rnd,) = json.loads((s.out / "tournament.json").read_text())["rounds"]
+    (rnd,) = json.loads((s.out / "tournament.json").read_text(encoding="utf-8"))["rounds"]
     assert rnd["round"] == 1 and rnd["ideas"] == ["Gamma", "Beta", "Alpha"] and len(rnd["matches"]) == 3
     assert all(1 <= m["a"] <= 3 and 1 <= m["b"] <= 3 for m in rnd["matches"])   # renumbered to ideas.md
     assert s.auto_select()["topic"] == "Gamma"

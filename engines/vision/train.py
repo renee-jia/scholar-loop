@@ -34,7 +34,7 @@ def main() -> None:
     hparams = effective_hparams()
     # A real engine trains a model and saves it here; the stub saves only its config choice.
     Path(os.environ["SCHOLARLOOP_ARTIFACT"]).write_text(
-        json.dumps({"config": hparams, "seed": seed}))
+        json.dumps({"config": hparams, "seed": seed}), encoding="utf-8")
 
 
 if __name__ == "__main__":

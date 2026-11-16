@@ -16,7 +16,7 @@ class TrainingBudget:
             raise ValueError("Training budget and initial usage must be nonnegative integers")
         self.path, self.limit, self._mutex = Path(path), limit, Lock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with exclusive_lock(self.path.with_suffix(".lock")):
+        with exclusive_lock(self.path.with_suffix(".lock"), wait=10.0):
             if not self.path.exists():
                 atomic_json(self.path, {"version": 1, "reserved": initial_used})
             elif self.used < initial_used:
@@ -30,7 +30,7 @@ class TrainingBudget:
         return state["reserved"]
 
     def reserve(self):
-        with self._mutex, exclusive_lock(self.path.with_suffix(".lock")):
+        with self._mutex, exclusive_lock(self.path.with_suffix(".lock"), wait=10.0):
             used = self.used
             if used >= self.limit:
                 raise TrainingBudgetExceeded(f"Training budget exhausted ({used}/{self.limit})")

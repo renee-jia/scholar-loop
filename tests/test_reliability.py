@@ -19,10 +19,10 @@ def run(tmp_path):
     ledger, registry = _entries(tmp_path)
     review = REVIEW.to_dict()
     review["themes"] = [{"name": "schedules", "summary": "s", "papers": ["arXiv:1608.03983v1"]}]
-    (tmp_path / "lit_review.json").write_text(json.dumps(review))
+    (tmp_path / "lit_review.json").write_text(json.dumps(review), encoding="utf-8")
     sections = [{"heading": s["heading"], "body": _body(s["heading"])} for s in OUTLINE["sections"]]
     (tmp_path / "writing.json").write_text(json.dumps(
-        {"outline": OUTLINE, "key_points": _kp(), "sections": sections}))
+        {"outline": OUTLINE, "key_points": _kp(), "sections": sections}), encoding="utf-8")
     return {"ledger": ledger, "registry": registry, "research": tmp_path,
             "writing": tmp_path / "writing.json"}
 
@@ -63,9 +63,9 @@ def test_report_states_what_lexical_checks_cannot_see(run):
 
 
 def test_a_case_rejected_before_injection_is_a_false_positive_not_a_detection(run):
-    state = json.loads(run["writing"].read_text())
+    state = json.loads(run["writing"].read_text(encoding="utf-8"))
     state["sections"][0]["body"] += " A fabricated 9.8765 appears here."
-    run["writing"].write_text(json.dumps(state))
+    run["writing"].write_text(json.dumps(state), encoding="utf-8")
     cases, ctx = load_cases(PROFILE, **run)
     report = run_injection(cases, ctx)
     assert report["controls"]["false_positives"] == 1
@@ -116,7 +116,7 @@ def test_natural_faults_counts_first_attempt_rejections_and_recoveries(tmp_path)
     _Echo(MockLLM(jsons=[{"ids": ["bad"]}, {"ids": ["ok"]}]), trace=trace).run({})     # recovered
     with pytest.raises(AgentError):                                                             # never recovers
         _Echo(MockLLM(jsons=[{"ids": ["bad"]}] * 3), trace=trace).run({})
-    with path.open("a") as stream:
+    with path.open("a", encoding="utf-8") as stream:
         stream.write("not json\n")
         stream.write(json.dumps({"call_id": "z", "agent": "echo", "attempt": 1, "event": "started"}) + "\n")
     report = natural_faults([path])
@@ -142,7 +142,7 @@ def test_baseline_keeps_interrupted_repeats_in_the_denominator(run, tmp_path):
     _, ctx = load_cases(PROFILE, **run)
     out = tmp_path / "baseline"
     out.mkdir()
-    (out / "baseline_2.started").write_text("")                        # a repeat that died mid-call
+    (out / "baseline_2.started").write_text("", encoding="utf-8")                        # a repeat that died mid-call
     llm = MockLLM(texts=["Error is 3.8222 [exp_0003].", "Error is 2.2222 [exp_0003]."])
     report = run_baseline(llm, ctx.bank, "review", out, repeats=3)
     assert [p["status"] for p in report["papers"]] == ["complete", "interrupted", "complete"]
@@ -155,8 +155,8 @@ def test_cli_writes_reports(run, tmp_path, capsys):
     out = tmp_path / "report"
     assert main(["inject", "--profile", "profiles/image-classification.yaml", "--run", str(run["research"]),
                  "--ledger", str(run["ledger"]), "--out", str(out)]) == 0
-    assert "Detection by fault" in (out / "injection.md").read_text()
-    assert json.loads((out / "injection.json").read_text())["version"] == 1
+    assert "Detection by fault" in (out / "injection.md").read_text(encoding="utf-8")
+    assert json.loads((out / "injection.json").read_text(encoding="utf-8"))["version"] == 1
     assert main(["traces", "--traces", str(tmp_path), "--out", str(out)]) == 1   # no traces present
 
 
@@ -196,8 +196,8 @@ def test_reviewed_mode_uses_the_release_and_sees_sentence_local_misattribution(r
 
 def test_a_release_that_no_longer_validates_falls_back_and_says_so(reviewed_run):
     profile, paths = reviewed_run
-    with paths["ledger"].open("a") as stream:              # evidence changed after approval
-        stream.write(paths["ledger"].read_text().splitlines()[0].replace("exp_0001", "exp_0002") + "\n")
+    with paths["ledger"].open("a", encoding="utf-8") as stream:              # evidence changed after approval
+        stream.write(paths["ledger"].read_text(encoding="utf-8").splitlines()[0].replace("exp_0001", "exp_0002") + "\n")
     _, ctx = load_cases(profile, **paths)
     assert ctx.mode.startswith("legacy (the writing cites a release that no longer validates")
 
@@ -206,7 +206,7 @@ def test_a_writing_directory_apart_from_its_review_still_runs_in_reviewed_mode(r
     profile, paths = reviewed_run
     apart = tmp_path / "paper_elsewhere"
     apart.mkdir()
-    (apart / "writing.json").write_text(paths["writing"].read_text())
+    (apart / "writing.json").write_text(paths["writing"].read_text(encoding="utf-8"), encoding="utf-8")
     moved = {**paths, "writing": apart / "writing.json"}
     assert load_cases(profile, **moved)[1].mode.startswith("legacy")
     assert load_cases(profile, **moved, review_dir=paths["research"])[1].mode == "reviewed"
@@ -258,7 +258,7 @@ def test_semantic_study_counts_a_fault_caught_only_when_the_objection_quotes_it(
     from scholarloop.reliability import _changed_sentences, _names, run_semantic
     profile, paths = reviewed_run
     cases, ctx = load_cases(profile, **paths)
-    state = json.loads(paths["writing"].read_text())
+    state = json.loads(paths["writing"].read_text(encoding="utf-8"))
     assert _changed_sentences("A is lower. B holds.", "A is higher. B holds.") == ["A is higher."]
     assert _names("Results: 'the error is higher than the baseline here' flips the direction",
                   "The error is higher than the baseline here [claim_error].")
@@ -288,7 +288,7 @@ def test_ablation_writes_each_arm_and_records_a_writer_that_stops(reviewed_run, 
     invented = [{"body": b["body"].replace("7.25", "3.14")} for b in bodies]
     loose = [outline, *([PANEL_PASS] * 3), kp, *([PANEL_PASS] * 3), *invented, {"verdict": "pass", "issues": []}]
     bare = run_ablation(MockLLM(jsons=list(loose)), profile, paths, out, "no_guards", repeats=1, evidence=evidence)
-    assert bare["completed"] == 1 and "3.14" in (out / "no_guards_1.md").read_text()
+    assert bare["completed"] == 1 and "3.14" in (out / "no_guards_1.md").read_text(encoding="utf-8")
     assert bare["papers"][0]["provenance"]["ungrounded_numbers"]
     # The production writer refuses the same script and is recorded as stopped, with nothing published.
     stopped = run_ablation(MockLLM(jsons=list(loose) + invented * 3), profile, paths, out / "strict", "full",

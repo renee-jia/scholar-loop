@@ -44,11 +44,11 @@ def manifest(tmp_path):
     root = tmp_path / "project"
     shutil.copytree(PROFILE.root / "engines" / "vision", root / "engines" / "vision")
     (root / "profiles").mkdir()
-    raw = yaml.safe_load(PROFILE.source_path.read_text())
+    raw = yaml.safe_load(PROFILE.source_path.read_text(encoding="utf-8"))
     tasks = []
     for split in ("development", "evaluation"):
         path = root / "profiles" / f"{split}.yaml"
-        path.write_text(yaml.safe_dump({**raw, "datasets": [f"synthetic_fixture_{split}"]}))
+        path.write_text(yaml.safe_dump({**raw, "datasets": [f"synthetic_fixture_{split}"]}), encoding="utf-8")
         tasks.append({"id": split, "split": split, "dataset_group": split,
                       "profile": str(path), "seeds": [0, 1], "train_budget": 1})
     return {"version": 1, "tasks": tasks}

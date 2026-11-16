@@ -63,6 +63,11 @@ class RunError(RuntimeError):
     """A train run failed, timed out, or emitted no parseable result."""
 
 
+class BudgetStop(RunError):
+    """The training budget ran out. Unlike a crashed seed this voids the whole run: a tier that
+    could not train its seeds must not be recorded as that tier from cached models alone."""
+
+
 def _module_from_entrypoint(entrypoint: str) -> str:
     """'engines/vision/train.py' -> 'engines.vision.train'."""
     return entrypoint.removesuffix(".py").replace("/", ".")
@@ -84,7 +89,7 @@ def _engine_root(train_entrypoint: str, edits: list[dict], src_root: Path = ROOT
         init = root / anc / "__init__.py"
         init.parent.mkdir(parents=True, exist_ok=True)
         if not init.exists():
-            init.write_text("")
+            init.write_text("", encoding="utf-8")
         anc = anc.parent
     root_resolved = root.resolve()
     for e in edits:
@@ -93,19 +98,42 @@ def _engine_root(train_entrypoint: str, edits: list[dict], src_root: Path = ROOT
         if root_resolved not in dst.parents:
             raise ValueError(f"edit path escapes the engine root: {e['path']}")
         dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(e["content"])
+        dst.write_text(e["content"], encoding="utf-8")
     return root
 
 
 def _run(module_args: list[str], cwd: Path, timeout_sec: int, extra_env: dict, seed: int, what: str):
-    env = dict(os.environ)
+    # Training code is agent-written: it gets no API credentials, so it cannot spend outside the cap.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ANTHROPIC_")}
     env["PYTHONPATH"] = str(cwd) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     env.update(extra_env)
+    # Its output is untrusted bytes (decoded leniently) and it may start workers: the child runs in
+    # its own process group so a timeout stops all of them.
+    process = subprocess.Popen([sys.executable, "-m", *module_args], cwd=str(cwd), env=env,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                               encoding="utf-8", errors="replace", start_new_session=os.name != "nt")
     try:
-        return subprocess.run([sys.executable, "-m", *module_args], cwd=str(cwd), env=env,
-                              capture_output=True, text=True, timeout=timeout_sec)
+        out, err = process.communicate(timeout=timeout_sec)
     except subprocess.TimeoutExpired:
-        raise RunError(f"seed {seed}: {what} exceeded budget of {timeout_sec}s")
+        _kill_tree(process)
+        process.communicate()
+        raise RunError(f"{what} exceeded budget of {timeout_sec}s")
+    except BaseException:
+        _kill_tree(process)
+        process.communicate()
+        raise
+    return subprocess.CompletedProcess(process.args, process.returncode, out, err)
+
+
+def _kill_tree(process) -> None:
+    try:
+        if os.name == "nt":
+            process.kill()
+        else:
+            import signal
+            os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: int,
@@ -244,6 +272,8 @@ def _run_seeds(seeds: list[int], run_one):
     for s in seeds:
         try:
             results.append(run_one(s))
+        except BudgetStop:
+            raise
         except RunError as e:
             failures.append(f"seed {s}: {e}")
     if not results:
@@ -309,6 +339,8 @@ def run_experiment(
     require_unopened_test(ledger_path, continuing_protocol=(
         (protocol or {}).get("id") if purpose == "confirmation" else None))
     edits = edits or []
+    if not hypothesis.source:                   # refused before any training, not when recording the result
+        raise ValueError(f"{exp_id}: hypothesis.source is required (no ungrounded ideas in the ledger)")
     # Strict allowlist: the source-diff channel may ONLY replace the train entrypoint. This
     # subsumes the forbidden_edits denylist and blocks path traversal, frozen-file edits, and
     # import-shadowing new files in one rule.
@@ -367,7 +399,7 @@ def run_experiment(
             try:
                 training_budget.reserve()
             except TrainingBudgetExceeded as exc:
-                raise RunError(str(exc)) from exc
+                raise BudgetStop(str(exc)) from exc
         training_attempts += 1
 
     def run_seed(seed):

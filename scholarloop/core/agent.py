@@ -62,7 +62,7 @@ class AgentTrace:
             if self.path is not None:
                 path = Path(self.path)
                 path.parent.mkdir(parents=True, exist_ok=True)
-                with path.open("a") as stream:
+                with path.open("a", encoding="utf-8") as stream:
                     stream.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
                     stream.flush()
                     os.fsync(stream.fileno())
@@ -179,7 +179,7 @@ class Agent(ABC):
 def summarize_trace(path):
     """Read persisted attempts without turning missing/corrupt records into successes."""
     starts, finishes, errors = {}, {}, []
-    with Path(path).open() as stream:
+    with Path(path).open(encoding="utf-8") as stream:
         for number, line in enumerate(stream, 1):
             try:
                 event = json.loads(line)

@@ -134,14 +134,14 @@ class Ledger:
         stderr), never aborting the read of an append-only source of truth."""
         if not self.path.exists():
             return
-        with self.path.open() as f:
+        with self.path.open(encoding="utf-8") as f:
             for lineno, ln in enumerate(f, 1):
                 ln = ln.strip()
                 if not ln:
                     continue
                 try:
                     yield LedgerEntry.from_dict(json.loads(ln))
-                except (json.JSONDecodeError, TypeError, KeyError) as e:
+                except (json.JSONDecodeError, TypeError, KeyError, AttributeError) as e:
                     print(f"ledger: skipping corrupt line {lineno} in {self.path}: {e}", file=sys.stderr)
 
     def best(self, domain: str, direction: str = "minimize") -> LedgerEntry | None:
@@ -187,7 +187,7 @@ def _main(argv: list[str]) -> int:
         print("usage: python -m scholarloop.core.ledger {show|best} <ledger.jsonl> [--domain D] [--direction minimize|maximize]",
               file=sys.stderr)
         return 0 if argv else 2
-    cmd, path = argv[0], argv[1] if len(argv) > 1 else "ledger.jsonl"
+    cmd, path = argv[0], argv[1] if len(argv) > 1 and not argv[1].startswith("--") else "ledger.jsonl"
     ledger = Ledger(path)
     if cmd == "show":
         for e in ledger.read_all():

@@ -56,10 +56,10 @@ def test_train_script_edit_runs_through_the_edit_channel(tmp_path):
     """A method change (label smoothing) is applied as a full train-file replacement in an
     isolated copy; the frozen scorer still produces the number."""
     path = "engines/text_cls/train.py"
-    source = (ROOT / path).read_text()
+    source = (ROOT / path).read_text(encoding="utf-8")
     edited = source.replace("nn.CrossEntropyLoss()", "nn.CrossEntropyLoss(label_smoothing=0.1)")
     assert edited != source
     entry = _run(tmp_path, "exp_edit", config_override={"epochs": 2},
                  edits=[{"path": path, "content": edited}])
     assert 5.0 < entry.primary_score() < 40.0
-    assert (ROOT / path).read_text() == source          # the repository file is untouched
+    assert (ROOT / path).read_text(encoding="utf-8") == source          # the repository file is untouched

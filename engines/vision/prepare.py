@@ -66,7 +66,7 @@ def score(artifact_path: str, split: str = "val", fold: int = 0) -> None:
     For this stub the 'model' is just the config the agent chose; the score is recomputed
     here so a fabricated result line from train.py is ignored — only this output is trusted.
     """
-    data = json.loads(Path(artifact_path).read_text())
+    data = json.loads(Path(artifact_path).read_text(encoding="utf-8"))
     cfg = data.get("config", {})
     seed = int(data.get("seed", 0))
     # the stub's "held-out test" is the same hidden objective under independent noise; each CV

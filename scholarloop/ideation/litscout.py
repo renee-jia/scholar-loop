@@ -140,14 +140,17 @@ class OpenAlexClient:
 
     name = "openalex"
 
-    def __init__(self, fetcher=None, *, timeout: float = 20.0, mailto: str = "reneejia368@gmail.com"):
+    def __init__(self, fetcher=None, *, timeout: float = 20.0, mailto: str | None = None):
+        import os
         self._fetch = fetcher or self._http_fetch
         self.timeout = timeout
-        self.mailto = mailto
+        # OpenAlex answers faster when a request names a contact. It is the user's own address,
+        # set in $SCHOLARLOOP_CONTACT_EMAIL, and no address is sent when that is unset.
+        self.mailto = mailto if mailto is not None else os.environ.get("SCHOLARLOOP_CONTACT_EMAIL", "")
 
     def _http_fetch(self, query: str, max_results: int) -> str:  # pragma: no cover - network
         url = "https://api.openalex.org/works?" + urllib.parse.urlencode({
-            "search": query, "per-page": max_results, "mailto": self.mailto,
+            "search": query, "per-page": max_results, **({"mailto": self.mailto} if self.mailto else {}),
         })   # no sort: OpenAlex's default is relevance; sorting by citations returns famous papers
              # that merely mention a query word
         return _http_get(url, self.timeout)

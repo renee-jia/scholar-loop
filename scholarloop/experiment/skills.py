@@ -70,7 +70,7 @@ class SkillLibrary:
         """Write (or refresh in place, by content id) a lesson."""
         self.dir.mkdir(parents=True, exist_ok=True)
         (self.dir / f"arc-{skill.id}.json").write_text(
-            json.dumps(asdict(skill), indent=2, ensure_ascii=False))
+            json.dumps(asdict(skill), indent=2, ensure_ascii=False), encoding="utf-8")
         return skill
 
     def all(self) -> list[Skill]:
@@ -79,7 +79,7 @@ class SkillLibrary:
         out = []
         for f in sorted(self.dir.glob("arc-*.json")):
             try:
-                out.append(Skill(**json.loads(f.read_text())))
+                out.append(Skill(**json.loads(f.read_text(encoding="utf-8"))))
             except (json.JSONDecodeError, TypeError):
                 continue  # skip a corrupt skill file rather than break the read
         return out

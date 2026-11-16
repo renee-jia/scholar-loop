@@ -101,10 +101,10 @@ def test_compare_script_runs_random_offline_and_resumes(tmp_path, monkeypatch):
     args = ["--profile", "image-classification", "--arms", "random", "--repeats", "2",
             "--rounds", "2", "--out", str(tmp_path)]
     assert compare_search.main(args) == 0
-    assert "| random | 2 |" in (tmp_path / "compare.md").read_text()
-    first = (tmp_path / "random" / "rep1" / "summary.json").read_text()
+    assert "| random | 2 |" in (tmp_path / "compare.md").read_text(encoding="utf-8")
+    first = (tmp_path / "random" / "rep1" / "summary.json").read_text(encoding="utf-8")
     assert compare_search.main(args) == 0                  # finished campaigns are kept, not rerun
-    assert (tmp_path / "random" / "rep1" / "summary.json").read_text() == first
+    assert (tmp_path / "random" / "rep1" / "summary.json").read_text(encoding="utf-8") == first
     assert compare_search.main(args[:3] + ["agent"] + args[4:]) == 1   # the agent arm needs a key
 
 

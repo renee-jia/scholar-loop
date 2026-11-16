@@ -85,7 +85,7 @@ def test_meta_review_failure_keeps_the_ranked_ideas(tmp_path, capsys):
                         tournament=Tournament(llm, PROFILE), meta_reviewer=MetaReviewer(llm))
     s.review()
     assert len(s.ideate(3)) == 3 and s.stage == "ideated"                # the round survived
-    assert json.loads((s.out / "session.json").read_text())["stage"] == "ideated"
+    assert json.loads((s.out / "session.json").read_text(encoding="utf-8"))["stage"] == "ideated"
     assert "meta-review skipped" in capsys.readouterr().err
 
 
@@ -131,12 +131,12 @@ def test_session_feeds_meta_review_and_skills_into_the_next_round(tmp_path):
     assert "recurring critiques" not in first_ideator             # nothing distilled yet
     assert "under 100 epochs never converges" in first_ideator    # the loop's lessons reach ideation
     assert s.state.meta_review == [{"text": rec, "support": ["r1:m1"]}]
-    assert "## What the idea committee kept saying" in (s.out / "ideas.md").read_text()
+    assert "## What the idea committee kept saying" in (s.out / "ideas.md").read_text(encoding="utf-8")
 
     s.ideate(2, feedback="bolder")
     second_ideator = [c["prompt"] for c in llm.calls if "Propose 2 distinct ideas" in c["prompt"]][1]
     assert rec in second_ideator                                  # round 1's critique shapes round 2
-    saved = json.loads((s.out / "session.json").read_text())
+    saved = json.loads((s.out / "session.json").read_text(encoding="utf-8"))
     assert saved["meta_review"][0]["support"] == ["r1:m1"]        # carried: inherits round 1's evidence
-    rounds = json.loads((s.out / "tournament.json").read_text())["rounds"]
+    rounds = json.loads((s.out / "tournament.json").read_text(encoding="utf-8"))["rounds"]
     assert [r["round"] for r in rounds] == [1, 2]                 # every cited round is still on disk

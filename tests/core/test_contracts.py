@@ -53,7 +53,7 @@ def test_malformed_baseline_raises_profile_error(tmp_path):
         "metric: {name: m, direction: minimize}\n"
         "budget: {smoke_sec: 1, verify_sec: 1, full_sec: 1}\n"
         "allowed_edits: [optimizer]\nforbidden_edits: [f.py]\n"
-        "baselines: ['model@4.9.9']\n"   # double-dot: schema must reject before float() crashes
+        "baselines: ['model@4.9.9']\n"   # double-dot: schema must reject before float() crashes, encoding="utf-8"
     )
     with pytest.raises(ProfileError):
         load_profile(bad)
@@ -66,14 +66,14 @@ def test_scientific_notation_baseline_accepted(tmp_path):
         "metric: {name: m, direction: minimize}\n"
         "budget: {smoke_sec: 1, verify_sec: 1, full_sec: 1}\n"
         "allowed_edits: [optimizer]\nforbidden_edits: [f.py]\n"
-        "baselines: ['model@1e-4']\n"
+        "baselines: ['model@1e-4']\n", encoding="utf-8"
     )
     assert load_profile(ok).best_baseline() == 1e-4
 
 
 def test_invalid_profile_rejected(tmp_path):
     bad = tmp_path / "bad.yaml"
-    bad.write_text("name: X-has-caps\nparadigm: nonsense\n")
+    bad.write_text("name: X-has-caps\nparadigm: nonsense\n", encoding="utf-8")
     with pytest.raises(ProfileError):
         load_profile(bad)
 
@@ -179,7 +179,7 @@ def test_ledger_skips_corrupt_line(tmp_path):
                        hypothesis=Hypothesis(claim="c", source="arXiv:1"),
                        metric_name="m", metric={"smoke": 1.0}, verdict="kept")
     ledger.append(good)
-    with path.open("a") as f:
+    with path.open("a", encoding="utf-8") as f:
         f.write("{ this is not valid json }\n")
     ledger.append(LedgerEntry(id="exp_b", domain="d",
                               hypothesis=Hypothesis(claim="c", source="arXiv:2"),

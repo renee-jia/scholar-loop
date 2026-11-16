@@ -18,7 +18,7 @@ def emit_result(value: float, seeds: list[float] | None = None, config: dict | N
 
 
 def score(artifact_path: str) -> None:
-    data = json.loads(Path(artifact_path).read_text())
+    data = json.loads(Path(artifact_path).read_text(encoding="utf-8"))
     # the agent's 'claimed' field is deliberately ignored — only this frozen value is emitted
     emit_result(HONEST_VALUE, config=data.get("config", {}))
 

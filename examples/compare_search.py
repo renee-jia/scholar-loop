@@ -62,7 +62,7 @@ def run_arm(arm: str, profile, out: Path, args, *, llm=None, max_train_runs=None
         rep = out / arm / f"rep{k + 1}"
         done = rep / "summary.json"
         if done.exists():                                   # finished earlier: keep it
-            summaries.append(json.loads(done.read_text()))
+            summaries.append(json.loads(done.read_text(encoding="utf-8")))
             continue
         if rep.exists() and any(rep.iterdir()):
             s = {**campaign_summary(list(Ledger(rep / "experiments.jsonl").read_all()), profile),
@@ -167,8 +167,8 @@ def main(argv: list[str] | None = None) -> int:
               + (f"{budget} train runs each" if budget is not None else f"{args.rounds} rounds each") + " ===")
         results[arm] = run_arm(arm, profile, out, args, llm=llm, max_train_runs=budget)
 
-    (out / "compare.json").write_text(json.dumps(results, indent=1))
-    (out / "compare.md").write_text(render(results, profile, match=args.match))
+    (out / "compare.json").write_text(json.dumps(results, indent=1), encoding="utf-8")
+    (out / "compare.md").write_text(render(results, profile, match=args.match), encoding="utf-8")
     print(f"\n=== wrote {out / 'compare.md'} ===")
     if llm is not None:
         cost = cost_of(llm.usage, llm.model)

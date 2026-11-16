@@ -28,7 +28,7 @@ def test_fresh_campaign_cannot_erase_frozen_protocol_evidence(tmp_path, monkeypa
     import examples.run_to_paper as rtp
     (tmp_path / artifact_dir).mkdir(parents=True)
     ledger = tmp_path / "experiments.jsonl"
-    ledger.write_text("preserved evidence\n")
+    ledger.write_text("preserved evidence\n", encoding="utf-8")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-only")
     monkeypatch.setenv("SCHOLARLOOP_OUT", str(tmp_path))
     for name in ("SCHOLARLOOP_RESUME", "SCHOLARLOOP_PAPER_ONLY", "SCHOLARLOOP_HANDOFF"):
@@ -37,7 +37,7 @@ def test_fresh_campaign_cannot_erase_frozen_protocol_evidence(tmp_path, monkeypa
         raise AssertionError("Must stop before constructing a paid model client")
     monkeypatch.setattr(rtp, "AnthropicLLM", unexpected)
     assert rtp.main() == 2
-    assert ledger.read_text() == "preserved evidence\n"
+    assert ledger.read_text(encoding="utf-8") == "preserved evidence\n"
 
 
 ATOM = """<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom">
@@ -200,10 +200,10 @@ def test_ideation_to_paper_then_resume_then_fresh(campaign):
     assert full[0].metric["folds"] == [0, 1, 2, 3, 4] and full[0].holdout_score() is None
     for name in ("paper.md", "run.md", "usage.json", "calibration.json"):
         assert (out / name).exists(), name
-    rows = [line for line in (out / "run.md").read_text().splitlines() if line.startswith("| exp_")]
+    rows = [line for line in (out / "run.md").read_text(encoding="utf-8").splitlines() if line.startswith("| exp_")]
     assert rows and all(line.split("|")[4].strip() == "—" for line in rows)
-    usage1 = json.loads((out / "usage.json").read_text())
-    calib1 = json.loads((out / "calibration.json").read_text())
+    usage1 = json.loads((out / "usage.json").read_text(encoding="utf-8"))
+    calib1 = json.loads((out / "calibration.json").read_text(encoding="utf-8"))
     skills1 = sorted(p.name for p in (out / "skills").rglob("*") if p.is_file())
     assert calib1 and skills1
 
@@ -211,15 +211,15 @@ def test_ideation_to_paper_then_resume_then_fresh(campaign):
     assert [e.id for e in resumed[:len(first)]] == ids                # nothing rewritten ...
     assert len(resumed) > len(first)                                  # ... and the ids continue
     assert len({e.id for e in resumed}) == len(resumed)
-    usage2 = json.loads((out / "usage.json").read_text())
+    usage2 = json.loads((out / "usage.json").read_text(encoding="utf-8"))
     assert usage2["calls"] > usage1["calls"]                          # spend accumulates
-    assert len(json.loads((out / "calibration.json").read_text())) >= len(calib1)
+    assert len(json.loads((out / "calibration.json").read_text(encoding="utf-8"))) >= len(calib1)
     assert set(skills1) <= {p.name for p in (out / "skills").rglob("*") if p.is_file()}
     assert (out / "paper.md").exists()                                # rewritten on the larger ledger
 
     fresh = run(1)                                                    # no resume: a clean start
     assert fresh[0].id == "exp_0001" and len(fresh) < len(resumed)
-    assert json.loads((out / "usage.json").read_text())["calls"] < usage2["calls"]
+    assert json.loads((out / "usage.json").read_text(encoding="utf-8"))["calls"] < usage2["calls"]
 
 
 def test_cost_cap_pauses_the_write_up(campaign, monkeypatch):
