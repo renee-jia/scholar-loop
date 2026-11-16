@@ -7,7 +7,7 @@
 You steer. The model reads, proposes, experiments and writes.<br>
 Code checks every citation, number and claim against the record before it reaches the page.
 
-[![tests](https://github.com/renee-jia/scholar-loop/actions/workflows/ci.yml/badge.svg)](https://github.com/renee-jia/scholar-loop/actions/workflows/ci.yml)
+[![tests](https://github.com/r2m-ai/scholar-loop/actions/workflows/ci.yml/badge.svg)](https://github.com/r2m-ai/scholar-loop/actions/workflows/ci.yml)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue)](#-quick-start)
 [![platform](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)](#-quick-start)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -96,7 +96,7 @@ model request, and the UI tells you which tools are free to run.
 ## 🚀 Quick start
 
 ```bash
-git clone https://github.com/renee-jia/scholar-loop.git && cd scholar-loop
+git clone https://github.com/r2m-ai/scholar-loop.git && cd scholar-loop
 pip install -e ".[dev]"
 python3 -m scholarloop.ui            # Windows: python -m scholarloop.ui
 ```

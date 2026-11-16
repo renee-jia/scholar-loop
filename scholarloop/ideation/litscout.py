@@ -30,7 +30,7 @@ from scholarloop.core.agent import Agent
 from scholarloop.core.text import containment
 
 _ATOM = "{http://www.w3.org/2005/Atom}"
-_UA = "scholarloop/0.1 (https://github.com/renee-jia/scholar-loop)"
+_UA = "scholarloop/0.1 (https://github.com/r2m-ai/scholar-loop)"
 
 
 def _ssl_ctx() -> ssl.SSLContext | None:

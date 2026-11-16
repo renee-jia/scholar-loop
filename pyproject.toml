@@ -31,7 +31,7 @@ scholarloop = "scholarloop.replay:main"   # replay, trace and check a recorded r
 scholarloop-ui = "scholarloop.ui.__main__:main"
 
 [project.urls]
-Repository = "https://github.com/renee-jia/scholar-loop"
+Repository = "https://github.com/r2m-ai/scholar-loop"
 
 [tool.setuptools.packages.find]
 include = ["scholarloop*"]
