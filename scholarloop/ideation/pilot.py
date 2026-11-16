@@ -182,7 +182,7 @@ class PilotAgenda(ExperimentAgenda):
             if handoff_path.exists():
                 history = self.research_dir / "handoff_history"
                 history.mkdir(exist_ok=True)
-                handoff_path.replace(history / f"{digest(handoff_path.read_text(encoding="utf-8"))}.json")
+                handoff_path.replace(history / f"{digest(handoff_path.read_text(encoding='utf-8'))}.json")
             atomic_json(self.research_dir / "idea_graph.json", session["idea_graph"])
             atomic_json(self.research_dir / "pilot_feedback.json", observations)
             lines = ["# Pilot observations", "", "These measurements do not confirm or refute the hypotheses.", ""]

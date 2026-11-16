@@ -151,7 +151,7 @@ class ResearchSession:
             from scholarloop.review.contracts import digest
             archive = self.out / "handoff_history"
             archive.mkdir(exist_ok=True)
-            handoff_path.replace(archive / f"{digest(handoff_path.read_text(encoding="utf-8"))}.json")
+            handoff_path.replace(archive / f"{digest(handoff_path.read_text(encoding='utf-8'))}.json")
         if self.state.stage != "ideated":
             waiting = self.state.stage == "reviewed" and self.state.direction_map and not self.state.chosen_directions
             atomic_json(self.out / "idea_pending_decisions.json", [{
